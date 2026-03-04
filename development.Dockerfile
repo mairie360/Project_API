@@ -23,7 +23,7 @@ ENV CARGO_HOME=/usr/local/cargo
 ENV PATH=$CARGO_HOME/bin:$PATH
 
 # Exposer le port
-EXPOSE 3000
+EXPOSE 3001
 
 # Copier le script d'entrée et le rendre exécutable
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
