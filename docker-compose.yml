@@ -114,7 +114,7 @@ services:
     ports:
       - "3001:3001" #change port
     volumes:
-      - project_api-target:/usr/src/project_api/target #change api name
+      - project_api-target:/app/target #change api name
     networks:
       - backend
     dns:
@@ -125,6 +125,7 @@ services:
       PUBLIC_URL: http://project.development.mairie360.fr
       JWT_SECRET: b"secret"
       JWT_TIMEOUT: 3600
+      CARGO_TARGET_DIR: /app/target
     depends_on:
       liquibase:
         condition: service_completed_successfully
