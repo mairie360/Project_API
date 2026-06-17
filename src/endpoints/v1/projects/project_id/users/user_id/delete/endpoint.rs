@@ -57,14 +57,13 @@ async fn trigger_remove_user_from_project(
 
 #[utoipa::path(
     delete,
-    path = "",
+    params(
+        ProjectUserPathParams,
+    ),
     responses(
         (status = 204, description = "User removed from project successfully"),
         (status = 400, description = "Bad request"),
         (status = 500, description = "Internal server error")
-    ),
-    params(
-        ProjectPathParams
     ),
     security(
         ("jwt" = [])

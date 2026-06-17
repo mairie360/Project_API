@@ -62,6 +62,9 @@ async fn trigger_add_user_to_project(
 
 #[utoipa::path(
     post,
+    params(
+        ProjectPathParams,
+    ),
     path = "",
     responses(
         (status = 200, description = "User added to project successfully"),

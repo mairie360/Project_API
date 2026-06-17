@@ -59,6 +59,9 @@ async fn trigger_get_project(
 
 #[utoipa::path(
     get,
+    params(
+        ProjectPathParams,
+    ),
     path = "",
     responses(
         (status = 200, description = "Project retrieved successfully", body = GetProjectResultView),

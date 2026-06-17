@@ -58,6 +58,9 @@ async fn trigger_get_project_users(
 
 #[utoipa::path(
     get,
+    params(
+        ProjectPathParams,
+    ),
     path = "",
     responses(
         (status = 200, description = "Project users retrieved successfully", body = GetProjectUsersResultView),

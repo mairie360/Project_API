@@ -61,6 +61,9 @@ async fn trigger_create_task(
 
 #[utoipa::path(
     post,
+    params(
+        ProjectPathParams,
+    ),
     path = "",
     responses(
         (status = 200, description = "Project created successfully", body = CreateTaskResultView),
