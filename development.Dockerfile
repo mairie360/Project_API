@@ -4,13 +4,13 @@ RUN apt update && apt install -y curl && rm -rf /var/lib/apt/lists/*
 RUN cargo install cargo-watch
 
 # Utilisons un chemin simple et unique
-WORKDIR /app
+WORKDIR /usr/src/calendar_api
 
 # --- CACHE DES DÉPENDANCES ---
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 # Cette couche sera mise en cache tant que Cargo.toml ne change pas
-RUN cargo build && rm -rf src 
+RUN cargo build && rm -rf src
 # -----------------------------
 
 COPY src ./src
