@@ -1,7 +1,6 @@
 pub mod doc;
+pub mod projects;
 
-use actix_web::web;
-
-pub fn config(cfg: &mut web::ServiceConfig) {
-    cfg.service(web::scope("/v1"));
+pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
+    cfg.service(actix_web::web::scope("/v1"));
 }
