@@ -7,7 +7,7 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     nest(
-        (path = "/v1", api = V1Doc),
+        (path = "/api/v1", api = V1Doc),
         (path = "/", api = HealthDoc),
         (path = "/", api = HelloDoc),
     )
