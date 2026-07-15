@@ -37,7 +37,7 @@ impl DatabaseQueryView for GetProjectTasksQueryView {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, Copy)]
 #[serde(rename_all = "lowercase")] // Magique : transforme "Date" en "date" dans le JSON
 pub enum FieldType {
     Date,
@@ -48,14 +48,14 @@ pub enum FieldType {
 }
 
 // 2. Les options du champ
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct FieldOption {
     pub option: serde_json::Value,
     pub is_selected: bool,
 }
 
 // 3. Le champ dynamique
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct DynamicTaskField {
     pub label: String,
     pub task_type: FieldType,
@@ -70,7 +70,7 @@ pub struct Task {
     priority: TaskPriority,
     created_at: Option<chrono::NaiveDateTime>,
     assigned_to: Option<i32>,
-    custom_fields: Json<Vec<DynamicTaskField>>,
+    custom_fields: Json<std::collections::HashMap<String, DynamicTaskField>>,
 }
 
 impl Task {
@@ -81,7 +81,7 @@ impl Task {
         priority: TaskPriority,
         created_at: Option<chrono::NaiveDateTime>,
         assigned_to: Option<i32>,
-        custom_fields: Json<Vec<DynamicTaskField>>,
+        custom_fields: Json<std::collections::HashMap<String, DynamicTaskField>>,
     ) -> Self {
         Self {
             id,
@@ -118,7 +118,7 @@ impl Task {
         &self.assigned_to
     }
 
-    pub fn custom_fields(&self) -> &Json<Vec<DynamicTaskField>> {
+    pub fn custom_fields(&self) -> &Json<std::collections::HashMap<String, DynamicTaskField>> {
         &self.custom_fields
     }
 }
