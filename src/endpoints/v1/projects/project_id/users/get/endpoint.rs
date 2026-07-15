@@ -3,7 +3,11 @@ use actix_web::{get, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
 
-use crate::endpoints::v1::projects::project_id::users::get::view::GetProjectUsersResultView;
+use crate::database::users::get_project_users::query::get_project_users_query;
+use crate::database::users::get_project_users::view::GetProjectUsersQueryView;
+use crate::endpoints::v1::projects::project_id::users::get::view::{
+    GetProjectUsersResultView, User,
+};
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,11 +53,19 @@ async fn trigger_get_project_users(
         None => return Err(GetProjectUsersError::DatabaseError),
     };
 
-    //query
+    let view = GetProjectUsersQueryView::new(project_id);
+    let result = get_project_users_query(view, pool)
+        .await
+        .map_err(|_| GetProjectUsersError::DatabaseError)?;
 
     // update cache
 
-    Ok(GetProjectUsersResultView { users: vec![] })
+    Ok(GetProjectUsersResultView {
+        users: result
+            .into_iter()
+            .map(|user| User { id: user as u64 })
+            .collect(),
+    })
 }
 
 #[utoipa::path(

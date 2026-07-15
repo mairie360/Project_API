@@ -1,21 +1,10 @@
 use chrono::{DateTime, Utc};
 use utoipa::ToSchema;
 
-use crate::endpoints::v1::projects::project_id::get::view::{TaskPriority, TaskStatus};
-
-#[derive(Debug, serde::Deserialize, serde::Serialize, ToSchema)]
-pub enum TaskFieldType {
-    #[schema(value_type = String, format = DateTime)]
-    Date(DateTime<Utc>),
-    CheckBox(Vec<String>),
-    Select(String),
-}
-
-#[derive(Debug, serde::Serialize, ToSchema)]
-pub struct TaskField {
-    pub field_type: TaskFieldType,
-    pub name: String,
-}
+use crate::{
+    database::tasks::get_project_tasks::view::{DynamicTaskField, Task},
+    endpoints::v1::projects::project_id::get::view::{TaskPriority, TaskStatus},
+};
 
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct TaskView {
@@ -27,7 +16,26 @@ pub struct TaskView {
     #[schema(value_type = String, format = DateTime)]
     pub due_date: Option<DateTime<Utc>>,
     pub assigned_to: Option<u64>,
-    pub fields: Vec<TaskField>,
+    pub fields: Vec<DynamicTaskField>,
+}
+
+impl From<Task> for TaskView {
+    fn from(task: Task) -> Self {
+        TaskView {
+            id: task.id() as u64,
+            title: task.title().to_string(),
+            description: "".to_string(),
+            status: task.status().to_string().into(),
+            priority: task.priority().to_string().into(),
+            due_date: None,
+            assigned_to: task.assigned_to().map(|id| id as u64),
+            fields: task
+                .custom_fields()
+                .values()
+                .cloned()
+                .collect::<Vec<DynamicTaskField>>(),
+        }
+    }
 }
 
 #[derive(Debug, serde::Serialize, ToSchema)]

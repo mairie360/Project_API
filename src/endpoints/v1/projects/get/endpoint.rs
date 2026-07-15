@@ -3,6 +3,8 @@ use actix_web::{get, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
 
+use crate::database::project::get_projects::query::get_projects_query;
+use crate::database::project::get_projects::view::GetProjectsQueryView;
 use crate::endpoints::v1::projects::get::view::GetProjectsResultView;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,10 +51,16 @@ async fn trigger_get_projects(
     };
 
     //query
+    let view = GetProjectsQueryView::new(user_id);
+    let result = get_projects_query(view, pool)
+        .await
+        .map_err(|_| GetProjectsError::DatabaseError)?;
 
     // update cache
 
-    Ok(GetProjectsResultView { projects: vec![] })
+    Ok(GetProjectsResultView {
+        projects: result.into_iter().map(|p| p.into()).collect(),
+    })
 }
 
 #[utoipa::path(

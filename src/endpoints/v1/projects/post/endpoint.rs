@@ -3,6 +3,8 @@ use actix_web::{post, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
 
+use crate::database::project::create::query::create_project_query;
+use crate::database::project::create::view::CreateProjectQueryView;
 use crate::endpoints::v1::projects::post::view::{CreateProjectResultView, CreateProjectView};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,17 +43,20 @@ async fn trigger_create_project(
     state: web::Data<AppState>,
     user_id: u64,
     view: CreateProjectView,
-) -> Result<(), CreateProjectError> {
+) -> Result<i32, CreateProjectError> {
     let pool = match state.db_pool.clone() {
         Some(pool) => pool,
         None => return Err(CreateProjectError::DatabaseError),
     };
 
-    //query
+    let view = CreateProjectQueryView::new(view.name(), view.description().as_deref(), user_id);
+    let result = create_project_query(view, pool)
+        .await
+        .map_err(|_| CreateProjectError::DatabaseError)?;
 
     // update cache
 
-    Ok(())
+    Ok(result)
 }
 
 #[utoipa::path(

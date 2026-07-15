@@ -4,6 +4,7 @@ use mairie360_api_lib::database::db_interface::DatabaseQueryView;
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
 use sqlx::FromRow;
+use utoipa::ToSchema;
 
 use crate::database::tasks::create_task::view::{TaskPriority, TaskStatus};
 
@@ -37,7 +38,7 @@ impl DatabaseQueryView for GetProjectTasksQueryView {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, Copy, ToSchema)]
 #[serde(rename_all = "lowercase")] // Magique : transforme "Date" en "date" dans le JSON
 pub enum FieldType {
     Date,
@@ -48,14 +49,14 @@ pub enum FieldType {
 }
 
 // 2. Les options du champ
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, ToSchema)]
 pub struct FieldOption {
     pub option: serde_json::Value,
     pub is_selected: bool,
 }
 
 // 3. Le champ dynamique
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, ToSchema)]
 pub struct DynamicTaskField {
     pub label: String,
     pub task_type: FieldType,

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use utoipa::ToSchema;
 
-#[derive(Debug, serde::Deserialize, serde::Serialize, ToSchema)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, ToSchema)]
 pub enum TaskStatus {
     Todo,
     InProgress,
@@ -31,7 +31,7 @@ impl ToString for TaskStatus {
     }
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize, ToSchema)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, ToSchema)]
 pub enum TaskPriority {
     Low,
     Medium,
@@ -80,5 +80,5 @@ struct TaskView {
 pub struct GetProjectResultView {
     pub name: String,
     pub description: String,
-    pub tasks: Vec<TaskView>,
+    tasks: Vec<TaskView>,
 }

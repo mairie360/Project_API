@@ -50,8 +50,6 @@ async fn trigger_get_project(
         None => return Err(GetProjectError::DatabaseError),
     };
 
-    //query
-
     // update cache
 
     Ok(())

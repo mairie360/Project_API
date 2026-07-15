@@ -3,6 +3,8 @@ use actix_web::{patch, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
 
+use crate::database::project::update_status::query::update_project_status_query;
+use crate::database::project::update_status::view::{ProjectStatus, UpdateProjectStatusQueryView};
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,10 +53,17 @@ async fn trigger_close_project(
         None => return Err(PatchMessageError::DatabaseError),
     };
 
-    //query
+    let view = UpdateProjectStatusQueryView::new(project_id, ProjectStatus::Completed);
+
+    let result = update_project_status_query(view, pool)
+        .await
+        .map_err(|_| PatchMessageError::DatabaseError)?;
 
     // update cache
 
+    if result == 0 {
+        return Err(PatchMessageError::UnknownProject);
+    }
     Ok(())
 }
 

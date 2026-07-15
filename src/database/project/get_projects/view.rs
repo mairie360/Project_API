@@ -2,6 +2,8 @@ use std::fmt::Display;
 
 use mairie360_api_lib::database::db_interface::DatabaseQueryView;
 
+use crate::database::project::update_status::view::ProjectStatus;
+
 pub struct GetProjectsQueryView {
     user_id: u64,
 }
@@ -24,7 +26,7 @@ impl Display for GetProjectsQueryView {
 
 impl DatabaseQueryView for GetProjectsQueryView {
     fn get_request(&self) -> String {
-        "SELECT DISTINCT p.id, p.title, p.description
+        "SELECT DISTINCT p.id, p.title, p.description, p.status
         FROM projects p
         LEFT JOIN project_members pm ON p.id = pm.project_id
         WHERE p.owner_id = $1 OR pm.user_id = $1"
@@ -37,14 +39,16 @@ pub struct ProjectView {
     id: i32,
     title: String,
     description: Option<String>,
+    status: ProjectStatus,
 }
 
 impl ProjectView {
-    pub fn new(id: i32, title: String, description: Option<&str>) -> Self {
+    pub fn new(id: i32, title: String, description: Option<&str>, status: ProjectStatus) -> Self {
         Self {
             id,
             title,
             description: description.map(|d| d.to_string()),
+            status,
         }
     }
 
@@ -58,5 +62,9 @@ impl ProjectView {
 
     pub fn description(&self) -> Option<&str> {
         self.description.as_deref()
+    }
+
+    pub fn status(&self) -> ProjectStatus {
+        self.status
     }
 }
