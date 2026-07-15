@@ -3,12 +3,14 @@ use actix_web::{delete, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
 
+use crate::database::tasks::delete_task::query::delete_task_query;
+use crate::database::tasks::delete_task::view::DeleteTaskQueryView;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DeleteTaskError {
     DatabaseError,
-    UnknownEvent,
+    UnknownTask,
 }
 
 impl std::fmt::Display for DeleteTaskError {
@@ -17,8 +19,8 @@ impl std::fmt::Display for DeleteTaskError {
             DeleteTaskError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
-            DeleteTaskError::UnknownEvent => {
-                write!(f, "Unknown event.")
+            DeleteTaskError::UnknownTask => {
+                write!(f, "Unknown task.")
             }
         }
     }
@@ -28,7 +30,7 @@ impl ResponseError for DeleteTaskError {
     fn status_code(&self) -> StatusCode {
         match self {
             DeleteTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
-            DeleteTaskError::UnknownEvent => StatusCode::BAD_REQUEST,
+            DeleteTaskError::UnknownTask => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -39,7 +41,7 @@ impl ResponseError for DeleteTaskError {
 
 async fn trigger_delete_task(
     state: web::Data<AppState>,
-    project_id: u64,
+    _project_id: u64,
     task_id: u64,
 ) -> Result<(), DeleteTaskError> {
     let pool = match state.db_pool.clone() {
@@ -47,10 +49,16 @@ async fn trigger_delete_task(
         None => return Err(DeleteTaskError::DatabaseError),
     };
 
-    //query
+    let view = DeleteTaskQueryView::new(task_id);
+    let result = delete_task_query(view, pool)
+        .await
+        .map_err(|_| DeleteTaskError::DatabaseError)?;
 
     // update cache
 
+    if result == 0 {
+        return Err(DeleteTaskError::UnknownTask);
+    }
     Ok(())
 }
 

@@ -95,6 +95,21 @@ services:
       timeout: 5s
       retries: 5
 
+  seeder:
+    image: postgres:18-alpine
+    depends_on:
+      liquibase:
+        condition: service_completed_successfully
+    volumes:
+      - ./init-test.sql:/init-test.sql
+    # On se connecte directement au service 'postgres' via son nom de service
+    command: >
+      sh -c "psql -h postgres -U postgres -d mairie_360_database -f /init-test.sql"
+    environment:
+      PGPASSWORD: ${DB_PASSWORD:-password}
+    networks:
+      - backend
+
   project: # change api name
     container_name: project_api-developpement # change api name
     build:

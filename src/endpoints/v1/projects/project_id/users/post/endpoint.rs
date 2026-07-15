@@ -3,6 +3,8 @@ use actix_web::{post, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
 
+use crate::database::users::add_user_to_project::query::add_user_to_project_query;
+use crate::database::users::add_user_to_project::view::AddUserToProjectQueryView;
 use crate::endpoints::v1::projects::project_id::users::post::view::AddUserToProjectView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
@@ -53,7 +55,10 @@ async fn trigger_add_user_to_project(
         None => return Err(AddUserToProjectError::DatabaseError),
     };
 
-    //query
+    let view = AddUserToProjectQueryView::new(project_id, view.user_id);
+    add_user_to_project_query(view, pool)
+        .await
+        .map_err(|_| AddUserToProjectError::DatabaseError)?;
 
     // update cache
 

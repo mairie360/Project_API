@@ -24,7 +24,7 @@ impl ProjectPathParams {
 pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
     cfg.service(
         actix_web::web::scope("/projects")
-            .service(get::endpoint::get_project)
+            // .service(get::endpoint::get_project)
             .service(close::endpoint::close_project)
             .service(delete::endpoint::delete_project)
             .configure(tasks::config)

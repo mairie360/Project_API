@@ -1,6 +1,9 @@
-use crate::endpoints::v1::projects::project_id::{
-    get::view::{TaskPriority, TaskStatus},
-    tasks::{get::view::TaskFieldType, task_id::patch::endpoint::PatchTaskError},
+use crate::{
+    database::tasks::get_project_tasks::view::DynamicTaskField,
+    endpoints::v1::projects::project_id::{
+        get::view::{TaskPriority, TaskStatus},
+        tasks::task_id::patch::endpoint::PatchTaskError,
+    },
 };
 use actix_web::web;
 use chrono::{DateTime, Utc};
@@ -9,7 +12,7 @@ use utoipa::ToSchema;
 #[derive(Debug, serde::Deserialize, ToSchema)]
 struct PatchField {
     id: u64,
-    field_type: TaskFieldType,
+    field_type: DynamicTaskField,
 }
 
 #[derive(Debug, serde::Deserialize, ToSchema)]

@@ -3,8 +3,9 @@ use actix_web::{delete, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
 
+use crate::database::users::remove_user_from_project::query::remove_user_from_project_query;
+use crate::database::users::remove_user_from_project::view::RemoveUserFromProjectQueryView;
 use crate::endpoints::v1::projects::project_id::users::user_id::ProjectUserPathParams;
-use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RemoveUserFromProjectError {
@@ -48,9 +49,16 @@ async fn trigger_remove_user_from_project(
         None => return Err(RemoveUserFromProjectError::DatabaseError),
     };
 
-    //query
+    let view = RemoveUserFromProjectQueryView::new(project_id, user_id);
+    let result = remove_user_from_project_query(view, pool)
+        .await
+        .map_err(|_| RemoveUserFromProjectError::DatabaseError)?;
 
     // update cache
+
+    if result == 0 {
+        return Err(RemoveUserFromProjectError::UnknownUser);
+    }
 
     Ok(())
 }

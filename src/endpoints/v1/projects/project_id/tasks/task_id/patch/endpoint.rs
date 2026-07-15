@@ -3,7 +3,6 @@ use actix_web::{patch, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
 
-use crate::endpoints::v1::projects::project_id;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::patch::view::PatchTaskView;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
 

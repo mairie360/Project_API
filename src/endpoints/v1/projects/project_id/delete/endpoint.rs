@@ -3,12 +3,14 @@ use actix_web::{delete, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
 
+use crate::database::project::delete::query::delete_project_query;
+use crate::database::project::delete::view::DeleteProjectQueryView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DeleteProjectError {
     DatabaseError,
-    UnknownEvent,
+    UnknownProject,
 }
 
 impl std::fmt::Display for DeleteProjectError {
@@ -17,8 +19,8 @@ impl std::fmt::Display for DeleteProjectError {
             DeleteProjectError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
-            DeleteProjectError::UnknownEvent => {
-                write!(f, "Unknown event.")
+            DeleteProjectError::UnknownProject => {
+                write!(f, "Unknown project.")
             }
         }
     }
@@ -28,7 +30,7 @@ impl ResponseError for DeleteProjectError {
     fn status_code(&self) -> StatusCode {
         match self {
             DeleteProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
-            DeleteProjectError::UnknownEvent => StatusCode::BAD_REQUEST,
+            DeleteProjectError::UnknownProject => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -46,9 +48,16 @@ async fn trigger_delete_project(
         None => return Err(DeleteProjectError::DatabaseError),
     };
 
-    //query
+    let view = DeleteProjectQueryView::new(project_id);
+    let result = delete_project_query(view, pool)
+        .await
+        .map_err(|_| DeleteProjectError::DatabaseError)?;
 
     // update cache
+
+    if result == 0 {
+        return Err(DeleteProjectError::UnknownProject);
+    }
 
     Ok(())
 }
