@@ -1,50 +1,41 @@
-use std::fmt::Display;
+use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
 
-use mairie360_api_lib::database::db_interface::DatabaseQueryView;
-
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CreateProjectQueryView {
-    title: String,
-    description: Option<String>,
-    owner_id: u64,
+    params: Vec<QueryParam>,
 }
 
 impl CreateProjectQueryView {
     pub fn new(title: &str, description: Option<&str>, owner_id: u64) -> Self {
         Self {
-            title: title.to_string(),
-            description: description.map(|d| d.to_string()),
-            owner_id,
+            params: vec![
+                QueryParam::Text(title.to_string()),
+                QueryParam::Text(description.unwrap_or_default().to_string()),
+                QueryParam::I32(owner_id as i32),
+            ],
         }
     }
 
     pub fn title(&self) -> &str {
-        &self.title
+        self.params[0].as_text()
     }
 
-    pub fn description(&self) -> Option<&str> {
-        self.description.as_deref()
+    pub fn description(&self) -> &str {
+        self.params[1].as_text()
     }
 
     pub fn owner_id(&self) -> u64 {
-        self.owner_id
+        self.params[2].as_i32() as u64
     }
 }
 
-impl Display for CreateProjectQueryView {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "CreateProjectQueryView: title={} description={} owner_id={}",
-            self.title,
-            self.description.as_deref().unwrap_or(""),
-            self.owner_id
-        )
+impl ApiRequestDto for CreateProjectQueryView {
+    fn query_sql(&self) -> &'static str {
+        "INSERT INTO projects (title, description, owner_id) \
+         VALUES ($1, NULLIF($2, ''), $3) RETURNING id"
     }
-}
 
-impl DatabaseQueryView for CreateProjectQueryView {
-    fn get_request(&self) -> String {
-        "INSERT INTO projects (title, description, owner_id) VALUES ($1, $2, $3) RETURNING id"
-            .to_string()
+    fn query_params(&self) -> &[QueryParam] {
+        &self.params
     }
 }

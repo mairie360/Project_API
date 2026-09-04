@@ -1,12 +1,8 @@
-use std::fmt::Display;
+use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
 
-use mairie360_api_lib::database::db_interface::DatabaseQueryView;
-
-#[derive(Debug, sqlx::Type, PartialEq, Eq, Clone, Copy)]
-#[sqlx(type_name = "task_status", rename_all = "lowercase")] // Renomme tout en minuscule pour SQL
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TaskStatus {
     Todo,
-    #[sqlx(rename = "in_progress")]
     InProgress,
     Completed,
     Error,
@@ -23,19 +19,19 @@ impl From<String> for TaskStatus {
     }
 }
 
-impl ToString for TaskStatus {
-    fn to_string(&self) -> String {
-        match self {
-            TaskStatus::Todo => "todo".to_string(),
-            TaskStatus::InProgress => "in_progress".to_string(),
-            TaskStatus::Completed => "completed".to_string(),
-            TaskStatus::Error => "error".to_string(),
-        }
+impl std::fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            TaskStatus::Todo => "todo",
+            TaskStatus::InProgress => "in_progress",
+            TaskStatus::Completed => "completed",
+            TaskStatus::Error => "error",
+        };
+        f.write_str(s)
     }
 }
 
-#[derive(Debug, sqlx::Type, PartialEq, Eq, Clone, Copy)]
-#[sqlx(type_name = "task_priority", rename_all = "lowercase")]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TaskPriority {
     Low,
     Medium,
@@ -54,24 +50,21 @@ impl From<String> for TaskPriority {
     }
 }
 
-impl ToString for TaskPriority {
-    fn to_string(&self) -> String {
-        match self {
-            TaskPriority::Low => "low".to_string(),
-            TaskPriority::Medium => "medium".to_string(),
-            TaskPriority::High => "high".to_string(),
-            TaskPriority::Error => "error".to_string(),
-        }
+impl std::fmt::Display for TaskPriority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            TaskPriority::Low => "low",
+            TaskPriority::Medium => "medium",
+            TaskPriority::High => "high",
+            TaskPriority::Error => "error",
+        };
+        f.write_str(s)
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CreateTaskQueryView {
-    project_id: u64,
-    title: String,
-    status: TaskStatus,
-    priority: TaskPriority,
-    due_date: Option<chrono::DateTime<chrono::Utc>>,
-    assigned_to: Option<i32>,
+    params: Vec<QueryParam>,
 }
 
 impl CreateTaskQueryView {
@@ -84,58 +77,34 @@ impl CreateTaskQueryView {
         assigned_to: Option<u64>,
     ) -> Self {
         Self {
-            project_id,
-            title: title.to_string(),
-            status,
-            priority,
-            due_date,
-            assigned_to: assigned_to.map(|id| id as i32),
+            params: vec![
+                QueryParam::I32(project_id as i32),
+                QueryParam::Text(title.to_string()),
+                QueryParam::Text(status.to_string()),
+                QueryParam::Text(priority.to_string()),
+                QueryParam::Text(due_date.map(|d| d.to_rfc3339()).unwrap_or_default()),
+                QueryParam::OptionI32(assigned_to.map(|id| id as i32)),
+            ],
         }
     }
 
     pub fn project_id(&self) -> u64 {
-        self.project_id
+        self.params[0].as_i32() as u64
     }
 
     pub fn title(&self) -> &str {
-        &self.title
-    }
-
-    pub fn status(&self) -> TaskStatus {
-        self.status
-    }
-
-    pub fn priority(&self) -> TaskPriority {
-        self.priority
-    }
-
-    pub fn due_date(&self) -> Option<chrono::DateTime<chrono::Utc>> {
-        self.due_date
-    }
-
-    pub fn assigned_to(&self) -> Option<i32> {
-        self.assigned_to
+        self.params[1].as_text()
     }
 }
 
-impl Display for CreateTaskQueryView {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "CreateTaskQueryView: project_id={} title={} status={} priority={} due_date={:?} assigned_to={:?}",
-            self.project_id,
-            self.title,
-            self.status.to_string(),
-            self.priority.to_string(),
-            self.due_date,
-            self.assigned_to
-        )
+impl ApiRequestDto for CreateTaskQueryView {
+    fn query_sql(&self) -> &'static str {
+        "INSERT INTO tasks (project_id, title, status, priority, due_date, assigned_to) \
+         VALUES ($1, $2, $3::task_status, $4::task_priority, NULLIF($5, '')::timestamptz, $6) \
+         RETURNING id"
     }
-}
 
-impl DatabaseQueryView for CreateTaskQueryView {
-    fn get_request(&self) -> String {
-        "INSERT INTO tasks (project_id, title, status, priority, due_date, assigned_to) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
-            .to_string()
+    fn query_params(&self) -> &[QueryParam] {
+        &self.params
     }
 }

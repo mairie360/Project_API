@@ -1,9 +1,6 @@
-use std::fmt::Display;
+use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
 
-use mairie360_api_lib::database::db_interface::DatabaseQueryView;
-
-#[derive(Debug, sqlx::Type, PartialEq, Eq, Clone, Copy)]
-#[sqlx(type_name = "project_status", rename_all = "lowercase")]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ProjectStatus {
     Active,
     Suspended,
@@ -24,50 +21,49 @@ impl From<String> for ProjectStatus {
     }
 }
 
-impl ToString for ProjectStatus {
-    fn to_string(&self) -> String {
-        match self {
-            ProjectStatus::Active => "active".to_string(),
-            ProjectStatus::Suspended => "suspended".to_string(),
-            ProjectStatus::Archived => "archived".to_string(),
-            ProjectStatus::Completed => "completed".to_string(),
-            ProjectStatus::Error => "error".to_string(),
-        }
+impl std::fmt::Display for ProjectStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            ProjectStatus::Active => "active",
+            ProjectStatus::Suspended => "suspended",
+            ProjectStatus::Archived => "archived",
+            ProjectStatus::Completed => "completed",
+            ProjectStatus::Error => "error",
+        };
+        f.write_str(s)
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UpdateProjectStatusQueryView {
-    project_id: u64,
-    status: ProjectStatus,
+    params: Vec<QueryParam>,
 }
 
 impl UpdateProjectStatusQueryView {
     pub fn new(project_id: u64, status: ProjectStatus) -> Self {
-        Self { project_id, status }
-    }
-
-    pub fn project_id(&self) -> u64 {
-        self.project_id
+        Self {
+            params: vec![
+                QueryParam::Text(status.to_string()),
+                QueryParam::I32(project_id as i32),
+            ],
+        }
     }
 
     pub fn status(&self) -> ProjectStatus {
-        self.status
+        self.params[0].as_text().to_string().into()
+    }
+
+    pub fn project_id(&self) -> u64 {
+        self.params[1].as_i32() as u64
     }
 }
 
-impl Display for UpdateProjectStatusQueryView {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "UpdateProjectStatusQueryView: project_id={} status={}",
-            self.project_id,
-            self.status.to_string()
-        )
+impl ApiRequestDto for UpdateProjectStatusQueryView {
+    fn query_sql(&self) -> &'static str {
+        "UPDATE projects SET status = $1::project_status WHERE id = $2"
     }
-}
 
-impl DatabaseQueryView for UpdateProjectStatusQueryView {
-    fn get_request(&self) -> String {
-        "UPDATE projects SET status = $1 WHERE id = $2".to_string()
+    fn query_params(&self) -> &[QueryParam] {
+        &self.params
     }
 }

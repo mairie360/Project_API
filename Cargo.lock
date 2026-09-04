@@ -2740,9 +2740,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
- "sqlx",
  "tokio",
- "tokio-postgres",
  "utoipa",
  "utoipa-swagger-ui",
 ]
