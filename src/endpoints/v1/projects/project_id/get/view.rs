@@ -20,14 +20,15 @@ impl From<String> for TaskStatus {
     }
 }
 
-impl ToString for TaskStatus {
-    fn to_string(&self) -> String {
-        match self {
-            TaskStatus::Todo => "todo".to_string(),
-            TaskStatus::InProgress => "in_progress".to_string(),
-            TaskStatus::Completed => "completed".to_string(),
-            TaskStatus::Error => "error".to_string(),
-        }
+impl std::fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            TaskStatus::Todo => "todo",
+            TaskStatus::InProgress => "in_progress",
+            TaskStatus::Completed => "completed",
+            TaskStatus::Error => "error",
+        };
+        f.write_str(s)
     }
 }
 
@@ -52,15 +53,16 @@ impl From<String> for TaskPriority {
     }
 }
 
-impl ToString for TaskPriority {
-    fn to_string(&self) -> String {
-        match self {
-            TaskPriority::Low => "low".to_string(),
-            TaskPriority::Medium => "medium".to_string(),
-            TaskPriority::High => "high".to_string(),
-            TaskPriority::Urgent => "urgent".to_string(),
-            TaskPriority::Error => "error".to_string(),
-        }
+impl std::fmt::Display for TaskPriority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            TaskPriority::Low => "low",
+            TaskPriority::Medium => "medium",
+            TaskPriority::High => "high",
+            TaskPriority::Urgent => "urgent",
+            TaskPriority::Error => "error",
+        };
+        f.write_str(s)
     }
 }
 

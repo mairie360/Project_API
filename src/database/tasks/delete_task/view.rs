@@ -1,29 +1,28 @@
-use std::fmt::Display;
+use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
 
-use mairie360_api_lib::database::db_interface::DatabaseQueryView;
-
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DeleteTaskQueryView {
-    task_id: u64,
+    params: Vec<QueryParam>,
 }
 
 impl DeleteTaskQueryView {
     pub fn new(task_id: u64) -> Self {
-        Self { task_id }
+        Self {
+            params: vec![QueryParam::I32(task_id as i32)],
+        }
     }
 
     pub fn task_id(&self) -> u64 {
-        self.task_id
+        self.params[0].as_i32() as u64
     }
 }
 
-impl Display for DeleteTaskQueryView {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "DeleteTaskQueryView: task_id={}", self.task_id)
+impl ApiRequestDto for DeleteTaskQueryView {
+    fn query_sql(&self) -> &'static str {
+        "DELETE FROM tasks WHERE id = $1"
     }
-}
 
-impl DatabaseQueryView for DeleteTaskQueryView {
-    fn get_request(&self) -> String {
-        "DELETE FROM tasks WHERE id = $1".to_string()
+    fn query_params(&self) -> &[QueryParam] {
+        &self.params
     }
 }

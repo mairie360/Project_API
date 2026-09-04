@@ -1,9 +1,8 @@
 use actix_web::http::StatusCode;
 use actix_web::{post, web, HttpResponse, Responder, ResponseError};
-use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::state::AppState;
 
-use crate::database::tasks::create_task::query::create_task_query;
 use crate::database::tasks::create_task::view::CreateTaskQueryView;
 use crate::endpoints::v1::projects::project_id::tasks::post::view::{
     CreateTaskResultView, CreateTaskView,
@@ -48,26 +47,21 @@ async fn trigger_create_task(
     project_id: u64,
     view: CreateTaskView,
 ) -> Result<CreateTaskResultView, CreateTaskError> {
-    let pool = match state.db_pool.clone() {
-        Some(pool) => pool,
-        None => return Err(CreateTaskError::DatabaseError),
-    };
+    let name = view.name().to_string();
 
-    let name = view.name();
-
-    let view = CreateTaskQueryView::new(
+    let query_view = CreateTaskQueryView::new(
         project_id,
-        name,
+        &name,
         view.status().unwrap().to_string().into(),
         view.priority().unwrap().to_string().into(),
         *view.due_date(),
         *view.assigned_to(),
     );
-    let result = create_task_query(view, pool)
+    let result: i32 = state
+        .get_smart_db()
+        .fetch_scalar::<i32, _>(&query_view)
         .await
         .map_err(|_| CreateTaskError::DatabaseError)?;
-
-    // update cache
 
     Ok(CreateTaskResultView {
         task_id: result as u64,

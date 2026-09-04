@@ -1,40 +1,37 @@
-use std::fmt::Display;
+use std::collections::HashMap;
 
-use mairie360_api_lib::database::db_interface::DatabaseQueryView;
+use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
 use serde::{Deserialize, Serialize};
-use sqlx::types::Json;
-use sqlx::FromRow;
 use utoipa::ToSchema;
 
-use crate::database::tasks::create_task::view::{TaskPriority, TaskStatus};
-
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GetProjectTasksQueryView {
-    project_id: u64,
+    params: Vec<QueryParam>,
 }
 
 impl GetProjectTasksQueryView {
     pub fn new(project_id: u64) -> Self {
-        Self { project_id }
+        Self {
+            params: vec![QueryParam::I32(project_id as i32)],
+        }
     }
 
     pub fn project_id(&self) -> u64 {
-        self.project_id
+        self.params[0].as_i32() as u64
     }
 }
 
-impl Display for GetProjectTasksQueryView {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "GetProjectTasksQueryView: project_id={}",
-            self.project_id
-        )
+impl ApiRequestDto for GetProjectTasksQueryView {
+    fn query_sql(&self) -> &'static str {
+        "SELECT to_jsonb(t) FROM ( \
+            SELECT id, title, status, priority, created_at, assigned_to, \
+                   COALESCE(custom_fields, '{}'::jsonb) AS custom_fields \
+            FROM tasks WHERE project_id = $1 \
+         ) t"
     }
-}
 
-impl DatabaseQueryView for GetProjectTasksQueryView {
-    fn get_request(&self) -> String {
-        "SELECT id, title, status, priority, created_at, assigned_to, custom_fields FROM tasks WHERE project_id = $1".to_string()
+    fn query_params(&self) -> &[QueryParam] {
+        &self.params
     }
 }
 
@@ -63,38 +60,21 @@ pub struct DynamicTaskField {
     pub fields_options: Vec<FieldOption>,
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     id: i32,
     title: String,
-    status: TaskStatus,
-    priority: TaskPriority,
-    created_at: Option<chrono::NaiveDateTime>,
+    status: String,
+    priority: String,
+    #[serde(default)]
+    created_at: Option<String>,
+    #[serde(default)]
     assigned_to: Option<i32>,
-    custom_fields: Json<std::collections::HashMap<String, DynamicTaskField>>,
+    #[serde(default)]
+    custom_fields: HashMap<String, DynamicTaskField>,
 }
 
 impl Task {
-    pub fn new(
-        id: i32,
-        title: String,
-        status: TaskStatus,
-        priority: TaskPriority,
-        created_at: Option<chrono::NaiveDateTime>,
-        assigned_to: Option<i32>,
-        custom_fields: Json<std::collections::HashMap<String, DynamicTaskField>>,
-    ) -> Self {
-        Self {
-            id,
-            title,
-            status,
-            priority,
-            created_at,
-            assigned_to,
-            custom_fields,
-        }
-    }
-
     pub fn id(&self) -> i32 {
         self.id
     }
@@ -103,23 +83,23 @@ impl Task {
         &self.title
     }
 
-    pub fn status(&self) -> &TaskStatus {
+    pub fn status(&self) -> &str {
         &self.status
     }
 
-    pub fn priority(&self) -> &TaskPriority {
+    pub fn priority(&self) -> &str {
         &self.priority
     }
 
-    pub fn created_at(&self) -> &Option<chrono::NaiveDateTime> {
-        &self.created_at
+    pub fn created_at(&self) -> Option<&str> {
+        self.created_at.as_deref()
     }
 
-    pub fn assigned_to(&self) -> &Option<i32> {
-        &self.assigned_to
+    pub fn assigned_to(&self) -> Option<i32> {
+        self.assigned_to
     }
 
-    pub fn custom_fields(&self) -> &Json<std::collections::HashMap<String, DynamicTaskField>> {
+    pub fn custom_fields(&self) -> &HashMap<String, DynamicTaskField> {
         &self.custom_fields
     }
 }
