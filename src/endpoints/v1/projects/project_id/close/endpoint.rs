@@ -1,13 +1,13 @@
 use actix_web::http::StatusCode;
 use actix_web::{patch, web, HttpResponse, Responder, ResponseError};
-use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::state::AppState;
 
-use crate::database::project::update_status::query::update_project_status_query;
 use crate::database::project::update_status::view::{ProjectStatus, UpdateProjectStatusQueryView};
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum PatchMessageError {
     BadRequest,
     DatabaseError,
@@ -48,22 +48,14 @@ async fn trigger_close_project(
     state: web::Data<AppState>,
     project_id: u64,
 ) -> Result<(), PatchMessageError> {
-    let pool = match state.db_pool.clone() {
-        Some(pool) => pool,
-        None => return Err(PatchMessageError::DatabaseError),
-    };
-
     let view = UpdateProjectStatusQueryView::new(project_id, ProjectStatus::Completed);
 
-    let result = update_project_status_query(view, pool)
+    state
+        .get_smart_db()
+        .execute(view)
         .await
         .map_err(|_| PatchMessageError::DatabaseError)?;
 
-    // update cache
-
-    if result == 0 {
-        return Err(PatchMessageError::UnknownProject);
-    }
     Ok(())
 }
 

@@ -1,13 +1,13 @@
 use actix_web::http::StatusCode;
 use actix_web::{delete, web, HttpResponse, Responder, ResponseError};
-use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::state::AppState;
 
-use crate::database::project::delete::query::delete_project_query;
 use crate::database::project::delete::view::DeleteProjectQueryView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum DeleteProjectError {
     DatabaseError,
     UnknownProject,
@@ -43,21 +43,12 @@ async fn trigger_delete_project(
     state: web::Data<AppState>,
     project_id: u64,
 ) -> Result<(), DeleteProjectError> {
-    let pool = match state.db_pool.clone() {
-        Some(pool) => pool,
-        None => return Err(DeleteProjectError::DatabaseError),
-    };
-
     let view = DeleteProjectQueryView::new(project_id);
-    let result = delete_project_query(view, pool)
+    state
+        .get_smart_db()
+        .execute(view)
         .await
         .map_err(|_| DeleteProjectError::DatabaseError)?;
-
-    // update cache
-
-    if result == 0 {
-        return Err(DeleteProjectError::UnknownProject);
-    }
 
     Ok(())
 }

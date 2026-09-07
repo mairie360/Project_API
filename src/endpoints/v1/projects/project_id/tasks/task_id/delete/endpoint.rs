@@ -1,13 +1,13 @@
 use actix_web::http::StatusCode;
 use actix_web::{delete, web, HttpResponse, Responder, ResponseError};
-use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::state::AppState;
 
-use crate::database::tasks::delete_task::query::delete_task_query;
 use crate::database::tasks::delete_task::view::DeleteTaskQueryView;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum DeleteTaskError {
     DatabaseError,
     UnknownTask,
@@ -44,21 +44,13 @@ async fn trigger_delete_task(
     _project_id: u64,
     task_id: u64,
 ) -> Result<(), DeleteTaskError> {
-    let pool = match state.db_pool.clone() {
-        Some(pool) => pool,
-        None => return Err(DeleteTaskError::DatabaseError),
-    };
-
     let view = DeleteTaskQueryView::new(task_id);
-    let result = delete_task_query(view, pool)
+    state
+        .get_smart_db()
+        .execute(view)
         .await
         .map_err(|_| DeleteTaskError::DatabaseError)?;
 
-    // update cache
-
-    if result == 0 {
-        return Err(DeleteTaskError::UnknownTask);
-    }
     Ok(())
 }
 

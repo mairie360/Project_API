@@ -1,14 +1,14 @@
 use actix_web::http::StatusCode;
 use actix_web::{post, web, HttpResponse, Responder, ResponseError};
-use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::state::AppState;
 
-use crate::database::users::add_user_to_project::query::add_user_to_project_query;
 use crate::database::users::add_user_to_project::view::AddUserToProjectQueryView;
 use crate::endpoints::v1::projects::project_id::users::post::view::AddUserToProjectView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum AddUserToProjectError {
     DatabaseError,
     BadRequest,
@@ -50,17 +50,12 @@ async fn trigger_add_user_to_project(
     project_id: u64,
     view: AddUserToProjectView,
 ) -> Result<(), AddUserToProjectError> {
-    let pool = match state.db_pool.clone() {
-        Some(pool) => pool,
-        None => return Err(AddUserToProjectError::DatabaseError),
-    };
-
-    let view = AddUserToProjectQueryView::new(project_id, view.user_id);
-    add_user_to_project_query(view, pool)
+    let query_view = AddUserToProjectQueryView::new(project_id, view.user_id);
+    state
+        .get_smart_db()
+        .execute(query_view)
         .await
         .map_err(|_| AddUserToProjectError::DatabaseError)?;
-
-    // update cache
 
     Ok(())
 }
@@ -92,6 +87,6 @@ pub async fn add_user_to_project(
     let view = view
         .try_into()
         .map_err(|_| AddUserToProjectError::BadRequest)?;
-    let result = trigger_add_user_to_project(state, params.project_id, view).await?;
-    Ok(HttpResponse::Ok().json(result))
+    trigger_add_user_to_project(state, params.project_id, view).await?;
+    Ok(HttpResponse::Ok().finish())
 }

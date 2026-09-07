@@ -1,44 +1,36 @@
-use mairie360_api_lib::database::db_interface::DatabaseQueryView;
-use sqlx::types::Json;
-use std::{collections::HashMap, fmt::Display};
+use std::collections::HashMap;
+
+use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
 
 use crate::database::tasks::get_project_tasks::view::DynamicTaskField;
 
-#[derive(Debug)]
+/// Type de résultat renvoyé par [`GetTaskFieldsQueryView`] : la map des champs
+/// dynamiques stockés dans la colonne `custom_fields` de la tâche.
+pub type TaskCustomFields = HashMap<String, DynamicTaskField>;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GetTaskFieldsQueryView {
-    id: u64,
+    params: Vec<QueryParam>,
 }
 
 impl GetTaskFieldsQueryView {
     pub fn new(id: u64) -> Self {
-        Self { id }
+        Self {
+            params: vec![QueryParam::I32(id as i32)],
+        }
     }
 
     pub fn id(&self) -> u64 {
-        self.id
+        self.params[0].as_i32() as u64
     }
 }
 
-impl DatabaseQueryView for GetTaskFieldsQueryView {
-    fn get_request(&self) -> String {
-        // La colonne 'custom_fields' est fusionnée avec le nouveau JSON ($2)
-        "SELECT custom_fields FROM tasks WHERE id = $1".to_string()
+impl ApiRequestDto for GetTaskFieldsQueryView {
+    fn query_sql(&self) -> &'static str {
+        "SELECT COALESCE(custom_fields, '{}'::jsonb) FROM tasks WHERE id = $1"
     }
-}
 
-impl Display for GetTaskFieldsQueryView {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.get_request())
-    }
-}
-
-#[derive(Debug, sqlx::FromRow)]
-pub struct CustomeFieldsQueryResultView {
-    custom_fields: Json<HashMap<String, DynamicTaskField>>,
-}
-
-impl CustomeFieldsQueryResultView {
-    pub fn custom_fields(&self) -> &Json<HashMap<String, DynamicTaskField>> {
-        &self.custom_fields
+    fn query_params(&self) -> &[QueryParam] {
+        &self.params
     }
 }
