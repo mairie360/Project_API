@@ -1,10 +1,9 @@
 use actix_web::http::StatusCode;
 use actix_web::{get, web, HttpResponse, Responder, ResponseError};
-use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::state::AppState;
 
-use crate::database::tasks::get_project_tasks::query::get_project_tasks_query;
-use crate::database::tasks::get_project_tasks::view::GetProjectTasksQueryView;
+use crate::database::tasks::get_project_tasks::view::{GetProjectTasksQueryView, Task};
 use crate::endpoints::v1::projects::project_id::tasks::get::view::GetTasksResultView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
@@ -44,19 +43,12 @@ async fn trigger_get_project_tasks(
     state: web::Data<AppState>,
     project_id: u64,
 ) -> Result<GetTasksResultView, GetTasksError> {
-    // get cache
-
-    let pool = match state.db_pool.clone() {
-        Some(pool) => pool,
-        None => return Err(GetTasksError::DatabaseError),
-    };
-
     let view = GetProjectTasksQueryView::new(project_id);
-    let result = get_project_tasks_query(view, pool)
+    let result: Vec<Task> = state
+        .get_smart_db()
+        .fetch_all(&view)
         .await
         .map_err(|_| GetTasksError::DatabaseError)?;
-
-    // update cache
 
     Ok(GetTasksResultView {
         tasks: result.into_iter().map(|t| t.into()).collect(),

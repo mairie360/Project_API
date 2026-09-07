@@ -1,51 +1,39 @@
-use std::fmt::Display;
+use std::collections::HashMap;
 
-use mairie360_api_lib::database::db_interface::DatabaseQueryView;
-use sqlx::types::Json;
+use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
 
 use crate::database::tasks::get_project_tasks::view::DynamicTaskField;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChangeFieldValueQueryView {
-    task_id: u64,
-    custom_fields: Json<std::collections::HashMap<String, DynamicTaskField>>,
+    params: Vec<QueryParam>,
 }
 
 impl ChangeFieldValueQueryView {
-    pub fn new(
-        task_id: u64,
-        custom_fields: Json<std::collections::HashMap<String, DynamicTaskField>>,
-    ) -> Self {
+    pub fn new(task_id: u64, custom_fields: HashMap<String, DynamicTaskField>) -> Self {
         Self {
-            task_id,
-            custom_fields,
+            params: vec![
+                QueryParam::I32(task_id as i32),
+                QueryParam::Text(
+                    serde_json::to_string(&custom_fields).unwrap_or_else(|_| "{}".to_string()),
+                ),
+            ],
         }
     }
 
     pub fn task_id(&self) -> u64 {
-        self.task_id
-    }
-
-    pub fn custom_fields(&self) -> &Json<std::collections::HashMap<String, DynamicTaskField>> {
-        &self.custom_fields
+        self.params[0].as_i32() as u64
     }
 }
 
-impl DatabaseQueryView for ChangeFieldValueQueryView {
-    fn get_request(&self) -> String {
-        "UPDATE tasks
-         SET custom_fields = $2::jsonb
+impl ApiRequestDto for ChangeFieldValueQueryView {
+    fn query_sql(&self) -> &'static str {
+        "UPDATE tasks \
+         SET custom_fields = $2::jsonb \
          WHERE id = $1"
-            .to_string()
     }
-}
 
-impl Display for ChangeFieldValueQueryView {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "ChangeFieldValueQueryView: task_id={}, custom_fields={:?}",
-            self.task_id, self.custom_fields
-        )
+    fn query_params(&self) -> &[QueryParam] {
+        &self.params
     }
 }

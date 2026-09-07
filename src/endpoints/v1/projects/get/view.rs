@@ -21,14 +21,15 @@ impl From<String> for ProjectStatus {
     }
 }
 
-impl ToString for ProjectStatus {
-    fn to_string(&self) -> String {
-        match self {
-            ProjectStatus::Active => "active".to_string(),
-            ProjectStatus::Suspended => "suspended".to_string(),
-            ProjectStatus::Completed => "completed".to_string(),
-            ProjectStatus::Error => "error".to_string(),
-        }
+impl std::fmt::Display for ProjectStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            ProjectStatus::Active => "active",
+            ProjectStatus::Suspended => "suspended",
+            ProjectStatus::Completed => "completed",
+            ProjectStatus::Error => "error",
+        };
+        f.write_str(s)
     }
 }
 

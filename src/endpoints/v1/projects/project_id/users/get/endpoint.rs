@@ -1,9 +1,8 @@
 use actix_web::http::StatusCode;
 use actix_web::{get, web, HttpResponse, Responder, ResponseError};
-use mairie360_api_lib::pool::AppState;
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::state::AppState;
 
-use crate::database::users::get_project_users::query::get_project_users_query;
 use crate::database::users::get_project_users::view::GetProjectUsersQueryView;
 use crate::endpoints::v1::projects::project_id::users::get::view::{
     GetProjectUsersResultView, User,
@@ -46,19 +45,12 @@ async fn trigger_get_project_users(
     state: web::Data<AppState>,
     project_id: u64,
 ) -> Result<GetProjectUsersResultView, GetProjectUsersError> {
-    // get cache
-
-    let pool = match state.db_pool.clone() {
-        Some(pool) => pool,
-        None => return Err(GetProjectUsersError::DatabaseError),
-    };
-
     let view = GetProjectUsersQueryView::new(project_id);
-    let result = get_project_users_query(view, pool)
+    let result: Vec<i32> = state
+        .get_smart_db()
+        .fetch_all(&view)
         .await
         .map_err(|_| GetProjectUsersError::DatabaseError)?;
-
-    // update cache
 
     Ok(GetProjectUsersResultView {
         users: result
