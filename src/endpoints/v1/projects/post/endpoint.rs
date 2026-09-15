@@ -76,6 +76,8 @@ pub async fn create_project(
     let view = view
         .try_into()
         .map_err(|_| CreateProjectError::BadRequest)?;
-    let result = trigger_create_project(state, auth_user.id, view).await?;
-    Ok(HttpResponse::Ok().json(result))
+    let project_id = trigger_create_project(state, auth_user.id, view).await?;
+    Ok(HttpResponse::Ok().json(CreateProjectResultView {
+        project_id: project_id as u64,
+    }))
 }

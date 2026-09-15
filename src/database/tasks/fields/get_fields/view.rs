@@ -27,7 +27,10 @@ impl GetTaskFieldsQueryView {
 
 impl ApiRequestDto for GetTaskFieldsQueryView {
     fn query_sql(&self) -> &'static str {
-        "SELECT COALESCE(custom_fields, '{}'::jsonb) FROM tasks WHERE id = $1"
+        // `fields` (liste ordonnée écrite à la création), `comments` et `history` ne sont pas des champs
+        // indexés par clé : ils sont exclus de la map.
+        "SELECT COALESCE(custom_fields, '{}'::jsonb) - 'fields' - 'comments' - 'history' \
+         FROM tasks WHERE id = $1"
     }
 
     fn query_params(&self) -> &[QueryParam] {

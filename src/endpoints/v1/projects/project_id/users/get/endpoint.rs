@@ -3,7 +3,7 @@ use actix_web::{get, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
-use crate::database::users::get_project_users::view::GetProjectUsersQueryView;
+use crate::database::users::get_project_users::view::{GetProjectUsersQueryView, ProjectMemberRow};
 use crate::endpoints::v1::projects::project_id::users::get::view::{
     GetProjectUsersResultView, User,
 };
@@ -46,17 +46,14 @@ async fn trigger_get_project_users(
     project_id: u64,
 ) -> Result<GetProjectUsersResultView, GetProjectUsersError> {
     let view = GetProjectUsersQueryView::new(project_id);
-    let result: Vec<i32> = state
+    let result: Vec<ProjectMemberRow> = state
         .get_smart_db()
         .fetch_all(&view)
         .await
         .map_err(|_| GetProjectUsersError::DatabaseError)?;
 
     Ok(GetProjectUsersResultView {
-        users: result
-            .into_iter()
-            .map(|user| User { id: user as u64 })
-            .collect(),
+        users: result.into_iter().map(User::from).collect(),
     })
 }
 

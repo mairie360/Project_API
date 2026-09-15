@@ -1,36 +1,33 @@
 use crate::{
     database::tasks::get_project_tasks::view::DynamicTaskField,
-    endpoints::v1::projects::project_id::{
-        get::view::{TaskPriority, TaskStatus},
-        tasks::task_id::patch::endpoint::PatchTaskError,
-    },
+    endpoints::v1::projects::project_id::get::view::{TaskPriority, TaskStatus},
 };
-use actix_web::web;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Deserializer};
 use utoipa::ToSchema;
 
-#[derive(Debug, serde::Deserialize, ToSchema)]
-struct PatchField {
-    id: u64,
-    field_type: DynamicTaskField,
+/// Distingue un champ absent (`None`) d'un champ explicitement `null` (`Some(None)`).
+fn deserialize_present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
-#[derive(Debug, serde::Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct PatchTaskView {
-    name: Option<String>,
-    description: Option<String>,
-    status: Option<TaskStatus>,
-    priority: Option<TaskPriority>,
+    pub name: Option<String>,
+    /// Non persistée : la table `tasks` n'a pas de description.
+    pub description: Option<String>,
+    pub status: Option<TaskStatus>,
+    pub priority: Option<TaskPriority>,
     #[schema(value_type = Option<String>, format = DateTime)]
-    due_date: Option<DateTime<Utc>>,
-    assigned_to: Option<u64>,
-    fields: Option<Vec<PatchField>>,
-}
-
-impl TryFrom<web::Json<PatchTaskView>> for PatchTaskView {
-    type Error = PatchTaskError;
-
-    fn try_from(params: web::Json<PatchTaskView>) -> Result<PatchTaskView, Self::Error> {
-        Ok(params.into_inner())
-    }
+    pub due_date: Option<DateTime<Utc>>,
+    /// Absent : assignation conservée ; `null` : assignation retirée.
+    #[serde(default, deserialize_with = "deserialize_present")]
+    #[schema(value_type = Option<u64>, nullable)]
+    pub assigned_to: Option<Option<u64>>,
+    /// Non persistés par cette opération.
+    pub fields: Option<Vec<DynamicTaskField>>,
 }

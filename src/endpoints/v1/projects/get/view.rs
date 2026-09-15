@@ -2,7 +2,7 @@ use utoipa::ToSchema;
 
 use crate::database::project::get_projects::view::ProjectView;
 
-#[derive(Debug, serde::Serialize, ToSchema)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, ToSchema)]
 pub enum ProjectStatus {
     Active,
     Suspended,

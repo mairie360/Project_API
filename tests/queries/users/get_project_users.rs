@@ -2,7 +2,9 @@ use crate::common::get_smart_db;
 use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::users::add_user_to_project::view::AddUserToProjectQueryView;
-use project_api::database::users::get_project_users::view::GetProjectUsersQueryView;
+use project_api::database::users::get_project_users::view::{
+    GetProjectUsersQueryView, ProjectMemberRow,
+};
 
 #[tokio::test]
 async fn test_get_user_from_project_success() {
@@ -16,7 +18,7 @@ async fn test_get_user_from_project_success() {
     assert!(db.execute(view).await.is_ok());
 
     let view = GetProjectUsersQueryView::new(project_id);
-    let result = db.fetch_all::<i32, _>(&view).await;
+    let result = db.fetch_all::<ProjectMemberRow, _>(&view).await;
 
     assert!(
         result.is_ok(),
@@ -24,11 +26,12 @@ async fn test_get_user_from_project_success() {
         result
     );
     let users = result.unwrap();
-    assert!(
-        !users.is_empty(),
-        "Expected users to be non-empty, got: {:?}",
-        users
-    );
+    assert_eq!(users.len(), 1, "Expected one member, got: {:?}", users);
+    assert_eq!(users[0].id, 2);
+    assert!(users[0]
+        .name
+        .as_deref()
+        .is_some_and(|name| !name.is_empty()));
 }
 
 #[tokio::test]
@@ -40,7 +43,7 @@ async fn test_get_user_from_no_user_project_success() {
     let project_id = db.fetch_scalar::<i32, _>(&view).await.unwrap() as u64;
 
     let view = GetProjectUsersQueryView::new(project_id);
-    let result = db.fetch_all::<i32, _>(&view).await;
+    let result = db.fetch_all::<ProjectMemberRow, _>(&view).await;
 
     assert!(
         result.is_ok(),
@@ -61,7 +64,7 @@ async fn test_get_users_from_project_unknown_project() {
     let db = get_smart_db(host.to_string()).await;
 
     let view = GetProjectUsersQueryView::new(999);
-    let result = db.fetch_all::<i32, _>(&view).await;
+    let result = db.fetch_all::<ProjectMemberRow, _>(&view).await;
 
     assert!(
         result.is_ok(),

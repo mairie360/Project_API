@@ -155,18 +155,21 @@ fn create_task_view_accessors() {
         TaskPriority::High,
         Some(chrono::Utc::now()),
         Some(11),
+        &[],
     );
     assert_eq!(view.project_id(), 3);
     assert_eq!(view.title(), "Ma tache");
-    assert_eq!(view.query_params().len(), 6);
+    assert_eq!(view.query_params().len(), 7);
     assert!(view.query_sql().contains("INSERT INTO tasks"));
 }
 
 #[test]
 fn create_task_view_without_optionals() {
-    let view = CreateTaskQueryView::new(1, "T", TaskStatus::Todo, TaskPriority::Low, None, None);
+    let view =
+        CreateTaskQueryView::new(1, "T", TaskStatus::Todo, TaskPriority::Low, None, None, &[]);
     assert_eq!(view.title(), "T");
-    assert_eq!(view.query_params().len(), 6);
+    assert_eq!(view.query_params().len(), 7);
+    assert_eq!(view.query_params()[6].as_text(), r#"{"fields":[]}"#);
 }
 
 #[test]
@@ -228,29 +231,33 @@ fn get_project_tasks_view_accessors() {
 
 #[test]
 fn patch_task_view_accessors() {
-    let due = chrono::NaiveDate::from_ymd_opt(2024, 1, 2)
+    let due = chrono::DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z")
         .unwrap()
-        .and_hms_opt(3, 4, 5)
-        .unwrap();
+        .with_timezone(&chrono::Utc);
     let view = PatchTaskQueryView::new(
+        4,
         99,
         Some("nouveau titre"),
         Some(TaskStatus::Completed),
         Some(TaskPriority::Medium),
         Some(due),
-        Some(7),
-        None,
+        Some(Some(7)),
     );
     assert_eq!(view.task_id(), 99);
-    assert_eq!(view.query_params().len(), 6);
+    assert_eq!(view.project_id(), 4);
+    assert_eq!(view.query_params().len(), 8);
+    assert!(view.query_params()[6].as_bool());
+    assert_eq!(view.query_params()[7].as_option_i32(), Some(7));
     assert!(view.query_sql().contains("UPDATE tasks SET"));
 }
 
 #[test]
-fn patch_task_view_all_none() {
-    let view = PatchTaskQueryView::new(1, None, None, None, None, None, None);
-    assert_eq!(view.task_id(), 1);
-    assert_eq!(view.query_params().len(), 6);
+fn patch_task_view_distinguishes_absent_and_cleared_assignee() {
+    let absent = PatchTaskQueryView::new(1, 2, None, None, None, None, None);
+    let cleared = PatchTaskQueryView::new(1, 2, None, None, None, None, Some(None));
+    assert!(!absent.query_params()[6].as_bool());
+    assert!(cleared.query_params()[6].as_bool());
+    assert_eq!(cleared.query_params()[7].as_option_i32(), None);
 }
 
 #[test]
@@ -262,6 +269,7 @@ fn task_dto_deserializes_with_all_fields() {
         "priority": "high",
         "created_at": "2024-01-01T00:00:00",
         "assigned_to": 5,
+        "due_date": "2024-02-03T04:05:06+00:00",
         "custom_fields": {
             "col": {"label": "L", "task_type": "date", "fields_options": []}
         }
@@ -273,8 +281,35 @@ fn task_dto_deserializes_with_all_fields() {
     assert_eq!(task.priority(), "high");
     assert_eq!(task.created_at(), Some("2024-01-01T00:00:00"));
     assert_eq!(task.assigned_to(), Some(5));
-    assert_eq!(task.custom_fields().len(), 1);
-    assert_eq!(task.custom_fields()["col"].task_type, FieldType::Date);
+    assert_eq!(
+        task.due_date().map(|d| d.to_rfc3339()),
+        Some("2024-02-03T04:05:06+00:00".to_string())
+    );
+    assert_eq!(task.fields().len(), 1);
+    assert_eq!(task.fields()[0].task_type, FieldType::Date);
+}
+
+#[test]
+fn task_fields_read_the_ordered_list_and_ignore_collaboration_entries() {
+    let task: Task = serde_json::from_str(
+        r#"{"id":3,"title":"T","status":"todo","priority":"low","custom_fields":{
+            "fields":[
+                {"label":"Date","task_type":"date","fields_options":[]},
+                {"label":"Urgent","task_type":"select","fields_options":[]},
+                {"label":"bad"}
+            ],
+            "comments":[{"id":"comment-1"}],
+            "history":[]
+        }}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        task.fields()
+            .iter()
+            .map(|field| field.label.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Date", "Urgent"]
+    );
 }
 
 #[test]
@@ -283,7 +318,8 @@ fn task_dto_deserializes_with_missing_optionals() {
         serde_json::from_str(r#"{"id":2,"title":"T","status":"todo","priority":"low"}"#).unwrap();
     assert_eq!(task.created_at(), None);
     assert_eq!(task.assigned_to(), None);
-    assert!(task.custom_fields().is_empty());
+    assert_eq!(task.due_date(), None);
+    assert!(task.fields().is_empty());
 }
 
 #[test]
@@ -369,9 +405,7 @@ fn get_project_users_view_accessors() {
     let view = GetProjectUsersQueryView::new(15);
     assert_eq!(view.project_id(), 15);
     assert_eq!(view.query_params().len(), 1);
-    assert!(view
-        .query_sql()
-        .contains("FROM project_members WHERE project_id"));
+    assert!(view.query_sql().contains("WHERE pm.project_id = $1"));
 }
 
 #[test]

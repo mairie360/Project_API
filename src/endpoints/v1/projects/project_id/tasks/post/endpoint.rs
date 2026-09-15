@@ -3,7 +3,10 @@ use actix_web::{post, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
-use crate::database::tasks::create_task::view::CreateTaskQueryView;
+use crate::database::tasks::create_task::view::{
+    CreateTaskQueryView, TaskPriority as DbTaskPriority, TaskStatus,
+};
+use crate::endpoints::v1::projects::project_id::get::view::TaskPriority as ApiTaskPriority;
 use crate::endpoints::v1::projects::project_id::tasks::post::view::{
     CreateTaskResultView, CreateTaskView,
 };
@@ -49,13 +52,27 @@ async fn trigger_create_task(
 ) -> Result<CreateTaskResultView, CreateTaskError> {
     let name = view.name().to_string();
 
+    // Statut et priorité facultatifs : valeurs par défaut de la table (todo, medium).
+    let status = view
+        .status()
+        .map(|status| status.to_string().into())
+        .unwrap_or(TaskStatus::Todo);
+    let priority = match view.priority() {
+        Some(ApiTaskPriority::Urgent) => DbTaskPriority::High,
+        Some(priority) => priority.to_string().into(),
+        None => DbTaskPriority::Medium,
+    };
+    if status == TaskStatus::Error || priority == DbTaskPriority::Error {
+        return Err(CreateTaskError::BadRequest);
+    }
     let query_view = CreateTaskQueryView::new(
         project_id,
         &name,
-        view.status().unwrap().to_string().into(),
-        view.priority().unwrap().to_string().into(),
+        status,
+        priority,
         *view.due_date(),
         *view.assigned_to(),
+        view.fields(),
     );
     let result: i32 = state
         .get_smart_db()

@@ -13,7 +13,7 @@ pub struct TaskView {
     pub description: String,
     pub status: TaskStatus,
     pub priority: TaskPriority,
-    #[schema(value_type = String, format = DateTime)]
+    #[schema(value_type = Option<String>, format = DateTime)]
     pub due_date: Option<DateTime<Utc>>,
     pub assigned_to: Option<u64>,
     pub fields: Vec<DynamicTaskField>,
@@ -27,13 +27,9 @@ impl From<Task> for TaskView {
             description: "".to_string(),
             status: task.status().to_string().into(),
             priority: task.priority().to_string().into(),
-            due_date: None,
+            due_date: task.due_date(),
             assigned_to: task.assigned_to().map(|id| id as u64),
-            fields: task
-                .custom_fields()
-                .values()
-                .cloned()
-                .collect::<Vec<DynamicTaskField>>(),
+            fields: task.fields(),
         }
     }
 }

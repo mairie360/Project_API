@@ -1,5 +1,7 @@
 use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
 
+use crate::database::tasks::get_project_tasks::view::DynamicTaskField;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TaskStatus {
     Todo,
@@ -75,6 +77,7 @@ impl CreateTaskQueryView {
         priority: TaskPriority,
         due_date: Option<chrono::DateTime<chrono::Utc>>,
         assigned_to: Option<u64>,
+        fields: &[DynamicTaskField],
     ) -> Self {
         Self {
             params: vec![
@@ -84,6 +87,7 @@ impl CreateTaskQueryView {
                 QueryParam::Text(priority.to_string()),
                 QueryParam::Text(due_date.map(|d| d.to_rfc3339()).unwrap_or_default()),
                 QueryParam::OptionI32(assigned_to.map(|id| id as i32)),
+                QueryParam::Text(serde_json::json!({ "fields": fields }).to_string()),
             ],
         }
     }
@@ -99,8 +103,9 @@ impl CreateTaskQueryView {
 
 impl ApiRequestDto for CreateTaskQueryView {
     fn query_sql(&self) -> &'static str {
-        "INSERT INTO tasks (project_id, title, status, priority, due_date, assigned_to) \
-         VALUES ($1, $2, $3::task_status, $4::task_priority, NULLIF($5, '')::timestamptz, $6) \
+        "INSERT INTO tasks (project_id, title, status, priority, due_date, assigned_to, custom_fields) \
+         VALUES ($1, $2, $3::task_status, $4::task_priority, \
+                 NULLIF($5, '')::timestamptz AT TIME ZONE 'UTC', $6, $7::jsonb) \
          RETURNING id"
     }
 

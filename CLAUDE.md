@@ -79,6 +79,16 @@ The module tree **mirrors the URL path**. Each leaf HTTP method is its own direc
 
 Resources: `project`, `tasks` (+ `tasks/fields`), `users` (project membership). Each operation is a single `view.rs` holding the `XxxQueryView` (`ApiRequestDto` impl, see "Data access" above) and, for reads, the result DTO it deserialises into (`ProjectView`, `Task`, …) deriving `serde::{Serialize, Deserialize}`. Endpoint HTTP DTOs are separate types; the `trigger_*` fn converts between them.
 
+### Visibility and task collaboration
+
+`GET /projects/` and `GET /projects/{project_id}/` only return projects visible to the caller, using the
+`project_visible_to_user_sql!` fragment (`src/database/project/mod.rs`): Admin/Maire see everything, a Responsable
+also sees projects owned by or shared with a member of one of their groups, everyone else sees projects they own
+or are a member of. A project that is not visible answers 404. Write operations do not check visibility (BFF
+Project checks permissions before calling them). Task comments and free history live in `tasks.custom_fields`
+(`comments`, `history`, next to the ordered `fields` list written at creation); status changes come from
+`task_history` (DB trigger).
+
 ### Deployment
 
 `Dockerfile` = multi-stage release build onto `gcr.io/distroless/cc-debian12`. `development.Dockerfile` + `entrypoint.sh` = `cargo watch` dev container used by compose. `nginx.conf` reverse-proxies `:80` → api `:3001`. CI (`.github/workflows/cicd.yml`) just calls the reusable `mairie360/CICD` workflow, which builds/pushes the `project-api` image and runs a Postman collection.

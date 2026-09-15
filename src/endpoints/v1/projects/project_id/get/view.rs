@@ -1,7 +1,10 @@
-use chrono::{DateTime, Utc};
 use utoipa::ToSchema;
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, ToSchema)]
+use crate::endpoints::v1::projects::get::view::ProjetView;
+use crate::endpoints::v1::projects::project_id::tasks::get::view::TaskView;
+use crate::endpoints::v1::projects::project_id::users::get::view::User;
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, ToSchema)]
 pub enum TaskStatus {
     Todo,
     InProgress,
@@ -32,7 +35,7 @@ impl std::fmt::Display for TaskStatus {
     }
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, ToSchema)]
 pub enum TaskPriority {
     Low,
     Medium,
@@ -66,21 +69,10 @@ impl std::fmt::Display for TaskPriority {
     }
 }
 
-#[derive(Debug, serde::Serialize, ToSchema)]
-struct TaskView {
-    pub id: u64,
-    pub title: String,
-    pub description: String,
-    pub status: TaskStatus,
-    pub priority: TaskPriority,
-    #[schema(value_type = String, format = DateTime)]
-    pub due_date: Option<DateTime<Utc>>,
-    pub assigned_to: Option<u64>,
-}
-
+/// Projet visible par l'appelant, avec ses tâches et ses membres.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct GetProjectResultView {
-    pub name: String,
-    pub description: String,
-    tasks: Vec<TaskView>,
+    pub project: ProjetView,
+    pub tasks: Vec<TaskView>,
+    pub users: Vec<User>,
 }

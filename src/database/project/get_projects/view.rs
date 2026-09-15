@@ -1,5 +1,6 @@
 use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
 
+/// Projets visibles par l'utilisateur (cf. `project_visible_to_user_sql!`), du plus récent au plus ancien.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GetProjectsQueryView {
     params: Vec<QueryParam>,
@@ -19,12 +20,15 @@ impl GetProjectsQueryView {
 
 impl ApiRequestDto for GetProjectsQueryView {
     fn query_sql(&self) -> &'static str {
-        "SELECT to_jsonb(t) FROM ( \
-            SELECT DISTINCT p.id, p.title, p.description, p.status \
-            FROM projects p \
-            LEFT JOIN project_members pm ON p.id = pm.project_id \
-            WHERE p.owner_id = $1 OR pm.user_id = $1 \
-         ) t"
+        concat!(
+            "SELECT to_jsonb(t) FROM ( \
+                SELECT p.id, p.title, p.description, p.status \
+                FROM projects p \
+                WHERE ",
+            crate::project_visible_to_user_sql!(),
+            " ORDER BY p.created_at DESC NULLS LAST, p.id DESC \
+             ) t"
+        )
     }
 
     fn query_params(&self) -> &[QueryParam] {
@@ -41,6 +45,15 @@ pub struct ProjectView {
 }
 
 impl ProjectView {
+    pub fn new(id: i32, title: &str, description: Option<&str>, status: &str) -> Self {
+        Self {
+            id,
+            title: title.to_string(),
+            description: description.map(str::to_string),
+            status: status.to_string(),
+        }
+    }
+
     pub fn id(&self) -> i32 {
         self.id
     }
