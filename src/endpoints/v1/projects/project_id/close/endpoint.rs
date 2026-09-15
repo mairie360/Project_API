@@ -61,7 +61,7 @@ async fn trigger_close_project(
 
 #[utoipa::path(
     patch,
-    path = "",
+    path = "close",
     responses(
         (status = 200, description = "Project closed successfully"),
         (status = 400, description = "Bad request"),

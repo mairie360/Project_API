@@ -56,6 +56,7 @@ async fn trigger_remove_user_from_project(
 
 #[utoipa::path(
     delete,
+    path = "",
     params(
         ProjectUserPathParams,
     ),
