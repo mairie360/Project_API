@@ -4,11 +4,14 @@ use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
 use crate::database::project::delete::view::DeleteProjectQueryView;
+use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum DeleteProjectError {
+    Forbidden,
+    NotFound,
     DatabaseError,
     UnknownProject,
 }
@@ -16,6 +19,8 @@ pub enum DeleteProjectError {
 impl std::fmt::Display for DeleteProjectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            DeleteProjectError::Forbidden => write!(f, "Forbidden."),
+            DeleteProjectError::NotFound => write!(f, "Not found."),
             DeleteProjectError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
@@ -29,6 +34,8 @@ impl std::fmt::Display for DeleteProjectError {
 impl ResponseError for DeleteProjectError {
     fn status_code(&self) -> StatusCode {
         match self {
+            DeleteProjectError::Forbidden => StatusCode::FORBIDDEN,
+            DeleteProjectError::NotFound => StatusCode::NOT_FOUND,
             DeleteProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             DeleteProjectError::UnknownProject => StatusCode::BAD_REQUEST,
         }
@@ -72,10 +79,28 @@ async fn trigger_delete_project(
 #[delete("/")]
 pub async fn delete_project(
     state: web::Data<AppState>,
-    _: AuthenticatedUser,
+    auth_user: AuthenticatedUser,
     params: web::Path<ProjectPathParams>,
 ) -> Result<impl Responder, DeleteProjectError> {
+    require_access(
+        &state,
+        auth_user.id,
+        params.project_id(),
+        None,
+        Requirement::ManageProject,
+    )
+    .await?;
     let project_id = params.project_id();
     trigger_delete_project(state, project_id).await?;
     Ok(HttpResponse::NoContent().finish())
+}
+
+impl From<AccessDenied> for DeleteProjectError {
+    fn from(denied: AccessDenied) -> Self {
+        match denied {
+            AccessDenied::NotFound => DeleteProjectError::NotFound,
+            AccessDenied::Forbidden => DeleteProjectError::Forbidden,
+            AccessDenied::DatabaseError => DeleteProjectError::DatabaseError,
+        }
+    }
 }

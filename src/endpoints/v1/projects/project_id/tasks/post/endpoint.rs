@@ -6,6 +6,7 @@ use mairie360_api_lib::state::AppState;
 use crate::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority as DbTaskPriority, TaskStatus,
 };
+use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority as ApiTaskPriority;
 use crate::endpoints::v1::projects::project_id::tasks::post::view::{
     CreateTaskResultView, CreateTaskView,
@@ -14,6 +15,8 @@ use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CreateTaskError {
+    Forbidden,
+    NotFound,
     DatabaseError,
     BadRequest,
 }
@@ -21,6 +24,8 @@ pub enum CreateTaskError {
 impl std::fmt::Display for CreateTaskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            CreateTaskError::Forbidden => write!(f, "Forbidden."),
+            CreateTaskError::NotFound => write!(f, "Not found."),
             CreateTaskError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
@@ -34,6 +39,8 @@ impl std::fmt::Display for CreateTaskError {
 impl ResponseError for CreateTaskError {
     fn status_code(&self) -> StatusCode {
         match self {
+            CreateTaskError::Forbidden => StatusCode::FORBIDDEN,
+            CreateTaskError::NotFound => StatusCode::NOT_FOUND,
             CreateTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             CreateTaskError::BadRequest => StatusCode::BAD_REQUEST,
         }
@@ -111,7 +118,25 @@ pub async fn create_task(
     view: web::Json<CreateTaskView>,
     params: web::Path<ProjectPathParams>,
 ) -> Result<impl Responder, CreateTaskError> {
+    require_access(
+        &state,
+        auth_user.id,
+        params.project_id(),
+        None,
+        Requirement::ManageProject,
+    )
+    .await?;
     let view = view.try_into().map_err(|_| CreateTaskError::BadRequest)?;
     let result = trigger_create_task(state, auth_user.id, params.project_id, view).await?;
     Ok(HttpResponse::Ok().json(result))
+}
+
+impl From<AccessDenied> for CreateTaskError {
+    fn from(denied: AccessDenied) -> Self {
+        match denied {
+            AccessDenied::NotFound => CreateTaskError::NotFound,
+            AccessDenied::Forbidden => CreateTaskError::Forbidden,
+            AccessDenied::DatabaseError => CreateTaskError::DatabaseError,
+        }
+    }
 }

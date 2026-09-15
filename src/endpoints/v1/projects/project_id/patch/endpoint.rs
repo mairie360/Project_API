@@ -5,12 +5,14 @@ use mairie360_api_lib::state::AppState;
 
 use crate::database::project::update::view::UpdateProjectQueryView;
 use crate::database::project::update_status::view::ProjectStatus as DbProjectStatus;
+use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::get::view::ProjectStatus;
 use crate::endpoints::v1::projects::project_id::patch::view::UpdateProjectView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UpdateProjectError {
+    Forbidden,
     BadRequest,
     NotFound,
     DatabaseError,
@@ -19,6 +21,7 @@ pub enum UpdateProjectError {
 impl std::fmt::Display for UpdateProjectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            UpdateProjectError::Forbidden => write!(f, "Forbidden."),
             UpdateProjectError::BadRequest => write!(f, "Bad request."),
             UpdateProjectError::NotFound => write!(f, "Unknown project."),
             UpdateProjectError::DatabaseError => {
@@ -31,6 +34,7 @@ impl std::fmt::Display for UpdateProjectError {
 impl ResponseError for UpdateProjectError {
     fn status_code(&self) -> StatusCode {
         match self {
+            UpdateProjectError::Forbidden => StatusCode::FORBIDDEN,
             UpdateProjectError::BadRequest => StatusCode::BAD_REQUEST,
             UpdateProjectError::NotFound => StatusCode::NOT_FOUND,
             UpdateProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
@@ -99,10 +103,28 @@ async fn trigger_update_project(
 #[patch("/")]
 pub async fn update_project(
     state: web::Data<AppState>,
-    _: AuthenticatedUser,
+    auth_user: AuthenticatedUser,
     params: web::Path<ProjectPathParams>,
     view: web::Json<UpdateProjectView>,
 ) -> Result<impl Responder, UpdateProjectError> {
+    require_access(
+        &state,
+        auth_user.id,
+        params.project_id(),
+        None,
+        Requirement::ManageProject,
+    )
+    .await?;
     trigger_update_project(state, params.project_id(), view.into_inner()).await?;
     Ok(HttpResponse::NoContent().finish())
+}
+
+impl From<AccessDenied> for UpdateProjectError {
+    fn from(denied: AccessDenied) -> Self {
+        match denied {
+            AccessDenied::NotFound => UpdateProjectError::NotFound,
+            AccessDenied::Forbidden => UpdateProjectError::Forbidden,
+            AccessDenied::DatabaseError => UpdateProjectError::DatabaseError,
+        }
+    }
 }

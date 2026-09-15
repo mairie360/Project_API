@@ -6,11 +6,13 @@ use mairie360_api_lib::state::AppState;
 use crate::database::tasks::collaboration::view::{
     GetTaskCollaborationQueryView, TaskCollaborationRow,
 };
+use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::tasks::task_id::collaboration::view::TaskCollaborationView;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GetTaskCollaborationError {
+    Forbidden,
     NotFound,
     DatabaseError,
 }
@@ -18,6 +20,7 @@ pub enum GetTaskCollaborationError {
 impl std::fmt::Display for GetTaskCollaborationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            GetTaskCollaborationError::Forbidden => write!(f, "Forbidden."),
             GetTaskCollaborationError::NotFound => write!(f, "Unknown task."),
             GetTaskCollaborationError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
@@ -29,6 +32,7 @@ impl std::fmt::Display for GetTaskCollaborationError {
 impl ResponseError for GetTaskCollaborationError {
     fn status_code(&self) -> StatusCode {
         match self {
+            GetTaskCollaborationError::Forbidden => StatusCode::FORBIDDEN,
             GetTaskCollaborationError::NotFound => StatusCode::NOT_FOUND,
             GetTaskCollaborationError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -75,10 +79,28 @@ async fn trigger_get_task_collaboration(
 #[get("/collaboration")]
 pub async fn get_task_collaboration(
     state: web::Data<AppState>,
-    _: AuthenticatedUser,
+    auth_user: AuthenticatedUser,
     params: web::Path<TaskPathParams>,
 ) -> Result<impl Responder, GetTaskCollaborationError> {
+    require_access(
+        &state,
+        auth_user.id,
+        params.project_id(),
+        Some(params.task_id()),
+        Requirement::ActOnTask,
+    )
+    .await?;
     let result =
         trigger_get_task_collaboration(state, params.project_id(), params.task_id()).await?;
     Ok(HttpResponse::Ok().json(result))
+}
+
+impl From<AccessDenied> for GetTaskCollaborationError {
+    fn from(denied: AccessDenied) -> Self {
+        match denied {
+            AccessDenied::NotFound => GetTaskCollaborationError::NotFound,
+            AccessDenied::Forbidden => GetTaskCollaborationError::Forbidden,
+            AccessDenied::DatabaseError => GetTaskCollaborationError::DatabaseError,
+        }
+    }
 }

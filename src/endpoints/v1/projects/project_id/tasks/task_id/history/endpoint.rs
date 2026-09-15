@@ -4,11 +4,15 @@ use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
 use crate::database::tasks::collaboration::view::{AppendTaskHistoryQueryView, TaskHistoryEntry};
-use crate::endpoints::v1::projects::project_id::tasks::task_id::history::view::AppendTaskHistoryView;
+use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::project_id::tasks::task_id::history::view::{
+    AppendTaskHistoryView, ALLOWED_HISTORY_ACTIONS,
+};
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppendTaskHistoryError {
+    Forbidden,
     BadRequest,
     NotFound,
     DatabaseError,
@@ -17,6 +21,7 @@ pub enum AppendTaskHistoryError {
 impl std::fmt::Display for AppendTaskHistoryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            AppendTaskHistoryError::Forbidden => write!(f, "Forbidden."),
             AppendTaskHistoryError::BadRequest => write!(f, "Bad request."),
             AppendTaskHistoryError::NotFound => write!(f, "Unknown task."),
             AppendTaskHistoryError::DatabaseError => {
@@ -29,6 +34,7 @@ impl std::fmt::Display for AppendTaskHistoryError {
 impl ResponseError for AppendTaskHistoryError {
     fn status_code(&self) -> StatusCode {
         match self {
+            AppendTaskHistoryError::Forbidden => StatusCode::FORBIDDEN,
             AppendTaskHistoryError::BadRequest => StatusCode::BAD_REQUEST,
             AppendTaskHistoryError::NotFound => StatusCode::NOT_FOUND,
             AppendTaskHistoryError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
@@ -46,7 +52,7 @@ async fn trigger_append_task_history(
     user_id: u64,
     view: AppendTaskHistoryView,
 ) -> Result<TaskHistoryEntry, AppendTaskHistoryError> {
-    if view.action.trim().is_empty() || view.label.trim().is_empty() {
+    if !ALLOWED_HISTORY_ACTIONS.contains(&view.action.trim()) || view.label.trim().is_empty() {
         return Err(AppendTaskHistoryError::BadRequest);
     }
     if view
@@ -101,7 +107,25 @@ pub async fn append_task_history(
     params: web::Path<TaskPathParams>,
     view: web::Json<AppendTaskHistoryView>,
 ) -> Result<impl Responder, AppendTaskHistoryError> {
+    require_access(
+        &state,
+        auth_user.id,
+        params.project_id(),
+        Some(params.task_id()),
+        Requirement::ActOnTask,
+    )
+    .await?;
     let entry =
         trigger_append_task_history(state, &params, auth_user.id, view.into_inner()).await?;
     Ok(HttpResponse::Created().json(entry))
+}
+
+impl From<AccessDenied> for AppendTaskHistoryError {
+    fn from(denied: AccessDenied) -> Self {
+        match denied {
+            AccessDenied::NotFound => AppendTaskHistoryError::NotFound,
+            AccessDenied::Forbidden => AppendTaskHistoryError::Forbidden,
+            AccessDenied::DatabaseError => AppendTaskHistoryError::DatabaseError,
+        }
+    }
 }

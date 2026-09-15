@@ -416,3 +416,19 @@ fn remove_user_from_project_view_accessors() {
     assert_eq!(view.query_params().len(), 2);
     assert!(view.query_sql().contains("DELETE FROM project_members"));
 }
+
+#[test]
+fn patch_task_body_with_only_a_status_is_detected() {
+    use project_api::endpoints::v1::projects::project_id::tasks::task_id::patch::view::PatchTaskView;
+
+    let status_only: PatchTaskView = serde_json::from_str(r#"{"status":"Completed"}"#).unwrap();
+    let with_title: PatchTaskView =
+        serde_json::from_str(r#"{"status":"Completed","name":"Renommée"}"#).unwrap();
+    let clearing_assignee: PatchTaskView =
+        serde_json::from_str(r#"{"status":"Completed","assigned_to":null}"#).unwrap();
+
+    assert!(status_only.only_changes_status());
+    assert!(!with_title.only_changes_status());
+    assert!(!clearing_assignee.only_changes_status());
+    assert_eq!(clearing_assignee.assigned_to, Some(None));
+}

@@ -7,12 +7,14 @@ use crate::database::tasks::create_task::view::{
     TaskPriority as DbTaskPriority, TaskStatus as DbTaskStatus,
 };
 use crate::database::tasks::patch_task::view::PatchTaskQueryView;
+use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::patch::view::PatchTaskView;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PatchTaskError {
+    Forbidden,
     BadRequest,
     NotFound,
     DatabaseError,
@@ -21,6 +23,7 @@ pub enum PatchTaskError {
 impl std::fmt::Display for PatchTaskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            PatchTaskError::Forbidden => write!(f, "Forbidden."),
             PatchTaskError::BadRequest => write!(f, "Bad request."),
             PatchTaskError::NotFound => write!(f, "Unknown task."),
             PatchTaskError::DatabaseError => {
@@ -33,6 +36,7 @@ impl std::fmt::Display for PatchTaskError {
 impl ResponseError for PatchTaskError {
     fn status_code(&self) -> StatusCode {
         match self {
+            PatchTaskError::Forbidden => StatusCode::FORBIDDEN,
             PatchTaskError::BadRequest => StatusCode::BAD_REQUEST,
             PatchTaskError::NotFound => StatusCode::NOT_FOUND,
             PatchTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
@@ -111,16 +115,33 @@ async fn trigger_patch_task(
 #[patch("/")]
 pub async fn patch_task(
     state: web::Data<AppState>,
-    _: AuthenticatedUser,
+    auth_user: AuthenticatedUser,
     params: web::Path<TaskPathParams>,
     view: web::Json<PatchTaskView>,
 ) -> Result<impl Responder, PatchTaskError> {
-    trigger_patch_task(
-        state,
+    let view = view.into_inner();
+    let access = require_access(
+        &state,
+        auth_user.id,
         params.project_id(),
-        params.task_id(),
-        view.into_inner(),
+        Some(params.task_id()),
+        Requirement::ActOnTask,
     )
     .await?;
+    // L'agent assigné qui ne gère pas le projet ne peut modifier que le statut de sa tâche.
+    if !access.can_manage() && !view.only_changes_status() {
+        return Err(PatchTaskError::Forbidden);
+    }
+    trigger_patch_task(state, params.project_id(), params.task_id(), view).await?;
     Ok(HttpResponse::NoContent().finish())
+}
+
+impl From<AccessDenied> for PatchTaskError {
+    fn from(denied: AccessDenied) -> Self {
+        match denied {
+            AccessDenied::NotFound => PatchTaskError::NotFound,
+            AccessDenied::Forbidden => PatchTaskError::Forbidden,
+            AccessDenied::DatabaseError => PatchTaskError::DatabaseError,
+        }
+    }
 }

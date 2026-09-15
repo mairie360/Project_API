@@ -84,8 +84,12 @@ Resources: `project`, `tasks` (+ `tasks/fields`), `users` (project membership). 
 `GET /projects/` and `GET /projects/{project_id}/` only return projects visible to the caller, using the
 `project_visible_to_user_sql!` fragment (`src/database/project/mod.rs`): Admin/Maire see everything, a Responsable
 also sees projects owned by or shared with a member of one of their groups, everyone else sees projects they own
-or are a member of. A project that is not visible answers 404. Write operations do not check visibility (BFF
-Project checks permissions before calling them). Task comments and free history live in `tasks.custom_fields`
+or are a member of. A project that is not visible answers 404. Every operation under `/projects/{project_id}` calls
+`endpoints/v1/projects/access.rs::require_access` (one `ProjectAccessQueryView` query): reads need visibility;
+writes on the project, its tasks and members need visibility plus the Admin/Maire/Responsable role (403
+otherwise); task collaboration and `PATCH` on a task are also open to the task's assignee, who may only change
+the status. Creating a project requires one of those roles. History entries are limited to `task_created`,
+`task_updated` and `status_changed`, always signed by the caller. Task comments and free history live in `tasks.custom_fields`
 (`comments`, `history`, next to the ordered `fields` list written at creation); status changes come from
 `task_history` (DB trigger).
 

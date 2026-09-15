@@ -4,6 +4,7 @@ use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
 use crate::database::tasks::collaboration::view::{AddTaskCommentQueryView, TaskComment};
+use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::tasks::task_id::comments::view::{
     AddTaskCommentView, MAX_COMMENT_LENGTH,
 };
@@ -11,6 +12,7 @@ use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AddTaskCommentError {
+    Forbidden,
     BadRequest,
     NotFound,
     DatabaseError,
@@ -19,6 +21,7 @@ pub enum AddTaskCommentError {
 impl std::fmt::Display for AddTaskCommentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            AddTaskCommentError::Forbidden => write!(f, "Forbidden."),
             AddTaskCommentError::BadRequest => write!(f, "Bad request."),
             AddTaskCommentError::NotFound => write!(f, "Unknown task."),
             AddTaskCommentError::DatabaseError => {
@@ -31,6 +34,7 @@ impl std::fmt::Display for AddTaskCommentError {
 impl ResponseError for AddTaskCommentError {
     fn status_code(&self) -> StatusCode {
         match self {
+            AddTaskCommentError::Forbidden => StatusCode::FORBIDDEN,
             AddTaskCommentError::BadRequest => StatusCode::BAD_REQUEST,
             AddTaskCommentError::NotFound => StatusCode::NOT_FOUND,
             AddTaskCommentError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
@@ -95,6 +99,24 @@ pub async fn add_task_comment(
     params: web::Path<TaskPathParams>,
     view: web::Json<AddTaskCommentView>,
 ) -> Result<impl Responder, AddTaskCommentError> {
+    require_access(
+        &state,
+        auth_user.id,
+        params.project_id(),
+        Some(params.task_id()),
+        Requirement::ActOnTask,
+    )
+    .await?;
     let comment = trigger_add_task_comment(state, &params, auth_user.id, view.into_inner()).await?;
     Ok(HttpResponse::Created().json(comment))
+}
+
+impl From<AccessDenied> for AddTaskCommentError {
+    fn from(denied: AccessDenied) -> Self {
+        match denied {
+            AccessDenied::NotFound => AddTaskCommentError::NotFound,
+            AccessDenied::Forbidden => AddTaskCommentError::Forbidden,
+            AccessDenied::DatabaseError => AddTaskCommentError::DatabaseError,
+        }
+    }
 }

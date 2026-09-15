@@ -31,3 +31,16 @@ pub struct PatchTaskView {
     /// Non persistés par cette opération.
     pub fields: Option<Vec<DynamicTaskField>>,
 }
+
+impl PatchTaskView {
+    /// Vrai si le corps ne modifie que le statut (seule modification permise à l'agent assigné).
+    pub fn only_changes_status(&self) -> bool {
+        self.status.is_some()
+            && self.name.is_none()
+            && self.description.is_none()
+            && self.priority.is_none()
+            && self.due_date.is_none()
+            && self.assigned_to.is_none()
+            && self.fields.is_none()
+    }
+}

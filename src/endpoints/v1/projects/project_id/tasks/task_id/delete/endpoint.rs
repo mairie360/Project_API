@@ -4,11 +4,14 @@ use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
 use crate::database::tasks::delete_task::view::DeleteTaskQueryView;
+use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum DeleteTaskError {
+    Forbidden,
+    NotFound,
     DatabaseError,
     UnknownTask,
 }
@@ -16,6 +19,8 @@ pub enum DeleteTaskError {
 impl std::fmt::Display for DeleteTaskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            DeleteTaskError::Forbidden => write!(f, "Forbidden."),
+            DeleteTaskError::NotFound => write!(f, "Not found."),
             DeleteTaskError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
@@ -29,6 +34,8 @@ impl std::fmt::Display for DeleteTaskError {
 impl ResponseError for DeleteTaskError {
     fn status_code(&self) -> StatusCode {
         match self {
+            DeleteTaskError::Forbidden => StatusCode::FORBIDDEN,
+            DeleteTaskError::NotFound => StatusCode::NOT_FOUND,
             DeleteTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             DeleteTaskError::UnknownTask => StatusCode::BAD_REQUEST,
         }
@@ -73,9 +80,27 @@ async fn trigger_delete_task(
 #[delete("/")]
 pub async fn delete_task(
     state: web::Data<AppState>,
-    _: AuthenticatedUser,
+    auth_user: AuthenticatedUser,
     params: web::Path<TaskPathParams>,
 ) -> Result<impl Responder, DeleteTaskError> {
+    require_access(
+        &state,
+        auth_user.id,
+        params.project_id(),
+        Some(params.task_id()),
+        Requirement::ManageProject,
+    )
+    .await?;
     trigger_delete_task(state, params.project_id(), params.task_id).await?;
     Ok(HttpResponse::NoContent().finish())
+}
+
+impl From<AccessDenied> for DeleteTaskError {
+    fn from(denied: AccessDenied) -> Self {
+        match denied {
+            AccessDenied::NotFound => DeleteTaskError::NotFound,
+            AccessDenied::Forbidden => DeleteTaskError::Forbidden,
+            AccessDenied::DatabaseError => DeleteTaskError::DatabaseError,
+        }
+    }
 }

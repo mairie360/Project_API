@@ -4,10 +4,13 @@ use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
 use crate::database::project::create::view::CreateProjectQueryView;
+use crate::endpoints::v1::projects::access::{require_manager_role, AccessDenied};
 use crate::endpoints::v1::projects::post::view::{CreateProjectResultView, CreateProjectView};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CreateProjectError {
+    Forbidden,
+    NotFound,
     DatabaseError,
     BadRequest,
 }
@@ -15,6 +18,8 @@ pub enum CreateProjectError {
 impl std::fmt::Display for CreateProjectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            CreateProjectError::Forbidden => write!(f, "Forbidden."),
+            CreateProjectError::NotFound => write!(f, "Not found."),
             CreateProjectError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
@@ -28,6 +33,8 @@ impl std::fmt::Display for CreateProjectError {
 impl ResponseError for CreateProjectError {
     fn status_code(&self) -> StatusCode {
         match self {
+            CreateProjectError::Forbidden => StatusCode::FORBIDDEN,
+            CreateProjectError::NotFound => StatusCode::NOT_FOUND,
             CreateProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             CreateProjectError::BadRequest => StatusCode::BAD_REQUEST,
         }
@@ -73,6 +80,7 @@ pub async fn create_project(
     auth_user: AuthenticatedUser,
     view: web::Json<CreateProjectView>,
 ) -> Result<impl Responder, CreateProjectError> {
+    require_manager_role(&state, auth_user.id).await?;
     let view = view
         .try_into()
         .map_err(|_| CreateProjectError::BadRequest)?;
@@ -80,4 +88,14 @@ pub async fn create_project(
     Ok(HttpResponse::Ok().json(CreateProjectResultView {
         project_id: project_id as u64,
     }))
+}
+
+impl From<AccessDenied> for CreateProjectError {
+    fn from(denied: AccessDenied) -> Self {
+        match denied {
+            AccessDenied::NotFound => CreateProjectError::NotFound,
+            AccessDenied::Forbidden => CreateProjectError::Forbidden,
+            AccessDenied::DatabaseError => CreateProjectError::DatabaseError,
+        }
+    }
 }

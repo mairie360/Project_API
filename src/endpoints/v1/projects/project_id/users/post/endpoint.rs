@@ -4,12 +4,15 @@ use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
 use crate::database::users::add_user_to_project::view::AddUserToProjectQueryView;
+use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::users::post::view::AddUserToProjectView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum AddUserToProjectError {
+    Forbidden,
+    NotFound,
     DatabaseError,
     BadRequest,
     UserNotFound,
@@ -18,6 +21,8 @@ pub enum AddUserToProjectError {
 impl std::fmt::Display for AddUserToProjectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            AddUserToProjectError::Forbidden => write!(f, "Forbidden."),
+            AddUserToProjectError::NotFound => write!(f, "Not found."),
             AddUserToProjectError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
@@ -34,6 +39,8 @@ impl std::fmt::Display for AddUserToProjectError {
 impl ResponseError for AddUserToProjectError {
     fn status_code(&self) -> StatusCode {
         match self {
+            AddUserToProjectError::Forbidden => StatusCode::FORBIDDEN,
+            AddUserToProjectError::NotFound => StatusCode::NOT_FOUND,
             AddUserToProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             AddUserToProjectError::BadRequest => StatusCode::BAD_REQUEST,
             AddUserToProjectError::UserNotFound => StatusCode::NOT_FOUND,
@@ -80,13 +87,31 @@ async fn trigger_add_user_to_project(
 #[post("/")]
 pub async fn add_user_to_project(
     state: web::Data<AppState>,
-    _: AuthenticatedUser,
+    auth_user: AuthenticatedUser,
     view: web::Json<AddUserToProjectView>,
     params: web::Path<ProjectPathParams>,
 ) -> Result<impl Responder, AddUserToProjectError> {
+    require_access(
+        &state,
+        auth_user.id,
+        params.project_id(),
+        None,
+        Requirement::ManageProject,
+    )
+    .await?;
     let view = view
         .try_into()
         .map_err(|_| AddUserToProjectError::BadRequest)?;
     trigger_add_user_to_project(state, params.project_id, view).await?;
     Ok(HttpResponse::Ok().finish())
+}
+
+impl From<AccessDenied> for AddUserToProjectError {
+    fn from(denied: AccessDenied) -> Self {
+        match denied {
+            AccessDenied::NotFound => AddUserToProjectError::NotFound,
+            AccessDenied::Forbidden => AddUserToProjectError::Forbidden,
+            AccessDenied::DatabaseError => AddUserToProjectError::DatabaseError,
+        }
+    }
 }
