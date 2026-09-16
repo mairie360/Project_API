@@ -14,8 +14,3 @@ open_api = "run --example generate_openapi"
 
 cov_test = ["llvm-cov", "--workspace", "--ignore-filename-regex", "endpoints|main\\.rs|lib\\.rs", "--fail-under-lines", "60"]
 cov = ["llvm-cov", "--workspace", "--ignore-filename-regex", "endpoints|main\\.rs|lib\\.rs", "--fail-under-lines", "60", "--codecov", "--output-path", "codecov.json"]
-
-# Version des images ghcr.io/mairie360/database et liquibase-migrations utilisées par les tests
-# d'intégration (mairie360_api_lib::test_setup). À garder alignée sur les fichiers docker-compose.
-[env]
-TEST_DB_VERSION = "1.2.0"
