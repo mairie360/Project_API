@@ -34,6 +34,8 @@ impl ApiRequestDto for GetProjectUsersQueryView {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectMemberRow {
+    /// Identifiant Core API du membre.
     pub id: i32,
+    /// Prénom et nom du membre, ou `null` si le nom n'a pas pu être résolu.
     pub name: Option<String>,
 }

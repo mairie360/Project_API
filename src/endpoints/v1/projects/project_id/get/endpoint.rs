@@ -77,10 +77,65 @@ async fn trigger_get_project(
         ProjectPathParams,
     ),
     path = "",
+    summary = "Consulter un projet",
+    description = "Renvoie un projet avec **toutes ses tâches et tous ses membres** en une seule \
+                   requête : c'est l'appel que fait le front pour afficher un tableau de projet, \
+                   plutôt que d'enchaîner `/tasks/` et `/users/`.\n\n\
+                   Il suffit d'être membre du projet. Un projet auquel l'appelant n'a pas accès \
+                   répond `404`, pas `403`.",
     responses(
-        (status = 200, description = "Project retrieved successfully", body = GetProjectResultView),
-        (status = 404, description = "Unknown project or not visible to the caller"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 200,
+            description = "Projet, ses tâches et ses membres.",
+            body = GetProjectResultView,
+            example = json!({
+                "project": { "id": 12, "name": "Réfection de la place du marché", "description": "Travaux de voirie 2026", "status": "Active" },
+                "tasks": [
+                    {
+                        "id": 77,
+                        "title": "Consulter les riverains",
+                        "description": "",
+                        "status": "InProgress",
+                        "priority": "High",
+                        "due_date": "2026-10-15T00:00:00Z",
+                        "assigned_to": 42,
+                        "fields": []
+                    }
+                ],
+                "users": [
+                    { "id": 42, "name": "Jean Dupont" },
+                    { "id": 51, "name": "Amina Bensaïd" }
+                ]
+            })
+        ),
+        (
+            status = 400,
+            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Path deserialize error: can not parse `abc` to a u64")
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 404,
+            description = "Projet inexistant, ou invisible pour l'appelant — les deux cas sont volontairement indiscernables.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Not found.")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
     security(
         ("jwt" = [])

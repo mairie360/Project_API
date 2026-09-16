@@ -88,12 +88,60 @@ async fn trigger_update_project(
         ProjectPathParams,
     ),
     path = "",
-    request_body = UpdateProjectView,
+    summary = "Modifier un projet",
+    description = "Met à jour le nom, la description ou le statut d'un projet. Modification \
+                   partielle : un champ absent ou `null` reste inchangé. Réservé aux responsables \
+                   du projet.\n\n\
+                   Un `name` réduit à des espaces est refusé en `400`, de même que le statut \
+                   `Error`, qui n'est qu'une valeur de repli à la lecture et n'est pas \
+                   assignable.\n\n\
+                   La réponse a un corps vide ; relire le projet avec \
+                   `GET /api/v1/projects/{project_id}/`.",
+    request_body(
+        content = UpdateProjectView,
+        description = "Champs à modifier. Tous facultatifs.",
+        example = json!({ "status": "Suspended" })
+    ),
     responses(
-        (status = 204, description = "Project updated successfully"),
-        (status = 400, description = "Bad request"),
-        (status = 404, description = "Unknown project"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 204,
+            description = "Projet mis à jour. Corps vide.",
+        ),
+        (
+            status = 400,
+            description = "Corps JSON malformé, `project_id` non entier, `name` vide, ou statut `Error`.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Bad request.")
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 403,
+            description = "Projet visible par l'appelant, mais droits insuffisants pour cette opération.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Forbidden.")
+        ),
+        (
+            status = 404,
+            description = "Projet inexistant, ou invisible pour l'appelant.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Unknown project.")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
     security(
         ("jwt" = [])

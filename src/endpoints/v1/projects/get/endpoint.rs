@@ -57,10 +57,37 @@ async fn trigger_get_projects(
 #[utoipa::path(
     get,
     path = "",
+    summary = "Lister ses projets",
+    description = "Renvoie les projets visibles par l'utilisateur porté par le JWT. Vue de \
+                   liste : ni les tâches ni les membres ne sont inclus, il faut passer par \
+                   `GET /api/v1/projects/{project_id}/` pour le détail d'un projet.\n\n\
+                   La liste est vide si l'utilisateur n'a accès à aucun projet.",
     responses(
-        (status = 200, description = "Projects retrieved successfully", body = GetProjectsResultView),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 200,
+            description = "Projets visibles par l'utilisateur connecté.",
+            body = GetProjectsResultView,
+            example = json!({
+                "projects": [
+                    { "id": 12, "name": "Réfection de la place du marché", "description": "Travaux de voirie 2026", "status": "Active" },
+                    { "id": 18, "name": "Numérisation de l'état civil", "description": "", "status": "Completed" }
+                ]
+            })
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
     security(
         ("jwt" = [])

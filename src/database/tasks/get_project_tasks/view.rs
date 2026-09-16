@@ -49,15 +49,23 @@ pub enum FieldType {
 // 2. Les options du champ
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, ToSchema)]
 pub struct FieldOption {
+    /// Valeur de l'option, de type libre selon le `task_type` du champ.
+    #[schema(example = "Oui")]
     pub option: serde_json::Value,
+    /// `true` si l'option est retenue sur cette tâche.
+    #[schema(example = true)]
     pub is_selected: bool,
 }
 
 // 3. Le champ dynamique
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, ToSchema)]
 pub struct DynamicTaskField {
+    /// Libellé du champ personnalisé, tel que défini sur le projet.
+    #[schema(example = "Budget engagé")]
     pub label: String,
+    /// Type du champ. `Unknown` signale un type stocké en base que l'API ne sait pas interpréter.
     pub task_type: FieldType,
+    /// Valeurs proposées et leur état de sélection. Vide pour un champ sans options.
     pub fields_options: Vec<FieldOption>,
 }
 

@@ -97,16 +97,65 @@ async fn trigger_patch_task(
 #[utoipa::path(
     patch,
     path = "",
+    summary = "Modifier une tâche",
+    description = "Met à jour partiellement une tâche : un champ absent reste inchangé.\n\n\
+                   Deux niveaux de droits se superposent ici. Un **responsable du projet** peut \
+                   tout modifier. Un **agent assigné à la tâche** ne peut changer que son statut : \
+                   si son corps de requête touche à autre chose, la réponse est `403`.\n\n\
+                   `assigned_to` distingue l'absence du `null` : omettre le champ conserve \
+                   l'assignation, l'envoyer à `null` la retire.\n\n\
+                   Deux champs sont acceptés mais **non persistés** par cette opération : \
+                   `description`, que la table des tâches ne stocke pas, et `fields`. La réponse a \
+                   un corps vide.",
     responses(
-        (status = 204, description = "Task patched successfully"),
-        (status = 400, description = "Bad request"),
-        (status = 404, description = "Unknown task in this project"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 204,
+            description = "Tâche mise à jour. Corps vide.",
+        ),
+        (
+            status = 400,
+            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Path deserialize error: can not parse `abc` to a u64")
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 403,
+            description = "Droits insuffisants sur la tâche, ou agent assigné tentant de modifier autre chose que le statut.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Forbidden.")
+        ),
+        (
+            status = 404,
+            description = "Projet ou tâche inexistant, ou projet invisible pour l'appelant.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Unknown task.")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
     params(
         TaskPathParams
     ),
-    request_body = PatchTaskView,
+    request_body(
+        content = PatchTaskView,
+        description = "Champs à modifier. Tous facultatifs.",
+        example = json!({ "status": "Completed" })
+    ),
     security(
         ("jwt" = [])
     ),

@@ -70,10 +70,52 @@ async fn trigger_get_project_users(
         ProjectPathParams,
     ),
     path = "",
+    summary = "Lister les membres d'un projet",
+    description = "Renvoie les utilisateurs rattachés au projet, avec leur identifiant Core API et \
+                   leur nom complet. Il suffit d'être membre du projet.\n\n\
+                   `name` peut être `null` si le nom n'a pas pu être résolu côté Core API ; \
+                   l'identifiant, lui, est toujours présent et permet d'aller chercher la fiche \
+                   via `GET /api/v1/user/{id}/` de Core API.",
     responses(
-        (status = 200, description = "Project users retrieved successfully", body = GetProjectUsersResultView),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 200,
+            description = "Membres du projet.",
+            body = GetProjectUsersResultView,
+            example = json!({
+                "users": [
+                    { "id": 42, "name": "Jean Dupont" },
+                    { "id": 51, "name": "Amina Bensaïd" }
+                ]
+            })
+        ),
+        (
+            status = 400,
+            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Path deserialize error: can not parse `abc` to a u64")
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 404,
+            description = "Projet inexistant, ou invisible pour l'appelant — les deux cas sont volontairement indiscernables.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Not found.")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
     security(
         ("jwt" = [])

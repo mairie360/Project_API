@@ -100,12 +100,74 @@ async fn trigger_create_task(
         ProjectPathParams,
     ),
     path = "",
+    summary = "Créer une tâche",
+    description = "Ajoute une tâche au projet. Réservé aux responsables du projet : un agent \
+                   simplement assigné à d'autres tâches ne peut pas en créer.\n\n\
+                   `status` et `priority` sont facultatifs et prennent leur valeur par défaut si \
+                   absents. `fields` porte les champs personnalisés du projet et doit être présent, \
+                   quitte à être un tableau vide.\n\n\
+                   La description passée ici n'est pas persistée : elle est renvoyée dans la \
+                   réponse, mais les lectures ultérieures la donneront vide.",
     responses(
-        (status = 200, description = "Project created successfully", body = CreateTaskResultView),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 200,
+            description = "Tâche créée.",
+            body = CreateTaskResultView,
+            example = json!({
+                "task_id": 77,
+                "name": "Consulter les riverains",
+                "description": "Réunion publique à organiser avant le 15 octobre"
+            })
+        ),
+        (
+            status = 400,
+            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Path deserialize error: can not parse `abc` to a u64")
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 403,
+            description = "Projet visible par l'appelant, mais droits insuffisants pour cette opération.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Forbidden.")
+        ),
+        (
+            status = 404,
+            description = "Projet inexistant, ou invisible pour l'appelant — les deux cas sont volontairement indiscernables.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Not found.")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
-    request_body = CreateTaskView,
+    request_body(
+        content = CreateTaskView,
+        description = "Définition de la tâche. `fields` est obligatoire, même vide.",
+        example = json!({
+            "name": "Consulter les riverains",
+            "description": "Réunion publique à organiser avant le 15 octobre",
+            "due_date": "2026-10-15T00:00:00Z",
+            "status": "Todo",
+            "priority": "High",
+            "assigned_to": 42,
+            "fields": []
+        })
+    ),
     security(
         ("jwt" = [])
     ),

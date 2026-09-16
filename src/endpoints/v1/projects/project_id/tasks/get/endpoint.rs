@@ -68,10 +68,65 @@ async fn trigger_get_project_tasks(
         ProjectPathParams,
     ),
     path = "",
+    summary = "Lister les tâches d'un projet",
+    description = "Renvoie toutes les tâches du projet, avec leur statut, leur priorité, leur \
+                   échéance, leur agent assigné et leurs champs personnalisés. Il suffit d'être \
+                   membre du projet.\n\n\
+                   `GET /api/v1/projects/{project_id}/` renvoie déjà ces mêmes tâches avec le \
+                   projet et ses membres : cet endpoint sert à rafraîchir la seule liste des \
+                   tâches.\n\n\
+                   Le champ `description` est toujours une chaîne vide : la table des tâches n'en \
+                   stocke pas.",
     responses(
-        (status = 200, description = "Tasks retrieved successfully", body = GetTasksResultView),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 200,
+            description = "Tâches du projet. Vide si le projet n'en a aucune.",
+            body = GetTasksResultView,
+            example = json!({
+                "tasks": [
+                    {
+                        "id": 77,
+                        "title": "Consulter les riverains",
+                        "description": "",
+                        "status": "InProgress",
+                        "priority": "High",
+                        "due_date": "2026-10-15T00:00:00Z",
+                        "assigned_to": 42,
+                        "fields": [
+                            { "label": "Budget engagé", "task_type": "Number", "fields_options": [] }
+                        ]
+                    }
+                ]
+            })
+        ),
+        (
+            status = 400,
+            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Path deserialize error: can not parse `abc` to a u64")
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 404,
+            description = "Projet inexistant, ou invisible pour l'appelant — les deux cas sont volontairement indiscernables.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Not found.")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
     security(
         ("jwt" = [])

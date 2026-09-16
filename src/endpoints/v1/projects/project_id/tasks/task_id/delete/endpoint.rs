@@ -64,10 +64,52 @@ async fn trigger_delete_task(
 #[utoipa::path(
     delete,
     path = "",
+    summary = "Supprimer une tâche",
+    description = "Supprime définitivement une tâche, avec ses commentaires et son historique. \
+                   Réservé aux responsables du projet : un agent assigné à la tâche ne peut pas la \
+                   supprimer, seulement changer son statut.\n\n\
+                   Opération idempotente une fois les droits validés : supprimer une tâche déjà \
+                   absente de la base répond également `204`.",
     responses(
-        (status = 204, description = "Task deleted successfully"),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 204,
+            description = "Tâche supprimée. Corps vide.",
+        ),
+        (
+            status = 400,
+            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Path deserialize error: can not parse `abc` to a u64")
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 403,
+            description = "Projet visible par l'appelant, mais droits insuffisants pour cette opération.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Forbidden.")
+        ),
+        (
+            status = 404,
+            description = "Projet ou tâche inexistant, ou projet invisible pour l'appelant. Une tâche appartenant à un autre projet est traitée comme absente.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Unknown task.")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
     params(
         TaskPathParams

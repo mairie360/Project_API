@@ -77,15 +77,69 @@ async fn trigger_add_task_comment(
 #[utoipa::path(
     post,
     path = "comments",
+    summary = "Commenter une tâche",
+    description = "Ajoute un commentaire au fil de discussion d'une tâche. Ouvert aux responsables \
+                   du projet et à l'agent assigné à la tâche.\n\n\
+                   Le message est nettoyé de ses espaces de bord, puis doit contenir entre 1 et \
+                   2000 caractères : un message vide ou trop long est refusé en `400`.\n\n\
+                   L'auteur est déduit du JWT, jamais du corps. Le commentaire créé est renvoyé \
+                   avec son identifiant et sa date, et apparaît ensuite dans \
+                   `GET …/tasks/{task_id}/collaboration`.",
     params(
         TaskPathParams
     ),
-    request_body = AddTaskCommentView,
+    request_body(
+        content = AddTaskCommentView,
+        description = "Texte du commentaire.",
+        example = json!({ "message": "La réunion publique est calée au 3 octobre." })
+    ),
     responses(
-        (status = 201, description = "Comment added", body = TaskComment),
-        (status = 400, description = "Bad request"),
-        (status = 404, description = "Unknown task in this project"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 201,
+            description = "Commentaire ajouté.",
+            body = TaskComment,
+            example = json!({
+                "id": "c-1",
+                "message": "La réunion publique est calée au 3 octobre.",
+                "author": { "id": "user-42", "name": "Jean Dupont" },
+                "createdAt": "2026-09-14T09:12:00Z"
+            })
+        ),
+        (
+            status = 400,
+            description = "Corps JSON malformé, segment d'URL non entier, ou message vide ou de plus de 2000 caractères.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Bad request.")
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 403,
+            description = "Ni responsable du projet, ni agent assigné à la tâche.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Forbidden.")
+        ),
+        (
+            status = 404,
+            description = "Projet ou tâche inexistant, ou projet invisible pour l'appelant.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Unknown task.")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
     security(
         ("jwt" = [])

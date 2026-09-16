@@ -85,15 +85,75 @@ async fn trigger_append_task_history(
 #[utoipa::path(
     post,
     path = "history",
+    summary = "Ajouter une entrée d'historique à une tâche",
+    description = "Ajoute une entrée au journal d'activité d'une tâche. Ouvert aux responsables du \
+                   projet et à l'agent assigné à la tâche.\n\n\
+                   Sert à tracer une action métier que l'API ne détecte pas d'elle-même. Les \
+                   changements de statut, eux, sont déjà journalisés automatiquement par \
+                   `PATCH …/tasks/{task_id}/` : les redéclarer ici créerait un doublon.\n\n\
+                   `action` est une chaîne libre ; les valeurs attendues par les fronts sont \
+                   `task_created`, `task_updated` et `status_changed`. L'auteur est déduit du JWT.",
     params(
         TaskPathParams
     ),
-    request_body = AppendTaskHistoryView,
+    request_body(
+        content = AppendTaskHistoryView,
+        description = "Entrée à journaliser.",
+        example = json!({
+            "action": "task_updated",
+            "label": "Budget révisé après consultation",
+            "changes": { "budget": { "from": 12000, "to": 15500 } }
+        })
+    ),
     responses(
-        (status = 201, description = "History entry added", body = TaskHistoryEntry),
-        (status = 400, description = "Bad request"),
-        (status = 404, description = "Unknown task in this project"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 201,
+            description = "Entrée ajoutée à l'historique.",
+            body = TaskHistoryEntry,
+            example = json!({
+                "id": "h-4",
+                "action": "task_updated",
+                "label": "Budget révisé après consultation",
+                "author": { "id": "user-42", "name": "Jean Dupont" },
+                "createdAt": "2026-09-16T11:30:00Z",
+                "changes": { "budget": { "from": 12000, "to": 15500 } }
+            })
+        ),
+        (
+            status = 400,
+            description = "Corps JSON malformé, segment d'URL non entier, ou champ obligatoire absent ou vide.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Bad request.")
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 403,
+            description = "Ni responsable du projet, ni agent assigné à la tâche.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Forbidden.")
+        ),
+        (
+            status = 404,
+            description = "Projet ou tâche inexistant, ou projet invisible pour l'appelant.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Unknown task.")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
     security(
         ("jwt" = [])

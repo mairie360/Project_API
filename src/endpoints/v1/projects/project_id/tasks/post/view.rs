@@ -12,13 +12,24 @@ use crate::{
 
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct CreateTaskView {
+    /// Intitulé de la tâche. Obligatoire.
+    #[schema(example = "Consulter les riverains")]
     name: String,
+    /// Description. Renvoyée dans la réponse mais **non persistée** : les lectures ultérieures
+    /// la donneront vide.
+    #[schema(example = "Réunion publique à organiser avant le 15 octobre")]
     description: Option<String>,
-    #[schema(value_type = Option<String>, format = DateTime)]
+    /// Échéance. Facultative.
+    #[schema(value_type = Option<String>, format = DateTime, example = "2026-10-15T00:00:00Z")]
     due_date: Option<DateTime<Utc>>,
+    /// Statut initial. Absent, la base applique sa valeur par défaut.
     status: Option<TaskStatus>,
+    /// Priorité initiale. Absente, la base applique sa valeur par défaut.
     priority: Option<TaskPriority>,
+    /// Identifiant Core API de l'agent à assigner. Facultatif.
+    #[schema(example = 42)]
     assigned_to: Option<u64>,
+    /// Champs personnalisés. Obligatoire, quitte à être un tableau vide.
     fields: Vec<DynamicTaskField>,
 }
 
@@ -74,7 +85,13 @@ impl TryFrom<web::Json<CreateTaskView>> for CreateTaskView {
 
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct CreateTaskResultView {
+    /// Identifiant attribué à la tâche créée.
+    #[schema(example = 77)]
     pub task_id: u64,
+    /// Intitulé enregistré.
+    #[schema(example = "Consulter les riverains")]
     pub name: String,
+    /// Description telle qu'envoyée. Elle n'est pas persistée et ne sera pas relue.
+    #[schema(example = "Réunion publique à organiser avant le 15 octobre")]
     pub description: Option<String>,
 }

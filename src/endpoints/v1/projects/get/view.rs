@@ -4,6 +4,7 @@ use crate::database::project::get_projects::view::ProjectView;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, ToSchema)]
 pub enum ProjectStatus {
+    /// Projet en cours.
     Active,
     Suspended,
     Completed,
@@ -35,9 +36,17 @@ impl std::fmt::Display for ProjectStatus {
 
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct ProjetView {
+    /// Identifiant du projet, à réutiliser dans `/api/v1/projects/{project_id}/`.
+    #[schema(example = 12)]
     pub id: u64,
+    /// Nom du projet.
+    #[schema(example = "Réfection de la place du marché")]
     pub name: String,
+    /// Description du projet. Chaîne vide s'il n'en a pas — jamais `null`.
+    #[schema(example = "Travaux de voirie 2026")]
     pub description: String,
+    /// Statut courant. `Error` signale une valeur en base que l'API ne sait pas interpréter ;
+    /// ce n'est pas un statut assignable.
     pub status: ProjectStatus,
 }
 
@@ -54,5 +63,6 @@ impl From<ProjectView> for ProjetView {
 
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct GetProjectsResultView {
+    /// Projets visibles par l'utilisateur connecté. Vide s'il n'a accès à aucun projet.
     pub projects: Vec<ProjetView>,
 }

@@ -73,12 +73,57 @@ async fn trigger_add_user_to_project(
         ProjectPathParams,
     ),
     path = "",
+    summary = "Ajouter un membre à un projet",
+    description = "Rattache un utilisateur au projet, qui apparaît dès lors dans ses \
+                   `GET /api/v1/projects/`. Réservé aux responsables du projet.\n\n\
+                   L'identifiant attendu est celui du compte dans Core API, tel que le renvoie son \
+                   annuaire `GET /api/v1/user/`. La réponse a un corps vide.",
     responses(
-        (status = 200, description = "User added to project successfully"),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 200,
+            description = "Utilisateur rattaché au projet. Corps vide.",
+        ),
+        (
+            status = 400,
+            description = "Corps JSON malformé, `project_id` non entier, ou champ `user_id` absent.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Json deserialize error: missing field `user_id`")
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 403,
+            description = "Projet visible par l'appelant, mais droits insuffisants pour cette opération.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Forbidden.")
+        ),
+        (
+            status = 404,
+            description = "Projet inexistant, ou invisible pour l'appelant — les deux cas sont volontairement indiscernables.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Not found.")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
-    request_body = AddUserToProjectView,
+    request_body(
+        content = AddUserToProjectView,
+        description = "Identifiant Core API de l'utilisateur à rattacher.",
+        example = json!({ "user_id": 42 })
+    ),
     security(
         ("jwt" = [])
     ),

@@ -5,6 +5,9 @@ use crate::endpoints::v1::projects::project_id::users::post::endpoint::AddUserTo
 
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct AddUserToProjectView {
+    /// Identifiant Core API de l'utilisateur à rattacher, tel que le renvoie
+    /// `GET /api/v1/user/` de Core API.
+    #[schema(example = 42)]
     pub user_id: u64,
 }
 

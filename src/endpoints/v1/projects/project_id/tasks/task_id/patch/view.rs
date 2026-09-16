@@ -17,12 +17,17 @@ where
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PatchTaskView {
+    /// Nouvel intitulé. Absent pour ne pas y toucher. Interdit à l'agent assigné non gestionnaire.
+    #[schema(example = "Consulter les riverains et les commerçants")]
     pub name: Option<String>,
     /// Non persistée : la table `tasks` n'a pas de description.
     pub description: Option<String>,
+    /// Nouveau statut. Seul champ qu'un agent assigné non gestionnaire a le droit de modifier.
     pub status: Option<TaskStatus>,
+    /// Nouvelle priorité. Interdite à l'agent assigné non gestionnaire.
     pub priority: Option<TaskPriority>,
-    #[schema(value_type = Option<String>, format = DateTime)]
+    /// Nouvelle échéance. Interdite à l'agent assigné non gestionnaire.
+    #[schema(value_type = Option<String>, format = DateTime, example = "2026-10-15T00:00:00Z")]
     pub due_date: Option<DateTime<Utc>>,
     /// Absent : assignation conservée ; `null` : assignation retirée.
     #[serde(default, deserialize_with = "deserialize_present")]

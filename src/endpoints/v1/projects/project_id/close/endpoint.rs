@@ -69,10 +69,53 @@ async fn trigger_close_project(
 #[utoipa::path(
     patch,
     path = "close",
+    summary = "Clôturer un projet",
+    description = "Bascule le statut du projet à `Completed`. Raccourci sur \
+                   `PATCH /api/v1/projects/{project_id}/` avec `{\"status\": \"Completed\"}`, \
+                   réservé aux responsables du projet.\n\n\
+                   Opération idempotente : clôturer un projet déjà clôturé répond également `200`. \
+                   La réponse a un corps vide. Pour rouvrir un projet, repasser par le `PATCH` \
+                   avec un autre statut.",
     responses(
-        (status = 200, description = "Project closed successfully"),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 200,
+            description = "Projet clôturé, ou déjà clôturé. Corps vide.",
+        ),
+        (
+            status = 400,
+            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Path deserialize error: can not parse `abc` to a u64")
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 403,
+            description = "Projet visible par l'appelant, mais droits insuffisants pour cette opération.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Forbidden.")
+        ),
+        (
+            status = 404,
+            description = "Projet inexistant, ou invisible pour l'appelant — les deux cas sont volontairement indiscernables.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Not found.")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
     params(
         ProjectPathParams

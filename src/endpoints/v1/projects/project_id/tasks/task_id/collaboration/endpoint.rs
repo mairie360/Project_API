@@ -63,13 +63,80 @@ async fn trigger_get_task_collaboration(
 #[utoipa::path(
     get,
     path = "collaboration",
+    summary = "Consulter les commentaires et l'historique d'une tâche",
+    description = "Renvoie en une requête le fil de discussion et le journal d'activité d'une \
+                   tâche. Ouvert aux responsables du projet et à l'agent assigné à la tâche.\n\n\
+                   Les deux listes sont triées en sens inverse l'une de l'autre : `comments` va du \
+                   plus ancien au plus récent (ordre de lecture d'une discussion), `history` du \
+                   plus récent au plus ancien (ordre d'un journal).\n\n\
+                   `history` mélange deux sources : les entrées ajoutées via \
+                   `POST /api/v1/projects/{project_id}/tasks/{task_id}/history`, et les changements \
+                   de statut enregistrés automatiquement, reconnaissables à leur `action` valant \
+                   `status_changed` et à leur `id` préfixé par `status-`.",
     params(
         TaskPathParams
     ),
     responses(
-        (status = 200, description = "Task comments and history", body = TaskCollaborationView),
-        (status = 404, description = "Unknown task in this project"),
-        (status = 500, description = "Internal server error")
+        (
+            status = 200,
+            description = "Commentaires et historique de la tâche.",
+            body = TaskCollaborationView,
+            example = json!({
+                "comments": [
+                    {
+                        "id": "c-1",
+                        "message": "La réunion publique est calée au 3 octobre.",
+                        "author": { "id": "user-42", "name": "Jean Dupont" },
+                        "createdAt": "2026-09-14T09:12:00Z"
+                    }
+                ],
+                "history": [
+                    {
+                        "id": "status-8",
+                        "action": "status_changed",
+                        "label": "Statut modifié : todo → in_progress",
+                        "author": { "id": "user-42", "name": "Jean Dupont" },
+                        "createdAt": "2026-09-15T10:04:00Z",
+                        "changes": { "status": { "from": "todo", "to": "in_progress" } }
+                    }
+                ]
+            })
+        ),
+        (
+            status = 400,
+            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Path deserialize error: can not parse `abc` to a u64")
+        ),
+        (
+            status = 401,
+            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Jeton expiré")
+        ),
+        (
+            status = 403,
+            description = "Ni responsable du projet, ni agent assigné à la tâche.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Forbidden.")
+        ),
+        (
+            status = 404,
+            description = "Projet ou tâche inexistant, ou projet invisible pour l'appelant.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Unknown task.")
+        ),
+        (
+            status = 500,
+            description = "Erreur de base de données.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("An error occurred while accessing the database.")
+        ),
     ),
     security(
         ("jwt" = [])

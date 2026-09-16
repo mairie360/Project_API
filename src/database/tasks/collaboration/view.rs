@@ -72,29 +72,51 @@ pub struct TaskCollaborationRow {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CollaborationAuthor {
+    /// Identifiant de l'auteur, préfixé par `user-`, ou `system` pour une entrée automatique.
+    #[schema(example = "user-42")]
     pub id: String,
+    /// Nom affiché de l'auteur, ou `Système` pour une entrée automatique.
+    #[schema(example = "Jean Dupont")]
     pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskComment {
+    /// Identifiant du commentaire.
+    #[schema(example = "c-1")]
     pub id: String,
+    /// Texte du commentaire.
+    #[schema(example = "La réunion publique est calée au 3 octobre.")]
     pub message: String,
+    /// Auteur du commentaire, déduit du JWT au moment de l'écriture.
     pub author: CollaborationAuthor,
+    /// Date de publication, au format ISO 8601.
     #[serde(rename = "createdAt")]
+    #[schema(format = DateTime, example = "2026-09-14T09:12:00Z")]
     pub created_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct TaskHistoryEntry {
+    /// Identifiant de l'entrée. Un changement de statut journalisé automatiquement porte un
+    /// identifiant préfixé par `status-`.
+    #[schema(example = "status-8")]
     pub id: String,
+    /// Type d'action. `status_changed` désigne une entrée produite automatiquement.
+    #[schema(example = "status_changed")]
     pub action: String,
+    /// Libellé lisible de l'action.
+    #[schema(example = "Statut modifié : todo → in_progress")]
     pub label: String,
+    /// Auteur de l'action, ou `Système` pour une entrée automatique.
     pub author: CollaborationAuthor,
+    /// Date de l'action, au format ISO 8601.
     #[serde(rename = "createdAt")]
+    #[schema(format = DateTime, example = "2026-09-15T10:04:00Z")]
     pub created_at: String,
+    /// Détail des modifications, absent si l'entrée n'en porte pas.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Option<Object>)]
+    #[schema(value_type = Option<Object>, example = json!({ "status": { "from": "todo", "to": "in_progress" } }))]
     pub changes: Option<serde_json::Value>,
 }
 
