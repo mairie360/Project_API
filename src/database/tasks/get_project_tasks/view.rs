@@ -36,6 +36,8 @@ impl ApiRequestDto for GetProjectTasksQueryView {
     }
 }
 
+/// Type d'un champ personnalisé de tâche : `Date`, `Checkbox` ou `Select`.
+/// `Unknown` signale un type stocké en base que l'API ne sait pas interpréter.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, Copy, ToSchema)]
 #[serde(rename_all = "lowercase")] // Magique : transforme "Date" en "date" dans le JSON
 pub enum FieldType {
@@ -47,6 +49,7 @@ pub enum FieldType {
 }
 
 // 2. Les options du champ
+/// Valeur proposée par un champ personnalisé, et son état sur la tâche.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, ToSchema)]
 pub struct FieldOption {
     /// Valeur de l'option, de type libre selon le `task_type` du champ.
@@ -58,6 +61,7 @@ pub struct FieldOption {
 }
 
 // 3. Le champ dynamique
+/// Champ personnalisé défini sur le projet, avec ses valeurs pour la tâche.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, ToSchema)]
 pub struct DynamicTaskField {
     /// Libellé du champ personnalisé, tel que défini sur le projet.

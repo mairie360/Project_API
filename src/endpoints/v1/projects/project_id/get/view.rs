@@ -4,6 +4,8 @@ use crate::endpoints::v1::projects::get::view::ProjetView;
 use crate::endpoints::v1::projects::project_id::tasks::get::view::TaskView;
 use crate::endpoints::v1::projects::project_id::users::get::view::User;
 
+/// Statut d'une tâche : `Todo` (à faire), `InProgress` (en cours) ou `Completed` (terminée).
+/// `Error` n'est jamais assignable : il signale à la lecture une valeur en base inconnue.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, ToSchema)]
 pub enum TaskStatus {
     Todo,
@@ -35,6 +37,8 @@ impl std::fmt::Display for TaskStatus {
     }
 }
 
+/// Priorité d'une tâche : `Low`, `Medium`, `High` ou `Urgent`.
+/// `Error` n'est jamais assignable : il signale à la lecture une valeur en base inconnue.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, ToSchema)]
 pub enum TaskPriority {
     Low,

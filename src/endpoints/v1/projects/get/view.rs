@@ -2,6 +2,8 @@ use utoipa::ToSchema;
 
 use crate::database::project::get_projects::view::ProjectView;
 
+/// Statut d'un projet : `Active` (en cours), `Suspended` (suspendu) ou `Completed` (terminé).
+/// `Error` n'est jamais assignable : il signale à la lecture une valeur en base inconnue.
 #[derive(Debug, serde::Serialize, serde::Deserialize, ToSchema)]
 pub enum ProjectStatus {
     /// Projet en cours.
@@ -34,6 +36,7 @@ impl std::fmt::Display for ProjectStatus {
     }
 }
 
+/// Projet, tel que listé ou consulté.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct ProjetView {
     /// Identifiant du projet, à réutiliser dans `/api/v1/projects/{project_id}/`.
@@ -61,6 +64,7 @@ impl From<ProjectView> for ProjetView {
     }
 }
 
+/// Projets visibles par l'utilisateur connecté.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct GetProjectsResultView {
     /// Projets visibles par l'utilisateur connecté. Vide s'il n'a accès à aucun projet.

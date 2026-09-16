@@ -6,9 +6,13 @@ pub mod patch;
 pub mod tasks;
 pub mod users;
 
+/// Paramètres de chemin des routes d'un projet.
 #[derive(serde::Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
 #[into_params(parameter_in = Path)]
 pub struct ProjectPathParams {
+    /// Identifiant du projet.
+    #[param(example = 12)]
+    #[schema(example = 12)]
     project_id: u64,
 }
 

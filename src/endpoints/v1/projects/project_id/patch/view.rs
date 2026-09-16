@@ -2,6 +2,7 @@ use utoipa::ToSchema;
 
 use crate::endpoints::v1::projects::get::view::ProjectStatus;
 
+/// Modification partielle d'un projet : seuls les champs fournis sont mis à jour.
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct UpdateProjectView {
     /// Nouveau nom. Absent ou `null` pour ne pas y toucher ; ne peut pas être réduit à des espaces.

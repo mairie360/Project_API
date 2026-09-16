@@ -3,6 +3,7 @@ use utoipa::ToSchema;
 
 use crate::endpoints::v1::projects::post::endpoint::CreateProjectError;
 
+/// Projet à créer ; l'appelant en devient responsable.
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct CreateProjectView {
     /// Nom du projet. Obligatoire.
@@ -47,6 +48,7 @@ impl TryFrom<web::Json<CreateProjectView>> for CreateProjectView {
     }
 }
 
+/// Projet créé.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct CreateProjectResultView {
     /// Identifiant attribué au projet créé.

@@ -10,6 +10,7 @@ use crate::{
     },
 };
 
+/// Tâche à créer dans le projet du chemin.
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct CreateTaskView {
     /// Intitulé de la tâche. Obligatoire.
@@ -83,6 +84,7 @@ impl TryFrom<web::Json<CreateTaskView>> for CreateTaskView {
     }
 }
 
+/// Tâche créée.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct CreateTaskResultView {
     /// Identifiant attribué à la tâche créée.
