@@ -1,3 +1,5 @@
+pub mod fixtures;
+
 use mairie360_api_lib::database::db_interface::Database;
 use mairie360_api_lib::redis::redis_interface::Redis;
 use mairie360_api_lib::smart_db::SmartDatabase;

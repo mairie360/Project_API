@@ -2,6 +2,7 @@ pub mod close;
 pub mod delete;
 pub mod doc;
 pub mod get;
+pub mod patch;
 pub mod tasks;
 pub mod users;
 
@@ -23,8 +24,9 @@ impl ProjectPathParams {
 
 pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
     cfg.service(
-        actix_web::web::scope("/projects")
-            // .service(get::endpoint::get_project)
+        actix_web::web::scope("/{project_id}")
+            .service(get::endpoint::get_project)
+            .service(patch::endpoint::update_project)
             .service(close::endpoint::close_project)
             .service(delete::endpoint::delete_project)
             .configure(tasks::config)

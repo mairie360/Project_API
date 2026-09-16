@@ -21,6 +21,7 @@ async fn test_delete_task_success() {
         TaskPriority::Medium,
         Some(chrono::Utc::now()),
         Some(1),
+        &[],
     );
     let task_id = db.fetch_scalar::<i32, _>(&view).await.unwrap() as u64;
 

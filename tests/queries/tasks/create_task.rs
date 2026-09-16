@@ -32,6 +32,7 @@ async fn assert_task_created(
         priority,
         due_date,
         assigned_to,
+        &[],
     );
     let result = db.fetch_scalar::<i32, _>(&view).await;
 
@@ -112,6 +113,7 @@ async fn test_create_task_status_error_error() {
         TaskPriority::Medium,
         Some(chrono::Utc::now()),
         Some(1),
+        &[],
     );
     let result = db.fetch_scalar::<i32, _>(&view).await;
 
@@ -219,6 +221,7 @@ async fn test_create_task_unknown_project() {
         TaskPriority::High,
         Some(chrono::Utc::now()),
         Some(1),
+        &[],
     );
     let result = db.fetch_scalar::<i32, _>(&view).await;
 
@@ -242,6 +245,7 @@ async fn test_create_task_unknown_owner() {
         TaskPriority::High,
         Some(chrono::Utc::now()),
         Some(999),
+        &[],
     );
     let result = db.fetch_scalar::<i32, _>(&view).await;
 
@@ -264,6 +268,7 @@ async fn test_create_task_unknown_project_and_owner() {
         TaskPriority::High,
         Some(chrono::Utc::now()),
         Some(999),
+        &[],
     );
     let result = db.fetch_scalar::<i32, _>(&view).await;
 

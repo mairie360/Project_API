@@ -54,6 +54,7 @@ async fn test_get_tasks_success() {
             priority,
             due_date,
             assigned_to,
+            &[],
         );
         let result = db.fetch_scalar::<i32, _>(&view).await;
         assert!(

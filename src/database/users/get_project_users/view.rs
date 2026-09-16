@@ -19,10 +19,23 @@ impl GetProjectUsersQueryView {
 
 impl ApiRequestDto for GetProjectUsersQueryView {
     fn query_sql(&self) -> &'static str {
-        "SELECT to_jsonb(user_id) FROM project_members WHERE project_id = $1"
+        "SELECT to_jsonb(t) FROM ( \
+            SELECT u.id, NULLIF(concat_ws(' ', u.first_name, u.last_name), '') AS name \
+            FROM project_members pm JOIN users u ON u.id = pm.user_id \
+            WHERE pm.project_id = $1 \
+            ORDER BY u.last_name, u.first_name, u.id \
+         ) t"
     }
 
     fn query_params(&self) -> &[QueryParam] {
         &self.params
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectMemberRow {
+    /// Identifiant Core API du membre.
+    pub id: i32,
+    /// Prénom et nom du membre, ou `null` si le nom n'a pas pu être résolu.
+    pub name: Option<String>,
 }

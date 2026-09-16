@@ -22,6 +22,7 @@ async fn create_task(db: &SmartDatabase) -> u64 {
         TaskPriority::Medium,
         Some(chrono::Utc::now()),
         Some(1),
+        &[],
     );
     db.fetch_scalar::<i32, _>(&view).await.unwrap() as u64
 }

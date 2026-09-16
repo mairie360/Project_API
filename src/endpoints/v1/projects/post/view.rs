@@ -5,8 +5,14 @@ use crate::endpoints::v1::projects::post::endpoint::CreateProjectError;
 
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct CreateProjectView {
+    /// Nom du projet. Obligatoire.
+    #[schema(example = "Réfection de la place du marché")]
     name: String,
+    /// Description du projet. Facultative.
+    #[schema(example = "Travaux de voirie 2026")]
     description: Option<String>,
+    /// Groupe Core API dont tous les membres obtiennent l'accès au projet. Facultatif.
+    #[schema(example = 3)]
     group_id: Option<u64>,
     // template_id: Option<u64>, ToDo
 }
@@ -43,5 +49,7 @@ impl TryFrom<web::Json<CreateProjectView>> for CreateProjectView {
 
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct CreateProjectResultView {
+    /// Identifiant attribué au projet créé.
+    #[schema(example = 12)]
     pub project_id: u64,
 }
