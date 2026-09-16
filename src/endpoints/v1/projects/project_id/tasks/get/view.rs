@@ -6,6 +6,7 @@ use crate::{
     endpoints::v1::projects::project_id::get::view::{TaskPriority, TaskStatus},
 };
 
+/// Tâche d'un projet.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct TaskView {
     /// Identifiant de la tâche.
@@ -46,6 +47,7 @@ impl From<Task> for TaskView {
     }
 }
 
+/// Tâches d'un projet.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct GetTasksResultView {
     /// Tâches du projet. Vide si le projet n'en a aucune.

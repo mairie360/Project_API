@@ -3,6 +3,7 @@ use utoipa::ToSchema;
 
 use crate::endpoints::v1::projects::project_id::users::post::endpoint::AddUserToProjectError;
 
+/// Utilisateur à rattacher au projet du chemin.
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct AddUserToProjectView {
     /// Identifiant Core API de l'utilisateur à rattacher, tel que le renvoie

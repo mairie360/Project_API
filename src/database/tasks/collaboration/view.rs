@@ -70,6 +70,7 @@ pub struct TaskCollaborationRow {
     pub status_changes: Vec<StatusChangeRow>,
 }
 
+/// Auteur d'un commentaire ou d'une entrée d'historique de tâche.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CollaborationAuthor {
     /// Identifiant de l'auteur, préfixé par `user-`, ou `system` pour une entrée automatique.
@@ -80,6 +81,7 @@ pub struct CollaborationAuthor {
     pub name: String,
 }
 
+/// Commentaire publié sur une tâche.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskComment {
     /// Identifiant du commentaire.
@@ -96,6 +98,7 @@ pub struct TaskComment {
     pub created_at: String,
 }
 
+/// Entrée du journal d'activité d'une tâche.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct TaskHistoryEntry {
     /// Identifiant de l'entrée. Un changement de statut journalisé automatiquement porte un

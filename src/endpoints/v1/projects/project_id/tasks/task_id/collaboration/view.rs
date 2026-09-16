@@ -4,6 +4,7 @@ use crate::database::tasks::collaboration::view::{
     CollaborationAuthor, StatusChangeRow, TaskCollaborationRow, TaskComment, TaskHistoryEntry,
 };
 
+/// Fil de collaboration d'une tâche : commentaires et historique.
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize, ToSchema)]
 pub struct TaskCollaborationView {
     /// Commentaires, du plus ancien au plus récent.

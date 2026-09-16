@@ -1,5 +1,6 @@
 use utoipa::ToSchema;
 
+/// Entrée à ajouter au journal d'activité d'une tâche.
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct AppendTaskHistoryView {
     /// Type d'action. Chaîne libre ; les fronts attendent `task_created`, `task_updated`

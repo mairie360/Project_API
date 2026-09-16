@@ -15,12 +15,14 @@ where
     Option::<T>::deserialize(deserializer).map(Some)
 }
 
+/// Modification partielle d'une tâche : seuls les champs fournis sont mis à jour.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PatchTaskView {
     /// Nouvel intitulé. Absent pour ne pas y toucher. Interdit à l'agent assigné non gestionnaire.
     #[schema(example = "Consulter les riverains et les commerçants")]
     pub name: Option<String>,
     /// Non persistée : la table `tasks` n'a pas de description.
+    #[schema(example = "Réunion publique avec les riverains")]
     pub description: Option<String>,
     /// Nouveau statut. Seul champ qu'un agent assigné non gestionnaire a le droit de modifier.
     pub status: Option<TaskStatus>,
@@ -31,7 +33,7 @@ pub struct PatchTaskView {
     pub due_date: Option<DateTime<Utc>>,
     /// Absent : assignation conservée ; `null` : assignation retirée.
     #[serde(default, deserialize_with = "deserialize_present")]
-    #[schema(value_type = Option<u64>, nullable)]
+    #[schema(value_type = Option<u64>, nullable, example = 42)]
     pub assigned_to: Option<Option<u64>>,
     /// Non persistés par cette opération.
     pub fields: Option<Vec<DynamicTaskField>>,
