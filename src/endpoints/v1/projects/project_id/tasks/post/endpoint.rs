@@ -1,5 +1,7 @@
 use actix_web::http::StatusCode;
 use actix_web::{post, web, HttpResponse, Responder, ResponseError};
+use mairie360_api_lib::database::error::DbError;
+use mairie360_api_lib::error::ApiLibError;
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
@@ -12,6 +14,7 @@ use crate::endpoints::v1::projects::project_id::tasks::post::view::{
     CreateTaskResultView, CreateTaskView,
 };
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
+use crate::endpoints::validation::ValidatedJson;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CreateTaskError {
@@ -19,6 +22,7 @@ pub enum CreateTaskError {
     NotFound,
     DatabaseError,
     BadRequest,
+    UnknownAssignee,
 }
 
 impl std::fmt::Display for CreateTaskError {
@@ -29,6 +33,7 @@ impl std::fmt::Display for CreateTaskError {
             CreateTaskError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
+            CreateTaskError::UnknownAssignee => write!(f, "`assigned_to` does not match any user."),
             CreateTaskError::BadRequest => {
                 write!(f, "Bad request.")
             }
@@ -42,6 +47,7 @@ impl ResponseError for CreateTaskError {
             CreateTaskError::Forbidden => StatusCode::FORBIDDEN,
             CreateTaskError::NotFound => StatusCode::NOT_FOUND,
             CreateTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
+            CreateTaskError::UnknownAssignee => StatusCode::BAD_REQUEST,
             CreateTaskError::BadRequest => StatusCode::BAD_REQUEST,
         }
     }
@@ -85,7 +91,12 @@ async fn trigger_create_task(
         .get_smart_db()
         .fetch_scalar::<i32, _>(&query_view)
         .await
-        .map_err(|_| CreateTaskError::DatabaseError)?;
+        .map_err(|e| match e {
+            ApiLibError::Database(DbError::ForeignKeyViolation(_)) => {
+                CreateTaskError::UnknownAssignee
+            }
+            _ => CreateTaskError::DatabaseError,
+        })?;
 
     Ok(CreateTaskResultView {
         task_id: result as u64,
@@ -121,10 +132,10 @@ async fn trigger_create_task(
         ),
         (
             status = 400,
-            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            description = "A URL segment is not an integer, malformed JSON body, `assigned_to` that does not match any user, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character, no `<` or `>`; `description` at most 5000 characters, no `<` or `>`, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of `<`, `>` and control characters.",
             body = String,
             content_type = "text/plain",
-            example = json!("Path deserialize error: can not parse `abc` to a u64")
+            example = json!("`assigned_to` does not match any user.")
         ),
         (
             status = 401,
@@ -177,7 +188,7 @@ async fn trigger_create_task(
 pub async fn create_task(
     state: web::Data<AppState>,
     auth_user: AuthenticatedUser,
-    view: web::Json<CreateTaskView>,
+    view: ValidatedJson<CreateTaskView>,
     params: web::Path<ProjectPathParams>,
 ) -> Result<impl Responder, CreateTaskError> {
     require_access(
@@ -188,7 +199,7 @@ pub async fn create_task(
         Requirement::ManageProject,
     )
     .await?;
-    let view = view.try_into().map_err(|_| CreateTaskError::BadRequest)?;
+    let view = view.into_inner();
     let result = trigger_create_task(state, auth_user.id, params.project_id, view).await?;
     Ok(HttpResponse::Ok().json(result))
 }

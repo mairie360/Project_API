@@ -9,6 +9,7 @@ use crate::endpoints::v1::projects::project_id::tasks::task_id::comments::view::
     AddTaskCommentView, MAX_COMMENT_LENGTH,
 };
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
+use crate::endpoints::validation::ValidatedJson;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AddTaskCommentError {
@@ -107,10 +108,10 @@ async fn trigger_add_task_comment(
         ),
         (
             status = 400,
-            description = "Corps JSON malformé, segment d'URL non entier, ou message vide ou de plus de 2000 caractères.",
+            description = "Malformed JSON body, URL segment not an integer, or `message` empty, longer than 2000 characters, containing `<` / `>` or a control character other than line breaks and tabs.",
             body = String,
             content_type = "text/plain",
-            example = json!("Bad request.")
+            example = json!("Invalid `message`: must not contain `<` or `>`")
         ),
         (
             status = 401,
@@ -151,7 +152,7 @@ pub async fn add_task_comment(
     state: web::Data<AppState>,
     auth_user: AuthenticatedUser,
     params: web::Path<TaskPathParams>,
-    view: web::Json<AddTaskCommentView>,
+    view: ValidatedJson<AddTaskCommentView>,
 ) -> Result<impl Responder, AddTaskCommentError> {
     require_access(
         &state,

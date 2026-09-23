@@ -1,5 +1,7 @@
 use actix_web::http::StatusCode;
 use actix_web::{post, web, HttpResponse, Responder, ResponseError};
+use mairie360_api_lib::database::error::DbError;
+use mairie360_api_lib::error::ApiLibError;
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
@@ -16,6 +18,7 @@ pub enum AddUserToProjectError {
     DatabaseError,
     BadRequest,
     UserNotFound,
+    AlreadyMember,
 }
 
 impl std::fmt::Display for AddUserToProjectError {
@@ -32,6 +35,9 @@ impl std::fmt::Display for AddUserToProjectError {
             AddUserToProjectError::UserNotFound => {
                 write!(f, "User not found.")
             }
+            AddUserToProjectError::AlreadyMember => {
+                write!(f, "The user is already a member of this project.")
+            }
         }
     }
 }
@@ -44,6 +50,7 @@ impl ResponseError for AddUserToProjectError {
             AddUserToProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             AddUserToProjectError::BadRequest => StatusCode::BAD_REQUEST,
             AddUserToProjectError::UserNotFound => StatusCode::NOT_FOUND,
+            AddUserToProjectError::AlreadyMember => StatusCode::CONFLICT,
         }
     }
 
@@ -62,7 +69,15 @@ async fn trigger_add_user_to_project(
         .get_smart_db()
         .execute(query_view)
         .await
-        .map_err(|_| AddUserToProjectError::DatabaseError)?;
+        .map_err(|e| match e {
+            ApiLibError::Database(DbError::ForeignKeyViolation(_)) => {
+                AddUserToProjectError::UserNotFound
+            }
+            ApiLibError::Database(DbError::UniqueViolation(_)) => {
+                AddUserToProjectError::AlreadyMember
+            }
+            _ => AddUserToProjectError::DatabaseError,
+        })?;
 
     Ok(())
 }
@@ -106,10 +121,17 @@ async fn trigger_add_user_to_project(
         ),
         (
             status = 404,
-            description = "Projet inexistant, ou invisible pour l'appelant — les deux cas sont volontairement indiscernables.",
+            description = "Project not found or not visible to the caller (both cases are deliberately indistinguishable, `Not found.`), or `user_id` does not match any user (`User not found.`).",
             body = String,
             content_type = "text/plain",
             example = json!("Not found.")
+        ),
+        (
+            status = 409,
+            description = "The user is already a member of the project.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("The user is already a member of this project.")
         ),
         (
             status = 500,

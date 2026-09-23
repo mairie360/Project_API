@@ -6,13 +6,13 @@ use mairie360_api_lib::state::AppState;
 use crate::database::project::create::view::CreateProjectQueryView;
 use crate::endpoints::v1::projects::access::{require_manager_role, AccessDenied};
 use crate::endpoints::v1::projects::post::view::{CreateProjectResultView, CreateProjectView};
+use crate::endpoints::validation::ValidatedJson;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CreateProjectError {
     Forbidden,
     NotFound,
     DatabaseError,
-    BadRequest,
 }
 
 impl std::fmt::Display for CreateProjectError {
@@ -22,9 +22,6 @@ impl std::fmt::Display for CreateProjectError {
             CreateProjectError::NotFound => write!(f, "Not found."),
             CreateProjectError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
-            }
-            CreateProjectError::BadRequest => {
-                write!(f, "Bad request.")
             }
         }
     }
@@ -36,7 +33,6 @@ impl ResponseError for CreateProjectError {
             CreateProjectError::Forbidden => StatusCode::FORBIDDEN,
             CreateProjectError::NotFound => StatusCode::NOT_FOUND,
             CreateProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
-            CreateProjectError::BadRequest => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -79,10 +75,10 @@ async fn trigger_create_project(
         ),
         (
             status = 400,
-            description = "Corps JSON malformé ou champ `name` absent.",
+            description = "Malformed JSON body, missing `name`, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character, no `<` or `>`; `description` at most 5000 characters, no `<` or `>`, no control character other than line breaks and tabs. The body names the first invalid field.",
             body = String,
             content_type = "text/plain",
-            example = json!("Json deserialize error: missing field `name`")
+            example = json!("Invalid `name`: must not contain `<` or `>`")
         ),
         (
             status = 401,
@@ -124,12 +120,10 @@ async fn trigger_create_project(
 pub async fn create_project(
     state: web::Data<AppState>,
     auth_user: AuthenticatedUser,
-    view: web::Json<CreateProjectView>,
+    view: ValidatedJson<CreateProjectView>,
 ) -> Result<impl Responder, CreateProjectError> {
     require_manager_role(&state, auth_user.id).await?;
-    let view = view
-        .try_into()
-        .map_err(|_| CreateProjectError::BadRequest)?;
+    let view = view.into_inner();
     let project_id = trigger_create_project(state, auth_user.id, view).await?;
     Ok(HttpResponse::Ok().json(CreateProjectResultView {
         project_id: project_id as u64,

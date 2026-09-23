@@ -9,6 +9,7 @@ use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requi
 use crate::endpoints::v1::projects::get::view::ProjectStatus;
 use crate::endpoints::v1::projects::project_id::patch::view::UpdateProjectView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
+use crate::endpoints::validation::ValidatedJson;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UpdateProjectError {
@@ -109,10 +110,10 @@ async fn trigger_update_project(
         ),
         (
             status = 400,
-            description = "Corps JSON malformé, `project_id` non entier, `name` vide, ou statut `Error`.",
+            description = "Malformed JSON body, `project_id` not an integer, `name` empty, `Error` status, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character, no `<` or `>`; `description` at most 5000 characters, no `<` or `>`, no control character other than line breaks and tabs.",
             body = String,
             content_type = "text/plain",
-            example = json!("Bad request.")
+            example = json!("Invalid `name`: must be at most 255 characters")
         ),
         (
             status = 401,
@@ -153,7 +154,7 @@ pub async fn update_project(
     state: web::Data<AppState>,
     auth_user: AuthenticatedUser,
     params: web::Path<ProjectPathParams>,
-    view: web::Json<UpdateProjectView>,
+    view: ValidatedJson<UpdateProjectView>,
 ) -> Result<impl Responder, UpdateProjectError> {
     require_access(
         &state,

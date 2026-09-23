@@ -58,9 +58,23 @@ End-to-end tests (what CI runs on `main` after the dev release, needs Docker + G
 
 ```bash
 ./integration_test.sh    # docker-compose-integration.yml: full stack + newman replaying tests/postman/collection.json
-./security_test.sh       # docker-compose-security.yml: full stack + ZAP scan
+./security_test.sh       # docker-compose-security.yml: full stack + ZAP scan of /api-docs/openapi.json
 ./performance_test.sh    # docker-compose-performance.yml: full stack + k6 (load-test.js)
 ```
+
+The ZAP scan is authenticated: `security-scan` injects a static admin JWT (`sub=1`, signed with
+`JWT_SECRET=b"secret"`, see the comment in `docker-compose-security.yml`) on every request, waits for the `seeder`
+service (`init-test.sql`: plain `User` accounts 2 and 3, user 1 is the Admin created by liquibase) and fails on any
+alert not set to `IGNORE` / `OUTOFSCOPE` in `.zap/rules.tsv` (no `-I`). `-O http://project:3001` is required: the
+spec's `servers` are unreachable from the ZAP container. Keep `rules.tsv` identical in every API. The scan fuzzes
+every field, so a `500` (value too long, NUL byte, unmapped constraint violation) or a `<script>` echoed back fails
+the job: validate inputs, don't silence the alert.
+
+Request bodies with text fields are extracted with `endpoints::validation::ValidatedJson` instead of `web::Json`:
+the view implements `Validate` (length matching the Postgres column, no control character, no `<` / `>` in names,
+descriptions and labels) and an invalid value answers `400` naming the field before the handler runs. Document the
+rules in the view's `#[schema]` and the handler's `400` response. Map constraint violations of the lib's `DbError`
+(`ForeignKeyViolation`, `UniqueViolation`) to `4xx` instead of `500`.
 
 `tests/postman/collection.json` is a Postman v2.1 collection (importable in the app) and
 `tests/postman/environment.json` its variables; the compose file overrides `baseUrl` with `--env-var` so the

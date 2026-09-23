@@ -1,5 +1,7 @@
 use actix_web::http::StatusCode;
 use actix_web::{patch, web, HttpResponse, Responder, ResponseError};
+use mairie360_api_lib::database::error::DbError;
+use mairie360_api_lib::error::ApiLibError;
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
@@ -11,6 +13,7 @@ use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requi
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::patch::view::PatchTaskView;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
+use crate::endpoints::validation::ValidatedJson;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PatchTaskError {
@@ -18,6 +21,7 @@ pub enum PatchTaskError {
     BadRequest,
     NotFound,
     DatabaseError,
+    UnknownAssignee,
 }
 
 impl std::fmt::Display for PatchTaskError {
@@ -29,6 +33,7 @@ impl std::fmt::Display for PatchTaskError {
             PatchTaskError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
+            PatchTaskError::UnknownAssignee => write!(f, "`assigned_to` does not match any user."),
         }
     }
 }
@@ -40,6 +45,7 @@ impl ResponseError for PatchTaskError {
             PatchTaskError::BadRequest => StatusCode::BAD_REQUEST,
             PatchTaskError::NotFound => StatusCode::NOT_FOUND,
             PatchTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
+            PatchTaskError::UnknownAssignee => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -85,7 +91,12 @@ async fn trigger_patch_task(
             view.assigned_to,
         ))
         .await
-        .map_err(|_| PatchTaskError::DatabaseError)?;
+        .map_err(|e| match e {
+            ApiLibError::Database(DbError::ForeignKeyViolation(_)) => {
+                PatchTaskError::UnknownAssignee
+            }
+            _ => PatchTaskError::DatabaseError,
+        })?;
 
     if updated {
         Ok(())
@@ -114,10 +125,10 @@ async fn trigger_patch_task(
         ),
         (
             status = 400,
-            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            description = "A URL segment is not an integer, malformed JSON body, `assigned_to` that does not match any user, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character, no `<` or `>`; `description` at most 5000 characters, no `<` or `>`, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of `<`, `>` and control characters.",
             body = String,
             content_type = "text/plain",
-            example = json!("Path deserialize error: can not parse `abc` to a u64")
+            example = json!("`assigned_to` does not match any user.")
         ),
         (
             status = 401,
@@ -166,7 +177,7 @@ pub async fn patch_task(
     state: web::Data<AppState>,
     auth_user: AuthenticatedUser,
     params: web::Path<TaskPathParams>,
-    view: web::Json<PatchTaskView>,
+    view: ValidatedJson<PatchTaskView>,
 ) -> Result<impl Responder, PatchTaskError> {
     let view = view.into_inner();
     let access = require_access(
