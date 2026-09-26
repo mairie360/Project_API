@@ -1,3 +1,7 @@
+use crate::endpoints::validation::{
+    check_description, check_json, check_label, check_optional, Validate, ValidationError,
+    MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
+};
 use crate::{
     database::tasks::get_project_tasks::view::DynamicTaskField,
     endpoints::v1::projects::project_id::get::view::{TaskPriority, TaskStatus},
@@ -19,10 +23,14 @@ where
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PatchTaskView {
     /// Nouvel intitulé. Absent pour ne pas y toucher. Interdit à l'agent assigné non gestionnaire.
-    #[schema(example = "Consulter les riverains et les commerçants")]
+    #[schema(
+        min_length = 1,
+        max_length = 255,
+        example = "Consulter les riverains et les commerçants"
+    )]
     pub name: Option<String>,
     /// Non persistée : la table `tasks` n'a pas de description.
-    #[schema(example = "Réunion publique avec les riverains")]
+    #[schema(max_length = 5000, example = "Réunion publique avec les riverains")]
     pub description: Option<String>,
     /// Nouveau statut. Seul champ qu'un agent assigné non gestionnaire a le droit de modifier.
     pub status: Option<TaskStatus>,
@@ -49,5 +57,23 @@ impl PatchTaskView {
             && self.due_date.is_none()
             && self.assigned_to.is_none()
             && self.fields.is_none()
+    }
+}
+
+impl Validate for PatchTaskView {
+    fn validate(&self) -> Result<(), ValidationError> {
+        check_optional(self.name.as_deref(), |name| {
+            check_label("name", name.trim(), MAX_TITLE_LENGTH)
+        })?;
+        check_optional(self.description.as_deref(), |description| {
+            check_description("description", description, MAX_DESCRIPTION_LENGTH)
+        })?;
+        for field in self.fields.iter().flatten() {
+            check_label("fields.label", &field.label, MAX_TITLE_LENGTH)?;
+            for option in &field.fields_options {
+                check_json("fields.fields_options.option", &option.option)?;
+            }
+        }
+        Ok(())
     }
 }

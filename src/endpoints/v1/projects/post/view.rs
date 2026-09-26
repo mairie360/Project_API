@@ -1,16 +1,22 @@
-use actix_web::web;
 use utoipa::ToSchema;
 
-use crate::endpoints::v1::projects::post::endpoint::CreateProjectError;
+use crate::endpoints::validation::{
+    check_description, check_label, check_optional, Validate, ValidationError,
+    MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
+};
 
 /// Projet à créer ; l'appelant en devient responsable.
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct CreateProjectView {
     /// Nom du projet. Obligatoire.
-    #[schema(example = "Réfection de la place du marché")]
+    #[schema(
+        min_length = 1,
+        max_length = 255,
+        example = "Réfection de la place du marché"
+    )]
     name: String,
     /// Description du projet. Facultative.
-    #[schema(example = "Travaux de voirie 2026")]
+    #[schema(max_length = 5000, example = "Travaux de voirie 2026")]
     description: Option<String>,
     /// Groupe Core API dont tous les membres obtiennent l'accès au projet. Facultatif.
     #[schema(example = 3)]
@@ -40,18 +46,19 @@ impl CreateProjectView {
     }
 }
 
-impl TryFrom<web::Json<CreateProjectView>> for CreateProjectView {
-    type Error = CreateProjectError;
-
-    fn try_from(params: web::Json<CreateProjectView>) -> Result<CreateProjectView, Self::Error> {
-        Ok(params.into_inner())
-    }
-}
-
 /// Projet créé.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct CreateProjectResultView {
     /// Identifiant attribué au projet créé.
     #[schema(example = 12)]
     pub project_id: u64,
+}
+
+impl Validate for CreateProjectView {
+    fn validate(&self) -> Result<(), ValidationError> {
+        check_label("name", &self.name, MAX_TITLE_LENGTH)?;
+        check_optional(self.description.as_deref(), |description| {
+            check_description("description", description, MAX_DESCRIPTION_LENGTH)
+        })
+    }
 }

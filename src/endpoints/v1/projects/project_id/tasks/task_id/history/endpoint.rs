@@ -9,6 +9,7 @@ use crate::endpoints::v1::projects::project_id::tasks::task_id::history::view::{
     AppendTaskHistoryView, ALLOWED_HISTORY_ACTIONS,
 };
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
+use crate::endpoints::validation::ValidatedJson;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppendTaskHistoryError {
@@ -121,10 +122,10 @@ async fn trigger_append_task_history(
         ),
         (
             status = 400,
-            description = "Corps JSON malformé, segment d'URL non entier, ou champ obligatoire absent ou vide.",
+            description = "Malformed JSON body, URL segment not an integer, missing or empty field, `action` not allowed or longer than 64 characters, `label` longer than 255 characters or containing `<` / `>` / control characters, or a `changes` string or key containing `<`, `>` or control characters.",
             body = String,
             content_type = "text/plain",
-            example = json!("Bad request.")
+            example = json!("Invalid `label`: must not contain `<` or `>`")
         ),
         (
             status = 401,
@@ -165,7 +166,7 @@ pub async fn append_task_history(
     state: web::Data<AppState>,
     auth_user: AuthenticatedUser,
     params: web::Path<TaskPathParams>,
-    view: web::Json<AppendTaskHistoryView>,
+    view: ValidatedJson<AppendTaskHistoryView>,
 ) -> Result<impl Responder, AppendTaskHistoryError> {
     require_access(
         &state,
