@@ -38,13 +38,17 @@ pub fn unique_suffix() -> String {
     format!("{nanos}{}", COUNTER.fetch_add(1, Ordering::Relaxed))
 }
 
-/// Crée un utilisateur (avec un rôle si `role` est fourni) et renvoie son identifiant.
+/// Syntactically valid argon2id PHC string: `users.password` rejects anything else since database 1.3.0
+/// (`chk_users_password_hashed`). Fixture users never log in, so the hash does not need to verify.
+const FIXTURE_PASSWORD_HASH: &str = "$argon2id$v=19$m=16,t=2,p=1$dGVzdHNhbHQ$dGVzdGhhc2g";
+
+/// Creates a user (with a role if `role` is given) and returns its id.
 pub async fn create_user(db: &SmartDatabase, first_name: &str, role: Option<&str>) -> u64 {
     let suffix = unique_suffix();
     let id: i32 = db
         .fetch_scalar(&fixture(format!(
             "INSERT INTO users (first_name, last_name, email, password) \
-             VALUES ('{first_name}', 'Test', '{}.{suffix}@project-api.test', 'password') RETURNING id",
+             VALUES ('{first_name}', 'Test', '{}.{suffix}@project-api.test', '{FIXTURE_PASSWORD_HASH}') RETURNING id",
             first_name.to_lowercase()
         )))
         .await
