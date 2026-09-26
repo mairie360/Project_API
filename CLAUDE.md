@@ -75,6 +75,18 @@ spec's `servers` are unreachable from the ZAP container. Keep `rules.tsv` identi
 every field, so a `500` (value too long, NUL byte, unmapped constraint violation) or a `<script>` echoed back fails
 the job: validate inputs, don't silence the alert.
 
+Both the ZAP and k6 stacks carry the OpenAPI coverage gate (MAIR-194) from mairie360/CICD `tests/`, available as
+`cicd-repo/` (checked out by CI, cloned by the scripts at the pinned `cicd_version` otherwise, override with
+`CICD_VERSION`; gitignored). ZAP runs with `--hook zap_hooks.py` and fails when an operation of the served spec was
+never reached, or when an operation declaring `security(("jwt" = []))` only got 401/403. `load-test.js` is built on
+`coverage.js` and covers every operation (MAIR-195): GET handlers run in the `reads` scenario (20 VUs) against a
+project created in `setup()`, the other methods in the `writes` scenario (2 VUs), each handler creating and deleting
+its own project/task so they are order-independent; one `p(95)` threshold per `op` tag (200 ms reads, 500 ms
+writes) and `http_req_failed < 1%`. The spec k6 reads is the one served by the image under test, saved into the
+`openapi-spec` volume by `project-ready`. **Adding an endpoint = adding its handler in `load-test.js`** (k6 aborts
+at init otherwise), nothing to do for ZAP. `init-test.sql` also seeds the rows of the spec's path examples (project
+12, task 87, user 42) so ZAP reaches real rows, until its own `DELETE` removes them.
+
 Request bodies with text fields are extracted with `endpoints::validation::ValidatedJson` instead of `web::Json`:
 the view implements `Validate` (length matching the Postgres column, no control character, no `<` / `>` in names,
 descriptions and labels) and an invalid value answers `400` naming the field before the handler runs. Document the
