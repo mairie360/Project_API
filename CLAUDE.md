@@ -62,6 +62,11 @@ End-to-end tests (what CI runs on `main` after the dev release, needs Docker + G
 ./performance_test.sh    # docker-compose-performance.yml: full stack + k6 (load-test.js)
 ```
 
+The service under test in these three stacks is `image: ${IMAGE_REF}` (no `build:` block). CI sets `IMAGE_REF` to the
+published `ghcr.io/mairie360/project-api:dev-<sha>` image; when it is empty the scripts build `project-api:local` from
+`development.Dockerfile` first. That image is distroless (no shell, no curl), so readiness is a `project-ready` sidecar
+polling `/health`, and dependent services wait for it with `service_completed_successfully`.
+
 The ZAP scan is authenticated: `security-scan` injects a static admin JWT (`sub=1`, signed with
 `JWT_SECRET=b"secret"`, see the comment in `docker-compose-security.yml`) on every request, waits for the `seeder`
 service (`init-test.sql`: plain `User` accounts 2 and 3, user 1 is the Admin created by liquibase) and fails on any
@@ -124,7 +129,7 @@ the status. Creating a project requires one of those roles. History entries are 
 
 ### Deployment
 
-`Dockerfile` = multi-stage release build onto `gcr.io/distroless/cc-debian12`. `development.Dockerfile` + `entrypoint.sh` = `cargo watch` dev container used by compose. `nginx.conf` reverse-proxies `:80` → api `:3001`. CI (`.github/workflows/cicd.yml`) just calls the reusable `mairie360/CICD` workflow, which builds/pushes the `project-api` image and runs `./integration_test.sh` (newman, no Postman account involved).
+`Dockerfile` = multi-stage release build onto `gcr.io/distroless/cc-debian12`. `development.Dockerfile` + `entrypoint.sh` = `cargo watch` dev container used by compose. `nginx.conf` reverse-proxies `:80` → api `:3001`. CI (`.github/workflows/cicd.yml`) just calls the reusable `mairie360/CICD` workflow, which builds/pushes the `project-api` image and runs the three `*_test.sh` scripts with `IMAGE_REF` set to the `dev-<sha>` image published by `release-dev` (newman, no Postman account involved).
 
 ## Pull request reviewers
 
