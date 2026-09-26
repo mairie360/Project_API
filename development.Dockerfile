@@ -18,4 +18,6 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 3001
+# Dev-only image (docker compose watch), never published: it needs root to write the bind-mounted target/ and cargo caches.
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["/usr/local/bin/entrypoint.sh"]
