@@ -131,6 +131,8 @@ services:
       PUBLIC_URL: http://project.development.mairie360.fr
       JWT_SECRET: b"secret"
       JWT_TIMEOUT: 3600
+      # Swagger UI + /api-docs/openapi.json (off by default, so off in production).
+      API_DOCS_ENABLED: "true"
     depends_on:
       liquibase:
         condition: service_completed_successfully

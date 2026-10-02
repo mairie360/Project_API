@@ -1,6 +1,5 @@
 pub mod db_error;
 pub mod health;
-pub mod hello;
 pub mod pagination;
 pub mod swagger;
 pub mod v1;

@@ -3,16 +3,14 @@ use std::time::Duration;
 use actix_web::{middleware, web, App, HttpServer};
 
 use project_api::database::pg_url::build_pg_url;
-use project_api::endpoints::swagger::ApiDoc;
-use project_api::endpoints::{config, health, hello};
+use project_api::endpoints::swagger::{configure_docs, docs_enabled};
+use project_api::endpoints::{config, health};
 
 use mairie360_api_lib::env_manager::get_critical_env_var;
 use mairie360_api_lib::security::JwtMiddleware;
 use mairie360_api_lib::state::AppState;
 
 use tracing_subscriber::EnvFilter;
-use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 
 //                                        -- MAIN FUNCTION --
 
@@ -38,25 +36,24 @@ async fn main() -> std::io::Result<()> {
     let port = get_critical_env_var("PORT");
     let bind_address = format!("{}:{}", host, port);
 
+    let docs = docs_enabled();
+    if docs {
+        tracing::info!("API documentation served on /swagger-ui/ and /api-docs/openapi.json");
+    }
+
     let server = HttpServer::new(move || {
         App::new()
             .app_data(data.clone())
             .wrap(middleware::Logger::default())
             // Every response is JSON or plain text: forbid browsers from sniffing it as HTML.
             .wrap(middleware::DefaultHeaders::new().add(("X-Content-Type-Options", "nosniff")))
-            // 1. Swagger UI et API Docs (Public)
-            .service(
-                SwaggerUi::new("/swagger-ui/{_:.*}")
-                    .url("/api-docs/openapi.json", ApiDoc::openapi()),
-            )
-            // 2. Endpoints Publics
+            // Swagger UI and the OpenAPI contract, only when API_DOCS_ENABLED is set.
+            .configure(|cfg| configure_docs(cfg, docs))
+            // Public probes
             .service(health::health)
             .service(health::ready)
-            .service(hello::hello)
-            // 3. Endpoints Protégés par JWT
-            .service(
-                web::scope("/api").wrap(JwtMiddleware).configure(config), // Tes routes v1, etc.
-            )
+            // Everything else requires a JWT
+            .service(web::scope("/api").wrap(JwtMiddleware).configure(config))
     })
     .bind(bind_address)?;
 
