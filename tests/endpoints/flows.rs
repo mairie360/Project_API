@@ -26,11 +26,13 @@ async fn a_manager_runs_a_project_end_to_end() {
     let renamed = patch(
         &p,
         s.manager,
-        json!({ "name": "Place du marché", "description": "Budget 10 000 €" }),
+        json!({ "name": "Place du marché", "description": "Budget > 10 000 €" }),
     );
     assert_eq!(status(&app, renamed).await, 204);
     let project = json(&app, get(&p, s.manager)).await;
     assert_eq!(project["project"]["name"], "Place du marché");
+    // `<` and `>` are ordinary text (MAIR-426), stored and returned as sent.
+    assert_eq!(project["project"]["description"], "Budget > 10 000 €");
     assert_eq!(project["users"].as_array().unwrap().len(), 2);
 
     let task_change = patch(
@@ -45,9 +47,10 @@ async fn a_manager_runs_a_project_end_to_end() {
     let comment = post(
         &format!("{t}comments"),
         s.manager,
-        json!({ "message": "Validé." }),
+        json!({ "message": "Validé <3 -> on lance" }),
     );
-    assert_eq!(status(&app, comment).await, 201);
+    let created = json(&app, comment).await;
+    assert_eq!(created["message"], "Validé <3 -> on lance");
     let collaboration = json(&app, get(&format!("{t}collaboration"), s.manager)).await;
     assert_eq!(collaboration["comments_total"], 1);
     assert!(collaboration["history_total"].as_u64().unwrap() >= 2);

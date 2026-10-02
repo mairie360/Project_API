@@ -1,3 +1,6 @@
+# MAIR-426: `<` and `>` are accepted in every text field and come back in JSON (or text/plain)
+# bodies served with `X-Content-Type-Options: nosniff`, which no browser renders as HTML: the
+# XSS rules match the echo, not an exploitable injection. Escaping is the fronts' job.
 10015	IGNORE	Re-examine Cache-control Directives
 10027	IGNORE	Information Disclosure - Suspicious Comments
 10049	IGNORE	Storable and Cacheable Content
@@ -7,3 +10,7 @@
 10112	IGNORE	Session Management Response Identified
 90005	IGNORE	Sec-Fetch-* Headers Not Present (API, not applicable)
 100001	OUTOFSCOPE	.*/swagger-ui/.*
+40012	IGNORE	Cross Site Scripting (Reflected)
+40014	IGNORE	Cross Site Scripting (Persistent)
+40016	IGNORE	Cross Site Scripting (Persistent) - Prime
+40017	IGNORE	Cross Site Scripting (Persistent) - Spider

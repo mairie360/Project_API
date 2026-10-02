@@ -3,8 +3,11 @@
 //! A request view implements [`Validate`] and the handler extracts it with [`ValidatedJson`] or
 //! [`ValidatedQuery`] instead of `web::Json` / `web::Query`: an invalid value is rejected with a
 //! `400 Bad Request` (plain-text body naming the field) before the handler runs, so it never
-//! reaches Postgres (where an over-long value or a NUL byte used to end in a `500`) nor comes back
-//! unescaped in a JSON response.
+//! reaches Postgres (where an over-long value or a NUL byte used to end in a `500`).
+//!
+//! `<` and `>` are accepted everywhere (MAIR-426): "budget > 10 000 €" or "->" are ordinary text.
+//! The API serves JSON with `nosniff`, which no browser renders as HTML; escaping is the fronts'
+//! job (React escapes text, none of them uses `dangerouslySetInnerHTML`).
 
 use std::fmt;
 use std::future::Future;
@@ -65,15 +68,8 @@ fn check_no_control(field: &str, value: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
-fn check_no_markup(field: &str, value: &str) -> Result<(), ValidationError> {
-    if value.contains(['<', '>']) {
-        return Err(ValidationError::new(field, "must not contain `<` or `>`"));
-    }
-    Ok(())
-}
-
-/// A short label displayed as-is by the fronts (person name, role or group name): not blank, at
-/// most `max` characters, no control character and no `<` / `>`.
+/// A short label (project or task name, custom field label): not blank, at most `max` characters,
+/// no control character.
 ///
 /// # Errors
 ///
@@ -83,12 +79,11 @@ pub fn check_label(field: &str, value: &str, max: usize) -> Result<(), Validatio
         return Err(ValidationError::new(field, "must not be empty"));
     }
     check_length(field, value, max)?;
-    check_no_control(field, value)?;
-    check_no_markup(field, value)
+    check_no_control(field, value)
 }
 
 /// A free-text description: may be empty, at most `max` characters, line breaks and tabs
-/// allowed, no other control character and no `<` / `>`.
+/// allowed, no other control character.
 ///
 /// # Errors
 ///
@@ -104,7 +99,7 @@ pub fn check_description(field: &str, value: &str, max: usize) -> Result<(), Val
             "must not contain control characters other than line breaks and tabs",
         ));
     }
-    check_no_markup(field, value)
+    Ok(())
 }
 
 /// An opaque value only compared or stored as text (token, credential, `device_info`, search
@@ -118,8 +113,8 @@ pub fn check_opaque(field: &str, value: &str, max: usize) -> Result<(), Validati
     check_no_control(field, value)
 }
 
-/// A free JSON value (custom field option, history `changes`): no string or key may contain a
-/// control character other than line breaks and tabs (`jsonb` rejects `\u0000`) nor `<` / `>`.
+/// A free JSON value (custom field option): no string or key may contain a control character
+/// other than line breaks and tabs (`jsonb` rejects `\u0000`).
 ///
 /// # Errors
 ///
@@ -211,12 +206,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn label_rejects_blank_long_control_and_markup() {
+    fn label_rejects_blank_long_and_control() {
         assert!(check_label("name", "Réfection de la place", MAX_TITLE_LENGTH).is_ok());
         assert!(check_label("name", "  ", MAX_TITLE_LENGTH).is_err());
         assert!(check_label("name", &"a".repeat(256), MAX_TITLE_LENGTH).is_err());
         assert!(check_label("name", "Place\0du marché", MAX_TITLE_LENGTH).is_err());
-        assert!(check_label("name", "<script>alert(1);</script>", MAX_TITLE_LENGTH).is_err());
+        // Angle brackets are ordinary text (MAIR-426).
+        assert!(check_label("name", "Budget > 10 000 € -> <3", MAX_TITLE_LENGTH).is_ok());
     }
 
     #[test]
@@ -229,7 +225,7 @@ mod tests {
         assert!(check_description("description", "", MAX_DESCRIPTION_LENGTH).is_ok());
         assert!(check_description("description", "a\nb\tc", MAX_DESCRIPTION_LENGTH).is_ok());
         assert!(check_description("description", "a\0b", MAX_DESCRIPTION_LENGTH).is_err());
-        assert!(check_description("description", "<b>", MAX_DESCRIPTION_LENGTH).is_err());
+        assert!(check_description("description", "<b>1 < 2</b>", MAX_DESCRIPTION_LENGTH).is_ok());
     }
 
     #[test]
@@ -244,8 +240,8 @@ mod tests {
         assert!(check_json("changes", &ok).is_ok());
         let nul = serde_json::json!({ "budget": ["a\0"] });
         assert!(check_json("changes", &nul).is_err());
-        let markup = serde_json::json!({ "<script>": 1 });
-        assert!(check_json("changes", &markup).is_err());
+        let markup = serde_json::json!({ "a > b": "<3" });
+        assert!(check_json("changes", &markup).is_ok());
     }
 
     #[test]
