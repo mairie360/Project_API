@@ -3,7 +3,9 @@ use actix_web::{get, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::database::paged::PagedRows;
 use crate::endpoints::db_error::log_db_error;
+use crate::endpoints::pagination::{Page, PageParams};
 
 use crate::database::users::get_project_users::view::{GetProjectUsersQueryView, ProjectMemberRow};
 use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
@@ -53,16 +55,18 @@ impl ResponseError for GetProjectUsersError {
 async fn trigger_get_project_users(
     state: web::Data<AppState>,
     project_id: u64,
+    page: Page,
 ) -> Result<GetProjectUsersResultView, GetProjectUsersError> {
-    let view = GetProjectUsersQueryView::new(project_id);
-    let result: Vec<ProjectMemberRow> =
-        state.get_smart_db().fetch_all(&view).await.map_err(|e| {
+    let view = GetProjectUsersQueryView::new(project_id, page.limit, page.offset);
+    let result: PagedRows<ProjectMemberRow> =
+        state.get_smart_db().fetch_one(&view).await.map_err(|e| {
             log_db_error("projects/project_id/users/get", &e);
             GetProjectUsersError::DatabaseError
         })?;
 
     Ok(GetProjectUsersResultView {
-        users: result.into_iter().map(User::from).collect(),
+        users: result.items.into_iter().map(User::from).collect(),
+        total: u64::try_from(result.total).unwrap_or(0),
     })
 }
 
@@ -70,29 +74,32 @@ async fn trigger_get_project_users(
     get,
     params(
         ProjectPathParams,
+        PageParams,
     ),
     path = "",
-    summary = "Lister les membres d'un projet",
-    description = "Renvoie les utilisateurs rattachés au projet, avec leur identifiant Core API et \
-                   leur nom complet. Il suffit d'être membre du projet.\n\n\
-                   `name` peut être `null` si le nom n'a pas pu être résolu côté Core API ; \
-                   l'identifiant, lui, est toujours présent et permet d'aller chercher la fiche \
-                   via `GET /api/v1/user/{id}/` de Core API.",
+    summary = "List the members of a project",
+    description = "Returns one page of the users attached to the project, sorted by name, with \
+                   their Core API id and full name. Being able to see the project is enough.\n\n\
+                   `limit` (default 100, at most 500) and `offset` (default 0) select the page; \
+                   `total` is the number of members, whatever the page.\n\n\
+                   `name` may be `null` when the name could not be resolved; the id is always \
+                   present and gives the profile through Core API `GET /api/v1/user/{id}/`.",
     responses(
         (
             status = 200,
-            description = "Membres du projet.",
+            description = "One page of the members. Empty if the project has none, or if `offset` is past the end.",
             body = GetProjectUsersResultView,
             example = json!({
                 "users": [
                     { "id": 42, "name": "Jean Dupont" },
                     { "id": 51, "name": "Amina Bensaïd" }
-                ]
+                ],
+                "total": 2
             })
         ),
         (
             status = 400,
-            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            description = "A URL segment is not an integer, or `limit` / `offset` is not a non-negative integer.",
             body = String,
             content_type = "text/plain",
             example = json!("Path deserialize error: can not parse `abc` to a u64")
@@ -129,6 +136,7 @@ pub async fn get_project_users(
     state: web::Data<AppState>,
     auth_user: AuthenticatedUser,
     params: web::Path<ProjectPathParams>,
+    page: web::Query<PageParams>,
 ) -> Result<impl Responder, GetProjectUsersError> {
     require_access(
         &state,
@@ -138,7 +146,7 @@ pub async fn get_project_users(
         Requirement::ViewProject,
     )
     .await?;
-    let result = trigger_get_project_users(state, params.project_id).await?;
+    let result = trigger_get_project_users(state, params.project_id, page.page()).await?;
     Ok(HttpResponse::Ok().json(result))
 }
 

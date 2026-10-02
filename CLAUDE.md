@@ -163,10 +163,12 @@ Every task write sets `tasks.updated_by` to the caller, which signs the history;
 history and `project_api` only has `SELECT` on that table. History labels are generated in
 `database/tasks/collaboration/view.rs` (`From<TaskHistoryRow>`). `tasks.custom_fields` only holds `fields`.
 
-List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`)
+List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`,
+`GET …/users/` — MAIR-425; the members embedded in `GET /projects/{id}/` are the first 100 + `users_total`)
 take `limit` (default 100, clamped to 1–500) / `offset` (`endpoints::pagination::PageParams`) and return a
 total; their query views select `paged_rows_sql!` over rows numbered `rn` and are read with
-`fetch_one::<PagedRows<T>, _>`. Database errors are logged with `endpoints::db_error::log_db_error` before
+`fetch_one::<PagedRows<T>, _>`. Rate limiting is not done here (same rule as `API_template`): every call comes
+from a BFF, so it belongs to the ingress / BFF layer. Database errors are logged with `endpoints::db_error::log_db_error` before
 answering `500` (`tracing`, level from `RUST_LOG`, default `info`); a handler that turns some of them into a
 client status maps them with `db_error::classify` (`Conflict` / `InvalidReference` / `NotFound` logged at `warn`,
 `Internal` at `error`) instead of matching `DbError` by hand (MAIR-421). A path segment that is not a valid id
