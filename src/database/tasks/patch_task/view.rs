@@ -1,4 +1,6 @@
-use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
+use mairie360_api_lib::database::db_interface::{
+    id_from_sql, id_to_sql, ApiRequestDto, QueryParam,
+};
 
 use crate::database::tasks::create_task::view::{TaskPriority, TaskStatus};
 use crate::database::tasks::get_project_tasks::view::DynamicTaskField;
@@ -28,14 +30,14 @@ impl PatchTaskQueryView {
     pub fn new(project_id: u64, task_id: u64, updated_by: u64, changes: TaskChanges<'_>) -> Self {
         Self {
             params: vec![
-                QueryParam::I32(task_id as i32),
-                QueryParam::I32(project_id as i32),
+                QueryParam::I32(id_to_sql(task_id)),
+                QueryParam::I32(id_to_sql(project_id)),
                 QueryParam::Text(changes.title.unwrap_or_default().to_string()),
                 QueryParam::Text(changes.status.map(|s| s.to_string()).unwrap_or_default()),
                 QueryParam::Text(changes.priority.map(|p| p.to_string()).unwrap_or_default()),
                 QueryParam::Text(changes.due_date.map(|d| d.to_rfc3339()).unwrap_or_default()),
                 QueryParam::Bool(changes.assigned_to.is_some()),
-                QueryParam::OptionI32(changes.assigned_to.flatten().map(|id| id as i32)),
+                QueryParam::OptionI32(changes.assigned_to.flatten().map(id_to_sql)),
                 QueryParam::Bool(changes.description.is_some()),
                 QueryParam::Text(changes.description.unwrap_or_default().to_string()),
                 QueryParam::Text(
@@ -44,17 +46,17 @@ impl PatchTaskQueryView {
                         .map(|fields| serde_json::json!(fields).to_string())
                         .unwrap_or_default(),
                 ),
-                QueryParam::I32(updated_by as i32),
+                QueryParam::I32(id_to_sql(updated_by)),
             ],
         }
     }
 
     pub fn task_id(&self) -> u64 {
-        self.params[0].as_i32() as u64
+        id_from_sql(self.params[0].as_i32())
     }
 
     pub fn project_id(&self) -> u64 {
-        self.params[1].as_i32() as u64
+        id_from_sql(self.params[1].as_i32())
     }
 }
 
