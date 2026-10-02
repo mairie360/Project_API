@@ -3,6 +3,7 @@ use actix_web::{patch, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::database::error::DbError;
 use mairie360_api_lib::error::ApiLibError;
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
 use crate::endpoints::db_error::log_db_error;
@@ -11,7 +12,7 @@ use crate::database::tasks::create_task::view::{
     TaskPriority as DbTaskPriority, TaskStatus as DbTaskStatus,
 };
 use crate::database::tasks::patch_task::view::{PatchTaskQueryView, TaskChanges};
-use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::patch::view::PatchTaskView;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
@@ -62,7 +63,7 @@ impl ResponseError for PatchTaskError {
 }
 
 async fn trigger_patch_task(
-    state: web::Data<AppState>,
+    tx: &mut SmartTransaction,
     project_id: u64,
     task_id: u64,
     user_id: u64,
@@ -87,8 +88,7 @@ async fn trigger_patch_task(
         return Err(PatchTaskError::BadRequest);
     }
 
-    let updated: bool = state
-        .get_smart_db()
+    let updated: bool = tx
         .fetch_scalar(&PatchTaskQueryView::new(
             project_id,
             task_id,
@@ -200,7 +200,7 @@ pub async fn patch_task(
     view: ValidatedJson<PatchTaskView>,
 ) -> Result<impl Responder, PatchTaskError> {
     let view = view.into_inner();
-    let access = require_access(
+    let (mut tx, access) = begin_write(
         &state,
         auth_user.id,
         params.project_id(),
@@ -213,13 +213,14 @@ pub async fn patch_task(
         return Err(PatchTaskError::Forbidden);
     }
     trigger_patch_task(
-        state,
+        &mut tx,
         params.project_id(),
         params.task_id(),
         auth_user.id,
         view,
     )
     .await?;
+    commit(tx, "projects/project_id/tasks/task_id/patch").await?;
     Ok(HttpResponse::NoContent().finish())
 }
 

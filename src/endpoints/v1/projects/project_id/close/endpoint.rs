@@ -1,12 +1,13 @@
 use actix_web::http::StatusCode;
 use actix_web::{patch, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
 use crate::endpoints::db_error::log_db_error;
 
 use crate::database::project::update_status::view::{ProjectStatus, UpdateProjectStatusQueryView};
-use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,12 +55,12 @@ impl ResponseError for PatchMessageError {
 }
 
 async fn trigger_close_project(
-    state: web::Data<AppState>,
+    tx: &mut SmartTransaction,
     project_id: u64,
 ) -> Result<(), PatchMessageError> {
     let view = UpdateProjectStatusQueryView::new(project_id, ProjectStatus::Completed);
 
-    state.get_smart_db().execute(view).await.map_err(|e| {
+    tx.execute(&view).await.map_err(|e| {
         log_db_error("projects/project_id/close", &e);
         PatchMessageError::DatabaseError
     })?;
@@ -132,7 +133,7 @@ pub async fn close_project(
     auth_user: AuthenticatedUser,
     params: web::Path<ProjectPathParams>,
 ) -> Result<impl Responder, PatchMessageError> {
-    require_access(
+    let (mut tx, _) = begin_write(
         &state,
         auth_user.id,
         params.project_id(),
@@ -141,7 +142,8 @@ pub async fn close_project(
     )
     .await?;
     let project_id = params.project_id();
-    trigger_close_project(state, project_id).await?;
+    trigger_close_project(&mut tx, project_id).await?;
+    commit(tx, "projects/project_id/close").await?;
     Ok(HttpResponse::Ok())
 }
 

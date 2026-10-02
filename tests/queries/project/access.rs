@@ -101,3 +101,56 @@ fn test_assigned_member_of_a_visible_project_can_act_on_its_task_only() {
     assert!(member.can_act_on_task() && !member.can_manage());
     assert!(!viewer.can_act_on_task());
 }
+
+/// Two writes on the same project are serialized: while a transaction holds the project lock
+/// (taken by `begin_write` before the access check), another one cannot take it.
+#[tokio::test]
+async fn test_project_lock_serializes_writes_on_a_project() {
+    use crate::common::fixtures::fixture;
+    use project_api::database::project::access::view::LockProjectQueryView;
+
+    let (_container, host) = get_shared_db().await;
+    let db = get_smart_db(host.to_string()).await;
+    let owner = create_user(&db, "Owner", Some("Responsable")).await;
+    let project_id = db
+        .fetch_scalar::<i32, _>(&CreateProjectQueryView::new("Verrou", None, owner))
+        .await
+        .unwrap() as u64;
+
+    let mut first = db.begin().await.unwrap();
+    let locked: i64 = first
+        .fetch_scalar(&LockProjectQueryView::new(project_id))
+        .await
+        .unwrap();
+    assert_eq!(locked, 1);
+
+    let mut second = db.begin().await.unwrap();
+    second
+        .execute(&fixture("SET LOCAL lock_timeout = '200ms'".to_string()))
+        .await
+        .unwrap();
+    assert!(
+        second
+            .fetch_scalar::<i64, _>(&LockProjectQueryView::new(project_id))
+            .await
+            .is_err(),
+        "the project lock must be exclusive"
+    );
+    second.rollback().await.unwrap();
+
+    first.rollback().await.unwrap();
+    let mut third = db.begin().await.unwrap();
+    let locked: i64 = third
+        .fetch_scalar(&LockProjectQueryView::new(project_id))
+        .await
+        .unwrap();
+    assert_eq!(locked, 1, "released at the end of the first transaction");
+    third.rollback().await.unwrap();
+
+    let mut unknown = db.begin().await.unwrap();
+    let locked: i64 = unknown
+        .fetch_scalar(&LockProjectQueryView::new(i32::MAX as u64))
+        .await
+        .unwrap();
+    assert_eq!(locked, 0);
+}

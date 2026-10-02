@@ -1,12 +1,13 @@
 use actix_web::http::StatusCode;
 use actix_web::{post, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
 use crate::endpoints::db_error::log_db_error;
 
 use crate::database::tasks::collaboration::view::{AddTaskCommentQueryView, TaskComment};
-use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::tasks::task_id::comments::view::{
     AddTaskCommentView, MAX_COMMENT_LENGTH,
 };
@@ -50,7 +51,7 @@ impl ResponseError for AddTaskCommentError {
 }
 
 async fn trigger_add_task_comment(
-    state: web::Data<AppState>,
+    tx: &mut SmartTransaction,
     params: &TaskPathParams,
     user_id: u64,
     view: AddTaskCommentView,
@@ -60,8 +61,7 @@ async fn trigger_add_task_comment(
         return Err(AddTaskCommentError::BadRequest);
     }
 
-    let comments: Vec<TaskComment> = state
-        .get_smart_db()
+    let comments: Vec<TaskComment> = tx
         .fetch_all(&AddTaskCommentQueryView::new(
             params.project_id(),
             params.task_id(),
@@ -159,7 +159,7 @@ pub async fn add_task_comment(
     params: web::Path<TaskPathParams>,
     view: ValidatedJson<AddTaskCommentView>,
 ) -> Result<impl Responder, AddTaskCommentError> {
-    require_access(
+    let (mut tx, _) = begin_write(
         &state,
         auth_user.id,
         params.project_id(),
@@ -167,7 +167,9 @@ pub async fn add_task_comment(
         Requirement::ActOnTask,
     )
     .await?;
-    let comment = trigger_add_task_comment(state, &params, auth_user.id, view.into_inner()).await?;
+    let comment =
+        trigger_add_task_comment(&mut tx, &params, auth_user.id, view.into_inner()).await?;
+    commit(tx, "projects/project_id/tasks/task_id/comments").await?;
     Ok(HttpResponse::Created().json(comment))
 }
 
