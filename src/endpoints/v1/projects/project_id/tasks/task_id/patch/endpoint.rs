@@ -4,7 +4,7 @@ use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
-use crate::endpoints::db_error::{classify, DbFailure};
+use crate::endpoints::db_error::{classify_db_error, DbFailure};
 
 use crate::database::tasks::create_task::view::{
     TaskPriority as DbTaskPriority, TaskStatus as DbTaskStatus,
@@ -103,7 +103,7 @@ async fn trigger_patch_task(
         ))
         .await
         .map_err(
-            |e| match classify("projects/project_id/tasks/task_id/patch", &e) {
+            |e| match classify_db_error("projects/project_id/tasks/task_id/patch", &e) {
                 DbFailure::InvalidReference => PatchTaskError::UnknownAssignee,
                 _ => PatchTaskError::DatabaseError,
             },
