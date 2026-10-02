@@ -76,8 +76,10 @@ The ZAP scan is authenticated: `security-scan` injects a static admin JWT (`sub=
 service (`init-test.sql`: plain `User` accounts 2 and 3, user 1 is the Admin created by liquibase) and fails on any
 alert not set to `IGNORE` / `OUTOFSCOPE` in `.zap/rules.tsv` (no `-I`). `-O http://project:3001` is required: the
 spec's `servers` are unreachable from the ZAP container. Keep `rules.tsv` identical in every API. The scan fuzzes
-every field, so a `500` (value too long, NUL byte, unmapped constraint violation) or a `<script>` echoed back fails
-the job: validate inputs, don't silence the alert.
+every field, so a `500` (value too long, NUL byte, unmapped constraint violation) fails the job: validate inputs,
+don't silence the alert. The XSS rules (40012, 40014, 40016, 40017) are the exception, set to `IGNORE` (MAIR-426):
+`<` and `>` are legitimate text, and echoing them in a JSON or `text/plain` body served with `nosniff` is not an
+injection; escaping is the fronts' job. Never answer HTML.
 
 Both the ZAP and k6 stacks carry the OpenAPI coverage gate (MAIR-194) from mairie360/CICD `tests/`, available as
 `cicd-repo/` (checked out by CI, cloned by the scripts at the pinned `cicd_version` otherwise, override with
@@ -92,8 +94,9 @@ at init otherwise), nothing to do for ZAP. `init-test.sql` also seeds the rows o
 12, task 87, user 42) so ZAP reaches real rows, until its own `DELETE` removes them.
 
 Request bodies with text fields are extracted with `endpoints::validation::ValidatedJson` instead of `web::Json`:
-the view implements `Validate` (length matching the Postgres column, no control character, no `<` / `>` in names,
-descriptions and labels) and an invalid value answers `400` naming the field before the handler runs. Document the
+the view implements `Validate` (length matching the Postgres column, no control character) and an invalid value
+answers `400` naming the field before the handler runs. Do **not** refuse `<` or `>`: "budget > 10 000 €" is
+ordinary text (MAIR-426). Document the
 rules in the view's `#[schema]` and the handler's `400` response. Map constraint violations of the lib's `DbError`
 (`ForeignKeyViolation`, `UniqueViolation`) to `4xx` instead of `500`.
 
