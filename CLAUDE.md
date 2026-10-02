@@ -145,6 +145,13 @@ otherwise); task collaboration and `PATCH` on a task are also open to the task's
 the status. Creating a project requires one of those roles. A task can only be assigned to the owner or a
 member of its project (`assignable_to_project_sql!`, `400` otherwise), so an assignee always sees the project.
 
+Reads check access with `require_access` (one query). **Writes** go through `access.rs::begin_write`
+(MAIR-420): it opens a `SmartTransaction`, locks the project row (`LockProjectQueryView`, `FOR UPDATE`), checks
+access in that transaction and hands it back; the handler runs its queries on it and ends with
+`access::commit`. Writes on one project are therefore serialized, the access check cannot be invalidated before
+the write, and a multi-query write is all-or-nothing (an early `?` drops the transaction, which rolls back).
+Removing a member also unassigns their tasks of the project in the same transaction.
+
 Since MAIR-393 (database `v1.8.0` schema): the task description is the `tasks.description` column, comments
 are rows of `task_comments`, and the history is `task_history`, written **only** by the database trigger
 `fn_log_task_change` (`task_created`, `task_updated` with `{"<field>": {"from", "to"}}`, `status_changed`).

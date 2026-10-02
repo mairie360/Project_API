@@ -1,12 +1,15 @@
 use actix_web::http::StatusCode;
 use actix_web::{delete, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
 use crate::endpoints::db_error::log_db_error;
 
-use crate::database::users::remove_user_from_project::view::RemoveUserFromProjectQueryView;
-use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
+use crate::database::users::remove_user_from_project::view::{
+    RemoveUserFromProjectQueryView, UnassignMemberTasksQueryView,
+};
+use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::users::user_id::ProjectUserPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,15 +52,24 @@ impl ResponseError for RemoveUserFromProjectError {
 }
 
 async fn trigger_remove_user_from_project(
-    state: web::Data<AppState>,
+    tx: &mut SmartTransaction,
     project_id: u64,
     user_id: u64,
+    caller_id: u64,
 ) -> Result<(), RemoveUserFromProjectError> {
-    let view = RemoveUserFromProjectQueryView::new(project_id, user_id);
-    state.get_smart_db().execute(view).await.map_err(|e| {
-        log_db_error("projects/project_id/users/user_id/delete", &e);
+    let log = |e: &dyn std::fmt::Display| {
+        log_db_error("projects/project_id/users/user_id/delete", &e.to_string());
         RemoveUserFromProjectError::DatabaseError
-    })?;
+    };
+    tx.execute(&RemoveUserFromProjectQueryView::new(project_id, user_id))
+        .await
+        .map_err(|e| log(&e))?;
+    // Same transaction: the member and their assignments go together.
+    tx.execute(&UnassignMemberTasksQueryView::new(
+        project_id, user_id, caller_id,
+    ))
+    .await
+    .map_err(|e| log(&e))?;
 
     Ok(())
 }
@@ -65,14 +77,16 @@ async fn trigger_remove_user_from_project(
 #[utoipa::path(
     delete,
     path = "",
-    summary = "Retirer un membre d'un projet",
-    description = "Détache un utilisateur du projet. Le compte et le projet sont conservés ; seul \
-                   le rattachement disparaît, et le projet cesse d'apparaître dans les \
-                   `GET /api/v1/projects/` de cet utilisateur. Réservé aux responsables du \
-                   projet.\n\n\
-                   Les tâches qui lui étaient assignées ne sont pas réaffectées : elles restent \
-                   sur son identifiant. Opération idempotente une fois les droits validés : retirer \
-                   quelqu'un qui n'est pas membre répond également `204`.",
+    summary = "Remove a member from a project",
+    description = "Detaches a user from the project. The account and the project are kept; only \
+                   the membership goes, and the project no longer appears in that user's \
+                   `GET /api/v1/projects/`. Reserved to the project's managers.\n\n\
+                   In the same transaction, the tasks of this project assigned to the user are \
+                   unassigned (`assigned_to` becomes `null`, logged in each task's history and \
+                   signed by the caller), since a task can only be assigned to the owner or a \
+                   member of its project. Nothing changes when the user is the project's owner.\n\n\
+                   Idempotent once the rights are checked: removing someone who is not a member \
+                   also answers `204`.",
     responses(
         (
             status = 204,
@@ -128,7 +142,7 @@ pub async fn remove_user_from_project(
     auth_user: AuthenticatedUser,
     params: web::Path<ProjectUserPathParams>,
 ) -> Result<impl Responder, RemoveUserFromProjectError> {
-    require_access(
+    let (mut tx, _) = begin_write(
         &state,
         auth_user.id,
         params.project_id(),
@@ -138,7 +152,8 @@ pub async fn remove_user_from_project(
     .await?;
     let project_id = params.project_id();
     let user_id = params.user_id();
-    trigger_remove_user_from_project(state, project_id, user_id).await?;
+    trigger_remove_user_from_project(&mut tx, project_id, user_id, auth_user.id).await?;
+    commit(tx, "projects/project_id/users/user_id/delete").await?;
     Ok(HttpResponse::NoContent().finish())
 }
 

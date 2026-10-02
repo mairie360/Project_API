@@ -1,12 +1,13 @@
 use actix_web::http::StatusCode;
 use actix_web::{delete, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
 use crate::endpoints::db_error::log_db_error;
 
 use crate::database::tasks::delete_task::view::DeleteTaskQueryView;
-use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,12 +50,12 @@ impl ResponseError for DeleteTaskError {
 }
 
 async fn trigger_delete_task(
-    state: web::Data<AppState>,
+    tx: &mut SmartTransaction,
     _project_id: u64,
     task_id: u64,
 ) -> Result<(), DeleteTaskError> {
     let view = DeleteTaskQueryView::new(task_id);
-    state.get_smart_db().execute(view).await.map_err(|e| {
+    tx.execute(&view).await.map_err(|e| {
         log_db_error("projects/project_id/tasks/task_id/delete", &e);
         DeleteTaskError::DatabaseError
     })?;
@@ -126,7 +127,7 @@ pub async fn delete_task(
     auth_user: AuthenticatedUser,
     params: web::Path<TaskPathParams>,
 ) -> Result<impl Responder, DeleteTaskError> {
-    require_access(
+    let (mut tx, _) = begin_write(
         &state,
         auth_user.id,
         params.project_id(),
@@ -134,7 +135,8 @@ pub async fn delete_task(
         Requirement::ManageProject,
     )
     .await?;
-    trigger_delete_task(state, params.project_id(), params.task_id).await?;
+    trigger_delete_task(&mut tx, params.project_id(), params.task_id).await?;
+    commit(tx, "projects/project_id/tasks/task_id/delete").await?;
     Ok(HttpResponse::NoContent().finish())
 }
 
