@@ -81,10 +81,10 @@ async fn trigger_create_project(
         ),
         (
             status = 400,
-            description = "Malformed JSON body, missing `name`, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character, no `<` or `>`; `description` at most 5000 characters, no `<` or `>`, no control character other than line breaks and tabs. The body names the first invalid field.",
+            description = "Malformed JSON body, missing `name`, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs. The body names the first invalid field.",
             body = String,
             content_type = "text/plain",
-            example = json!("Invalid `name`: must not contain `<` or `>`")
+            example = json!("Invalid `name`: must not contain control characters")
         ),
         (
             status = 401,

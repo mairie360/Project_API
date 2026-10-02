@@ -50,8 +50,8 @@ Statuses returned across the API, before the handler runs:
 | Status | Meaning |
 | --- | --- |
 | `400` | URL segment that is not an integer, malformed JSON body, or a field breaking its \
-validation rules (length, control characters, `<` / `>` in names, descriptions and labels); the \
-body names the first invalid field, e.g. ``Invalid `name`: must not contain `<` or `>` ``. |
+validation rules (length, control characters); the body names the first invalid field, e.g. \
+``Invalid `name`: must not contain control characters``. `<` and `>` are ordinary text. |
 | `401` | `Authorization` header missing or malformed, invalid or expired JWT, or revoked session. |
 | `500` | Database or Redis failure. |
 ",
