@@ -15,7 +15,7 @@ use crate::init_app;
 const UNREACHABLE_REDIS: &str = "redis://127.0.0.1:1";
 const UNREACHABLE_POSTGRES: &str = "postgres://postgres:password@127.0.0.1:1/mairie_360_database";
 
-async fn ready(state: AppState) -> (u16, serde_json::Value) {
+async fn ready(state: AppState) -> (u16, String) {
     let app = actix_web::test::init_service(
         App::new()
             .app_data(web::Data::new(state))
@@ -31,7 +31,8 @@ async fn ready(state: AppState) -> (u16, serde_json::Value) {
     let response =
         actix_web::test::call_service(&app, TestRequest::get().uri("/ready").to_request()).await;
     let code = response.status().as_u16();
-    (code, actix_web::test::read_body_json(response).await)
+    let body = actix_web::test::read_body(response).await;
+    (code, String::from_utf8(body.to_vec()).unwrap())
 }
 
 #[actix_web::test]
@@ -43,7 +44,7 @@ async fn ready_when_postgres_and_redis_answer() {
 
     let (code, body) = ready(state).await;
     assert_eq!(code, 200);
-    assert_eq!(body, serde_json::json!({ "postgres": true, "redis": true }));
+    assert_eq!(body, "ready");
 }
 
 #[actix_web::test]
@@ -54,10 +55,7 @@ async fn not_ready_without_redis() {
 
     let (code, body) = ready(state).await;
     assert_eq!(code, 503);
-    assert_eq!(
-        body,
-        serde_json::json!({ "postgres": true, "redis": false })
-    );
+    assert_eq!(body, "not ready: redis");
 }
 
 #[actix_web::test]
@@ -68,10 +66,7 @@ async fn not_ready_without_postgres() {
 
     let (code, body) = ready(state).await;
     assert_eq!(code, 503);
-    assert_eq!(
-        body,
-        serde_json::json!({ "postgres": false, "redis": true })
-    );
+    assert_eq!(body, "not ready: postgres");
 }
 
 #[actix_web::test]
@@ -82,29 +77,4 @@ async fn probes_are_not_mounted_under_api() {
     let user = ctx.user("Prober", None).await;
     assert_eq!(status(&app, get("/api/health", user)).await, 404);
     assert_eq!(status(&app, get("/api/ready", user)).await, 404);
-}
-
-#[actix_web::test]
-#[serial]
-async fn api_docs_are_only_served_when_enabled() {
-    use project_api::endpoints::swagger::{configure_docs, docs_enabled, API_DOCS_ENV};
-
-    for enabled in [false, true] {
-        let app =
-            actix_web::test::init_service(App::new().configure(|cfg| configure_docs(cfg, enabled)))
-                .await;
-        let expected = if enabled { 200 } else { 404 };
-        let spec = TestRequest::get().uri("/api-docs/openapi.json");
-        assert_eq!(status(&app, spec).await, expected, "enabled = {enabled}");
-        let ui = TestRequest::get().uri("/swagger-ui/index.html");
-        assert_eq!(status(&app, ui).await, expected, "enabled = {enabled}");
-    }
-
-    std::env::remove_var(API_DOCS_ENV);
-    assert!(!docs_enabled(), "off by default");
-    for (value, expected) in [("true", true), ("1", true), ("TRUE", true), ("no", false)] {
-        std::env::set_var(API_DOCS_ENV, value);
-        assert_eq!(docs_enabled(), expected, "{API_DOCS_ENV}={value}");
-    }
-    std::env::remove_var(API_DOCS_ENV);
 }

@@ -1,10 +1,7 @@
 use crate::endpoints::health::HealthDoc;
 use crate::endpoints::v1::doc::V1Doc;
-use actix_web::web;
-use mairie360_api_lib::env_manager::get_env_var;
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
-use utoipa_swagger_ui::SwaggerUi;
 
 // Dans votre ApiDoc principale
 #[derive(OpenApi)]
@@ -72,7 +69,7 @@ validation rules (length, control characters); the body names the first invalid 
         (name = "Projects", description = "Cycle de vie des projets : création, consultation, modification, clôture et suppression."),
         (name = "Tasks", description = "Tâches d'un projet, leurs champs personnalisés, leurs commentaires et leur historique."),
         (name = "Users", description = "Membres d'un projet : consultation, rattachement et retrait."),
-        (name = "Service", description = "Sondes techniques non authentifiées, utilisées par Docker et Kubernetes.")
+        (name = "probes", description = "Unauthenticated liveness (`/health`) and readiness (`/ready`) probes, used by Docker and Kubernetes.")
     ),
     nest(
         (path = "/api/v1", api = V1Doc),
@@ -103,24 +100,29 @@ impl Modify for SecurityAddon {
     }
 }
 
-/// Set to `true` (or `1`) to serve Swagger UI (`/swagger-ui/`) and the contract
-/// (`/api-docs/openapi.json`). Off by default, so off in production (MAIR-424): the dev and test
-/// stacks enable it, ZAP and k6 read the spec from there.
-pub const API_DOCS_ENV: &str = "API_DOCS_ENABLED";
+/// Set to `true` to serve Swagger UI (`/swagger-ui/`) and the contract (`/api-docs/openapi.json`).
+/// Off by default, so off in production (MAIR-424); the dev and test stacks enable it, ZAP and k6
+/// read the spec from there.
+pub const API_DOCS_ENABLED: &str = "API_DOCS_ENABLED";
 
-/// Whether [`API_DOCS_ENV`] enables the documentation routes.
-pub fn docs_enabled() -> bool {
-    get_env_var(API_DOCS_ENV).is_some_and(|value| {
-        let value = value.trim();
-        value == "1" || value.eq_ignore_ascii_case("true")
-    })
+/// Whether the value of [`API_DOCS_ENABLED`] enables the docs: only `true` (case-insensitive) does,
+/// an absent or any other value keeps them off.
+#[must_use]
+pub fn api_docs_enabled(value: Option<&str>) -> bool {
+    value.is_some_and(|v| v.trim().eq_ignore_ascii_case("true"))
 }
 
-/// Mounts Swagger UI and `/api-docs/openapi.json` when `enabled`, nothing otherwise.
-pub fn configure_docs(cfg: &mut web::ServiceConfig, enabled: bool) {
-    if enabled {
-        cfg.service(
-            SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", ApiDoc::openapi()),
-        );
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn api_docs_are_off_unless_explicitly_enabled() {
+        assert!(api_docs_enabled(Some("true")));
+        assert!(api_docs_enabled(Some(" TRUE ")));
+        assert!(!api_docs_enabled(None));
+        assert!(!api_docs_enabled(Some("")));
+        assert!(!api_docs_enabled(Some("1")));
+        assert!(!api_docs_enabled(Some("false")));
     }
 }

@@ -41,7 +41,7 @@ Cargo aliases are defined in `.cargo/config.toml`:
 
 ### Running locally
 
-The binary needs these env vars (see `docker-compose.yml` `x-common-env`): `HOST`, `PORT`, `REDIS_URL`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `JWT_SECRET`, `JWT_TIMEOUT`, plus the optional `API_DOCS_ENABLED` (`true` serves Swagger UI and `/api-docs/openapi.json`; off by default so off in production, on in every compose stack, MAIR-424). The Postgres URL is assembled by `database::pg_url::build_pg_url`, which percent-encodes user, password and database name, so `DB_PASSWORD` may contain any character. Normal workflow is Docker:
+The binary needs these env vars (see `docker-compose.yml` `x-common-env`): `HOST`, `PORT`, `REDIS_URL`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `JWT_SECRET`, `JWT_TIMEOUT`, plus the optional `API_DOCS_ENABLED` (only `true` serves Swagger UI and `/api-docs/openapi.json`; off by default so off in production, on in every compose stack, MAIR-424). The Postgres URL is assembled by `database::pg_url::build_pg_url`, which percent-encodes user, password and database name, so `DB_PASSWORD` may contain any character. Normal workflow is Docker:
 
 ```bash
 docker compose up            # full stack: postgres + liquibase migrations + redis + seeder + api + nginx
@@ -123,9 +123,9 @@ only exclude `main.rs` and `lib.rs`: `endpoints/` counts toward the 60 % line ga
 
 ### Request pipeline (`src/main.rs`)
 
-`main` refuses to start while Postgres does not answer `SELECT 1` (retries 30 s, then exits). `HttpServer` mounts, in order: Swagger UI (`/swagger-ui/*`, `/api-docs/openapi.json`) only when `API_DOCS_ENABLED` is set (`swagger::configure_docs`), the public probes `health::health` (`/health`, liveness, no dependency) and `health::ready` (`/ready`, readiness: Postgres `SELECT 1` + Redis read, `503` with `{"postgres", "redis"}` when one fails — MAIR-423), then `web::scope("/api").wrap(JwtMiddleware).configure(endpoints::config)`. Everything under `/api` requires a valid JWT (the probes are not mounted there); handlers get the caller via the `AuthenticatedUser { id }` extractor from `mairie360_api_lib::security`.
+`main` (same as `API_template`'s) refuses to start while Postgres does not answer `SELECT 1` (`health::wait_for_postgres`, 10 tries, then exits). `HttpServer` mounts, in order: Swagger UI (`/swagger-ui/*`, `/api-docs/openapi.json`) only when `API_DOCS_ENABLED=true` (`swagger::api_docs_enabled`), the public probes `health::health` (`/health`, liveness, no dependency) and `health::ready` (`/ready`, readiness: Postgres `SELECT 1` + Redis read, 2 s each; `200 ready` or `503 not ready: postgres, redis` — MAIR-423), then `web::scope("/api").wrap(JwtMiddleware).configure(endpoints::config)`. Everything under `/api` requires a valid JWT (the probes are not mounted there); handlers get the caller via the `AuthenticatedUser { id }` extractor from `mairie360_api_lib::security`.
 
-Route tree: `endpoints::config` → `v1::config` → `/v1/projects` → `projects::{get,post}` + `project_id::config` (`/{project_id}/close`, `/delete`, `/tasks/...`, `/users/...`) + `templates::config`. `src/lib.rs` re-exports `database` and `endpoints`; the crate is both a lib and a bin so `examples/` and `tests/` can depend on the lib.
+Route tree: `endpoints::config` → `v1::config` → `/v1/projects` → `projects::{get,post}` + `project_id::config` (`/{project_id}/close`, `/delete`, `/tasks/...`, `/users/...`). `src/lib.rs` re-exports `database` and `endpoints`; the crate is both a lib and a bin so `examples/` and `tests/` can depend on the lib.
 
 ### Endpoint module convention (`src/endpoints/v1/…`)
 
@@ -173,13 +173,13 @@ total; their query views select `paged_rows_sql!` over rows numbered `rn` and ar
 `fetch_one::<PagedRows<T>, _>`. Rate limiting is not done here (same rule as `API_template`): every call comes
 from a BFF, so it belongs to the ingress / BFF layer. Database errors are logged with `endpoints::db_error::log_db_error` before
 answering `500` (`tracing`, level from `RUST_LOG`, default `info`); a handler that turns some of them into a
-client status maps them with `db_error::classify` (`Conflict` / `InvalidReference` / `NotFound` logged at `warn`,
+client status maps them with `db_error::classify_db_error` (`Conflict` / `InvalidReference` / `NotFound` logged at `info`,
 `Internal` at `error`) instead of matching `DbError` by hand (MAIR-421). A path segment that is not a valid id
 answers `400` (`PathConfig` in `endpoints::config`), as every route documents.
 
 ### Deployment
 
-`Dockerfile` = multi-stage release build onto `gcr.io/distroless/cc-debian12`. `development.Dockerfile` + `entrypoint.sh` = `cargo watch` dev container used by compose. `nginx.conf` reverse-proxies `:80` → api `:3001`. CI (`.github/workflows/cicd.yml`) just calls the reusable `mairie360/CICD` workflow, which builds/pushes the `project-api` image and runs the three `*_test.sh` scripts with `IMAGE_REF` set to the `dev-<sha>` image published by `release-dev` (newman, no Postman account involved).
+`Dockerfile` = multi-stage release build onto `gcr.io/distroless/cc-debian12`, copied from `API_template` (MAIR-427): images pinned by digest, a dependency-only layer, `cargo build --release --locked`. `.cargo/audit.toml`, `.github/workflows/cicd.yml` and `src/main.rs` are the template's too: keep them in sync with it rather than editing them here alone. `development.Dockerfile` + `entrypoint.sh` = `cargo watch` dev container used by compose. `nginx.conf` reverse-proxies `:80` → api `:3001`. CI (`.github/workflows/cicd.yml`) just calls the reusable `mairie360/CICD` workflow, which builds/pushes the `project-api` image and runs the three `*_test.sh` scripts with `IMAGE_REF` set to the `dev-<sha>` image published by `release-dev` (newman, no Postman account involved).
 
 ## Pull request reviewers
 

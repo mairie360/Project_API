@@ -1,118 +1,107 @@
+use std::future::Future;
 use std::time::Duration;
 
 use actix_web::{get, web, HttpResponse, Responder};
 use mairie360_api_lib::state::AppState;
-use serde::Serialize;
-use utoipa::{OpenApi, ToSchema};
+use utoipa::OpenApi;
 
-use crate::database::service::ping::PingQueryView;
+use crate::database::ping::PingQueryView;
 
-/// Redis key read by the probe (`EXISTS`, under the API's key prefix): it never exists.
+/// Longest time a dependency check may take before it counts as down. Keep the readiness probe's
+/// `timeoutSeconds` above it.
+pub const DEPENDENCY_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Redis key read by the readiness probe: its value does not matter, only the round-trip does.
 const REDIS_PROBE_KEY: &str = "readiness-probe";
 
-/// Handles a GET request to the /health endpoint: liveness only.
+/// Liveness probe: answers as long as the process serves HTTP, whatever the state of Postgres and
+/// Redis, so that an outage of a dependency does not make Kubernetes restart every pod.
 #[utoipa::path(
     get,
     path = "health",
+    tag = "probes",
     summary = "Liveness probe",
-    description = "Answers `OK` as soon as the process accepts connections. Not authenticated. \
-                   It checks neither Postgres nor Redis, on purpose: a failing dependency must \
-                   take the pod out of the service (`GET /ready`), not restart it. Use it as the \
-                   Kubernetes `livenessProbe`.",
+    description = "Answers `200 OK` as long as the process serves HTTP. Checks no dependency: \
+        use `GET /ready` to know whether Postgres and Redis are reachable.",
     responses(
-        (
-            status = 200,
-            description = "The process accepts connections.",
-            body = String,
-            content_type = "text/plain",
-            example = json!("OK")
-        )
-    ),
-    tag = "Service"
+        (status = 200, description = "The process is alive.", body = String,
+            content_type = "text/plain", example = json!("OK"))
+    )
 )]
 #[get("/health")]
 pub async fn health() -> impl Responder {
     HttpResponse::Ok().body("OK")
 }
 
-/// State of each dependency, as returned by `GET /ready`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
-pub struct Readiness {
-    /// `true` when `SELECT 1` succeeded on Postgres.
-    #[schema(example = true)]
-    pub postgres: bool,
-    /// `true` when Redis answered a read (`EXISTS`).
-    #[schema(example = true)]
-    pub redis: bool,
-}
-
-impl Readiness {
-    pub fn is_ready(&self) -> bool {
-        self.postgres && self.redis
-    }
-}
-
-/// Queries Postgres and Redis; each check gives up after `timeout`.
-pub async fn check_dependencies(state: &AppState, timeout: Duration) -> Readiness {
-    let postgres = async {
-        matches!(
-            tokio::time::timeout(
-                timeout,
-                state
-                    .get_smart_db()
-                    .fetch_scalar::<i32, _>(&PingQueryView::default())
-            )
-            .await,
-            Ok(Ok(1))
-        )
-    };
-    let redis = async {
-        matches!(
-            tokio::time::timeout(timeout, state.get_redis().key_exist(REDIS_PROBE_KEY)).await,
-            Ok(Ok(_))
-        )
-    };
-    let (postgres, redis) = tokio::join!(postgres, redis);
-    Readiness { postgres, redis }
-}
-
-/// Handles a GET request to the /ready endpoint: readiness, with Postgres and Redis.
+/// Readiness probe: runs `SELECT 1` on Postgres and a read on Redis, each bounded by
+/// [`DEPENDENCY_TIMEOUT`].
 #[utoipa::path(
     get,
     path = "ready",
+    tag = "probes",
     summary = "Readiness probe",
-    description = "Queries Postgres (`SELECT 1`) and Redis (a read), each with a 2-second \
-                   timeout, and answers `200` only when both respond. Not authenticated. Use it \
-                   as the Kubernetes `readinessProbe` (and `startupProbe`): a pod whose database \
-                   is unreachable is taken out of the service instead of answering `500`. Redis \
-                   is required because the revocation list of sessions lives there.",
+    description = "Runs `SELECT 1` on Postgres and reads a key on Redis, each bounded by 2 seconds. \
+        Answers `200` when both answer, `503` naming the unreachable dependencies otherwise. \
+        Kubernetes stops routing traffic to a pod that is not ready, without restarting it.",
     responses(
-        (
-            status = 200,
-            description = "Both dependencies answered.",
-            body = Readiness,
-            example = json!({ "postgres": true, "redis": true })
-        ),
-        (
-            status = 503,
-            description = "Postgres or Redis did not answer in time; the body tells which one.",
-            body = Readiness,
-            example = json!({ "postgres": false, "redis": true })
-        )
-    ),
-    tag = "Service"
+        (status = 200, description = "Postgres and Redis both answered.", body = String,
+            content_type = "text/plain", example = json!("ready")),
+        (status = 503, description = "Postgres, Redis or both did not answer within 2 seconds; \
+            the body lists them.", body = String, content_type = "text/plain",
+            example = json!("not ready: postgres, redis"))
+    )
 )]
 #[get("/ready")]
 pub async fn ready(state: web::Data<AppState>) -> impl Responder {
-    let readiness = check_dependencies(&state, Duration::from_secs(2)).await;
-    if readiness.is_ready() {
-        HttpResponse::Ok().json(readiness)
+    let postgres = postgres_answers(&state);
+    let redis =
+        within_timeout(async { state.get_redis().key_exist(REDIS_PROBE_KEY).await.is_ok() });
+    let (postgres, redis) = tokio::join!(postgres, redis);
+
+    let down: Vec<&str> = [("postgres", postgres), ("redis", redis)]
+        .into_iter()
+        .filter_map(|(name, up)| (!up).then_some(name))
+        .collect();
+    if down.is_empty() {
+        HttpResponse::Ok().body("ready")
     } else {
-        tracing::warn!(?readiness, "readiness probe failed");
-        HttpResponse::ServiceUnavailable().json(readiness)
+        HttpResponse::ServiceUnavailable().body(format!("not ready: {}", down.join(", ")))
     }
 }
 
+/// `SELECT 1` on Postgres, bounded by [`DEPENDENCY_TIMEOUT`].
+pub async fn postgres_answers(state: &AppState) -> bool {
+    within_timeout(async {
+        state
+            .get_smart_db()
+            .fetch_scalar::<i32, _>(&PingQueryView)
+            .await
+            .is_ok()
+    })
+    .await
+}
+
+/// Startup check: tries [`postgres_answers`] up to `attempts` times, `delay` apart, and says whether
+/// Postgres ever answered. `main.rs` refuses to start when it does not, instead of serving `500`s.
+pub async fn wait_for_postgres(state: &AppState, attempts: u32, delay: Duration) -> bool {
+    for attempt in 1..=attempts {
+        if postgres_answers(state).await {
+            return true;
+        }
+        tracing::warn!(attempt, attempts, "Postgres does not answer yet");
+        if attempt < attempts {
+            tokio::time::sleep(delay).await;
+        }
+    }
+    false
+}
+
+async fn within_timeout(check: impl Future<Output = bool>) -> bool {
+    tokio::time::timeout(DEPENDENCY_TIMEOUT, check)
+        .await
+        .unwrap_or(false)
+}
+
 #[derive(OpenApi)]
-#[openapi(paths(health, ready), components(schemas(Readiness)))]
+#[openapi(paths(health, ready))]
 pub struct HealthDoc;
