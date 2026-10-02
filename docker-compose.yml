@@ -149,7 +149,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://project:3001/health"] # change api name and port
+      test: ["CMD", "curl", "-f", "http://project:3001/ready"] # change api name and port
       interval: 10s
       timeout: 5s
       retries: 5

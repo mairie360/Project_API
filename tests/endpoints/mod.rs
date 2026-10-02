@@ -5,6 +5,7 @@
 
 pub mod access;
 pub mod flows;
+pub mod service;
 
 use std::sync::Once;
 
