@@ -148,7 +148,7 @@ const writeHandlers = {
     });
   },
 
-  // Tasks of the write sandbox project: create → patch → comment → history → delete.
+  // Tasks of the write sandbox project: create → patch → comment → delete.
   'POST /api/v1/projects/{project_id}/tasks/': ({ request, data }) => {
     const res = request({
       path: { project_id: data.writeProjectId },
@@ -176,21 +176,6 @@ const writeHandlers = {
         body: { message: 'Réunion publique calée au 3 octobre.' },
       }),
       { 'comment task 201': (r) => r.status === 201 },
-    );
-    deleteTask(data.writeProjectId, taskId);
-  },
-  'POST /api/v1/projects/{project_id}/tasks/{task_id}/history': ({ request, data }) => {
-    const taskId = createTask(data.writeProjectId, 'k6 history task');
-    check(
-      request({
-        path: { project_id: data.writeProjectId, task_id: taskId },
-        body: {
-          action: 'task_updated',
-          label: 'Budget révisé après consultation',
-          changes: { budget: { from: 12000, to: 15500 } },
-        },
-      }),
-      { 'task history 201': (r) => r.status === 201 },
     );
     deleteTask(data.writeProjectId, taskId);
   },
@@ -262,17 +247,15 @@ export const options = {
   },
 };
 
-/** Read fixtures: a project with a member, a task, a comment and a history entry. */
+/** Read fixtures: a project with a member, a task (its creation is logged) and a comment. */
 export function setup() {
   const projectId = createProject('k6 read fixture');
   addMember(projectId, MEMBER_ID);
   const taskId = createTask(projectId, 'k6 read task');
   fixture('POST', `/api/v1/projects/${projectId}/tasks/${taskId}/comments`, { message: 'k6 fixture' });
-  fixture('POST', `/api/v1/projects/${projectId}/tasks/${taskId}/history`, {
-    action: 'task_created',
-    label: 'k6 fixture',
-  });
   const writeProjectId = createProject('k6 write sandbox');
+  // Tasks are assigned to MEMBER_ID, who must belong to the project (MAIR-393).
+  addMember(writeProjectId, MEMBER_ID);
   return { projectId, taskId, writeProjectId };
 }
 

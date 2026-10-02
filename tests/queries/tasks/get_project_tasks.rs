@@ -1,5 +1,6 @@
 use crate::common::get_smart_db;
 use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
+use project_api::database::paged::PagedRows;
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority, TaskStatus,
@@ -49,7 +50,9 @@ async fn test_get_tasks_success() {
     for (status, priority, due_date, assigned_to) in specs {
         let view = CreateTaskQueryView::new(
             project_id,
+            1,
             "Test Task",
+            "",
             status,
             priority,
             due_date,
@@ -64,8 +67,11 @@ async fn test_get_tasks_success() {
         );
     }
 
-    let view = GetProjectTasksQueryView::new(project_id);
-    let result = db.fetch_all::<Task, _>(&view).await;
+    let view = GetProjectTasksQueryView::new(project_id, 100, 0);
+    let result = db
+        .fetch_one::<PagedRows<Task>, _>(&view)
+        .await
+        .map(|page| page.items);
 
     assert!(
         result.is_ok(),
@@ -86,8 +92,11 @@ async fn test_get_task_unknown_project() {
     let (_container, host) = get_shared_db().await;
     let db = get_smart_db(host.to_string()).await;
 
-    let view = GetProjectTasksQueryView::new(999);
-    let result = db.fetch_all::<Task, _>(&view).await;
+    let view = GetProjectTasksQueryView::new(999, 100, 0);
+    let result = db
+        .fetch_one::<PagedRows<Task>, _>(&view)
+        .await
+        .map(|page| page.items);
 
     assert!(
         result.is_ok(),

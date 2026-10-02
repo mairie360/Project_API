@@ -3,6 +3,8 @@ use actix_web::{post, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::endpoints::db_error::log_db_error;
+
 use crate::database::tasks::collaboration::view::{AddTaskCommentQueryView, TaskComment};
 use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::tasks::task_id::comments::view::{
@@ -67,7 +69,10 @@ async fn trigger_add_task_comment(
             message,
         ))
         .await
-        .map_err(|_| AddTaskCommentError::DatabaseError)?;
+        .map_err(|e| {
+            log_db_error("projects/project_id/tasks/task_id/comments", &e);
+            AddTaskCommentError::DatabaseError
+        })?;
 
     comments
         .into_iter()
@@ -78,32 +83,32 @@ async fn trigger_add_task_comment(
 #[utoipa::path(
     post,
     path = "comments",
-    summary = "Commenter une tâche",
-    description = "Ajoute un commentaire au fil de discussion d'une tâche. Ouvert aux responsables \
-                   du projet et à l'agent assigné à la tâche.\n\n\
-                   Le message est nettoyé de ses espaces de bord, puis doit contenir entre 1 et \
-                   2000 caractères : un message vide ou trop long est refusé en `400`.\n\n\
-                   L'auteur est déduit du JWT, jamais du corps. Le commentaire créé est renvoyé \
-                   avec son identifiant et sa date, et apparaît ensuite dans \
+    summary = "Comment on a task",
+    description = "Adds a comment to the discussion thread of a task. Open to the project managers \
+                   and to the agent assigned to the task.\n\n\
+                   The message is trimmed, then must hold 1 to 2000 characters: an empty or too \
+                   long message is refused with `400`.\n\n\
+                   The author comes from the JWT, never from the body. The created comment is \
+                   returned with its id and date, and then appears in \
                    `GET …/tasks/{task_id}/collaboration`.",
     params(
         TaskPathParams
     ),
     request_body(
         content = AddTaskCommentView,
-        description = "Texte du commentaire.",
+        description = "Text of the comment.",
         example = json!({ "message": "La réunion publique est calée au 3 octobre." })
     ),
     responses(
         (
             status = 201,
-            description = "Commentaire ajouté.",
+            description = "Comment added.",
             body = TaskComment,
             example = json!({
-                "id": "c-1",
+                "id": "comment-31",
                 "message": "La réunion publique est calée au 3 octobre.",
                 "author": { "id": "user-42", "name": "Jean Dupont" },
-                "createdAt": "2026-09-14T09:12:00Z"
+                "createdAt": "2026-09-14T09:12:00.000Z"
             })
         ),
         (
@@ -115,28 +120,28 @@ async fn trigger_add_task_comment(
         ),
         (
             status = 401,
-            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
             body = String,
             content_type = "text/plain",
             example = json!("Jeton expiré")
         ),
         (
             status = 403,
-            description = "Ni responsable du projet, ni agent assigné à la tâche.",
+            description = "Neither a manager of the project nor the agent assigned to the task.",
             body = String,
             content_type = "text/plain",
             example = json!("Forbidden.")
         ),
         (
             status = 404,
-            description = "Projet ou tâche inexistant, ou projet invisible pour l'appelant.",
+            description = "Unknown project or task, or project not visible to the caller.",
             body = String,
             content_type = "text/plain",
             example = json!("Unknown task.")
         ),
         (
             status = 500,
-            description = "Erreur de base de données.",
+            description = "Database error.",
             body = String,
             content_type = "text/plain",
             example = json!("An error occurred while accessing the database.")

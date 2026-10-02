@@ -3,6 +3,8 @@ use actix_web::{patch, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::endpoints::db_error::log_db_error;
+
 use crate::database::project::update::view::UpdateProjectQueryView;
 use crate::database::project::update_status::view::ProjectStatus as DbProjectStatus;
 use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
@@ -74,7 +76,10 @@ async fn trigger_update_project(
             status,
         ))
         .await
-        .map_err(|_| UpdateProjectError::DatabaseError)?;
+        .map_err(|e| {
+            log_db_error("projects/project_id/patch", &e);
+            UpdateProjectError::DatabaseError
+        })?;
 
     if updated {
         Ok(())

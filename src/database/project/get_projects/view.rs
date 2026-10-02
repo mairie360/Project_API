@@ -1,15 +1,20 @@
 use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
 
-/// Projets visibles par l'utilisateur (cf. `project_visible_to_user_sql!`), du plus récent au plus ancien.
+/// One page of the projects visible to the user (see `project_visible_to_user_sql!`), newest first.
+/// Read with `fetch_one::<PagedRows<ProjectView>, _>`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GetProjectsQueryView {
     params: Vec<QueryParam>,
 }
 
 impl GetProjectsQueryView {
-    pub fn new(user_id: u64) -> Self {
+    pub fn new(user_id: u64, limit: u32, offset: u32) -> Self {
         Self {
-            params: vec![QueryParam::I32(user_id as i32)],
+            params: vec![
+                QueryParam::I32(user_id as i32),
+                QueryParam::I64(i64::from(limit)),
+                QueryParam::I64(i64::from(offset)),
+            ],
         }
     }
 
@@ -21,13 +26,14 @@ impl GetProjectsQueryView {
 impl ApiRequestDto for GetProjectsQueryView {
     fn query_sql(&self) -> &'static str {
         concat!(
-            "SELECT to_jsonb(t) FROM ( \
-                SELECT p.id, p.title, p.description, p.status \
+            crate::paged_rows_sql!("$2", "$3"),
+            " FROM ( \
+                SELECT p.id, p.title, p.description, p.status, \
+                       row_number() OVER (ORDER BY p.created_at DESC NULLS LAST, p.id DESC) AS rn \
                 FROM projects p \
                 WHERE ",
             crate::project_visible_to_user_sql!(),
-            " ORDER BY p.created_at DESC NULLS LAST, p.id DESC \
-             ) t"
+            " ) t"
         )
     }
 

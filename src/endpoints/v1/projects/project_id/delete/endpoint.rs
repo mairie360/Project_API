@@ -3,6 +3,8 @@ use actix_web::{delete, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::endpoints::db_error::log_db_error;
+
 use crate::database::project::delete::view::DeleteProjectQueryView;
 use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
@@ -51,11 +53,10 @@ async fn trigger_delete_project(
     project_id: u64,
 ) -> Result<(), DeleteProjectError> {
     let view = DeleteProjectQueryView::new(project_id);
-    state
-        .get_smart_db()
-        .execute(view)
-        .await
-        .map_err(|_| DeleteProjectError::DatabaseError)?;
+    state.get_smart_db().execute(view).await.map_err(|e| {
+        log_db_error("projects/project_id/delete", &e);
+        DeleteProjectError::DatabaseError
+    })?;
 
     Ok(())
 }

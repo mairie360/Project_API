@@ -3,6 +3,8 @@ use actix_web::{patch, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::endpoints::db_error::log_db_error;
+
 use crate::database::project::update_status::view::{ProjectStatus, UpdateProjectStatusQueryView};
 use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
@@ -57,11 +59,10 @@ async fn trigger_close_project(
 ) -> Result<(), PatchMessageError> {
     let view = UpdateProjectStatusQueryView::new(project_id, ProjectStatus::Completed);
 
-    state
-        .get_smart_db()
-        .execute(view)
-        .await
-        .map_err(|_| PatchMessageError::DatabaseError)?;
+    state.get_smart_db().execute(view).await.map_err(|e| {
+        log_db_error("projects/project_id/close", &e);
+        PatchMessageError::DatabaseError
+    })?;
 
     Ok(())
 }

@@ -3,6 +3,8 @@ use actix_web::{delete, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::endpoints::db_error::log_db_error;
+
 use crate::database::users::remove_user_from_project::view::RemoveUserFromProjectQueryView;
 use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::users::user_id::ProjectUserPathParams;
@@ -52,11 +54,10 @@ async fn trigger_remove_user_from_project(
     user_id: u64,
 ) -> Result<(), RemoveUserFromProjectError> {
     let view = RemoveUserFromProjectQueryView::new(project_id, user_id);
-    state
-        .get_smart_db()
-        .execute(view)
-        .await
-        .map_err(|_| RemoveUserFromProjectError::DatabaseError)?;
+    state.get_smart_db().execute(view).await.map_err(|e| {
+        log_db_error("projects/project_id/users/user_id/delete", &e);
+        RemoveUserFromProjectError::DatabaseError
+    })?;
 
     Ok(())
 }

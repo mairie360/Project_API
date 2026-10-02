@@ -29,7 +29,8 @@ pub struct PatchTaskView {
         example = "Consulter les riverains et les commerçants"
     )]
     pub name: Option<String>,
-    /// Non persistée : la table `tasks` n'a pas de description.
+    /// New description, at most 5000 characters; `""` clears it. Absent to leave it unchanged.
+    /// Forbidden to an assigned agent who does not manage the project.
     #[schema(max_length = 5000, example = "Réunion publique avec les riverains")]
     pub description: Option<String>,
     /// Nouveau statut. Seul champ qu'un agent assigné non gestionnaire a le droit de modifier.
@@ -43,7 +44,8 @@ pub struct PatchTaskView {
     #[serde(default, deserialize_with = "deserialize_present")]
     #[schema(value_type = Option<u64>, nullable, example = 42)]
     pub assigned_to: Option<Option<u64>>,
-    /// Non persistés par cette opération.
+    /// New list of custom fields, replacing the whole stored list. Absent to leave it unchanged.
+    /// Forbidden to an assigned agent who does not manage the project.
     pub fields: Option<Vec<DynamicTaskField>>,
 }
 

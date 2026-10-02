@@ -1,3 +1,4 @@
+pub mod paged;
 pub mod pg_url;
 pub mod project;
 pub mod tasks;

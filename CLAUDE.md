@@ -134,10 +134,21 @@ or are a member of. A project that is not visible answers 404. Every operation u
 `endpoints/v1/projects/access.rs::require_access` (one `ProjectAccessQueryView` query): reads need visibility;
 writes on the project, its tasks and members need visibility plus the Admin/Maire/Responsable role (403
 otherwise); task collaboration and `PATCH` on a task are also open to the task's assignee, who may only change
-the status. Creating a project requires one of those roles. History entries are limited to `task_created`,
-`task_updated` and `status_changed`, always signed by the caller. Task comments and free history live in `tasks.custom_fields`
-(`comments`, `history`, next to the ordered `fields` list written at creation); status changes come from
-`task_history` (DB trigger).
+the status. Creating a project requires one of those roles. A task can only be assigned to the owner or a
+member of its project (`assignable_to_project_sql!`, `400` otherwise), so an assignee always sees the project.
+
+Since MAIR-393 (database `v1.8.0` schema): the task description is the `tasks.description` column, comments
+are rows of `task_comments`, and the history is `task_history`, written **only** by the database trigger
+`fn_log_task_change` (`task_created`, `task_updated` with `{"<field>": {"from", "to"}}`, `status_changed`).
+Every task write sets `tasks.updated_by` to the caller, which signs the history; there is no route to write
+history and `project_api` only has `SELECT` on that table. History labels are generated in
+`database/tasks/collaboration/view.rs` (`From<TaskHistoryRow>`). `tasks.custom_fields` only holds `fields`.
+
+List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`)
+take `limit` (default 100, clamped to 1–500) / `offset` (`endpoints::pagination::PageParams`) and return a
+total; their query views select `paged_rows_sql!` over rows numbered `rn` and are read with
+`fetch_one::<PagedRows<T>, _>`. Database errors are logged with `endpoints::db_error::log_db_error` before
+answering `500` (`tracing`, level from `RUST_LOG`, default `info`).
 
 ### Deployment
 

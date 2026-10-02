@@ -3,6 +3,10 @@ use actix_web::{get, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::database::paged::PagedRows;
+use crate::endpoints::db_error::log_db_error;
+use crate::endpoints::pagination::{Page, PageParams};
+
 use crate::database::project::get_projects::view::{GetProjectsQueryView, ProjectView};
 use crate::endpoints::v1::projects::get::view::GetProjectsResultView;
 
@@ -41,49 +45,64 @@ impl ResponseError for GetProjectsError {
 async fn trigger_get_projects(
     state: web::Data<AppState>,
     user_id: u64,
+    page: Page,
 ) -> Result<GetProjectsResultView, GetProjectsError> {
-    let view = GetProjectsQueryView::new(user_id);
-    let result: Vec<ProjectView> = state
-        .get_smart_db()
-        .fetch_all(&view)
-        .await
-        .map_err(|_| GetProjectsError::DatabaseError)?;
+    let view = GetProjectsQueryView::new(user_id, page.limit, page.offset);
+    let result: PagedRows<ProjectView> =
+        state.get_smart_db().fetch_one(&view).await.map_err(|e| {
+            log_db_error("projects/get", &e);
+            GetProjectsError::DatabaseError
+        })?;
 
     Ok(GetProjectsResultView {
-        projects: result.into_iter().map(|p| p.into()).collect(),
+        projects: result.items.into_iter().map(Into::into).collect(),
+        total: result.total.max(0) as u64,
     })
 }
 
 #[utoipa::path(
     get,
     path = "",
-    summary = "Lister ses projets",
-    description = "Renvoie les projets visibles par l'utilisateur porté par le JWT. Vue de \
-                   liste : ni les tâches ni les membres ne sont inclus, il faut passer par \
-                   `GET /api/v1/projects/{project_id}/` pour le détail d'un projet.\n\n\
-                   La liste est vide si l'utilisateur n'a accès à aucun projet.",
+    summary = "List my projects",
+    description = "Returns one page of the projects visible to the user of the JWT, newest first. \
+                   List view: neither tasks nor members are included, call \
+                   `GET /api/v1/projects/{project_id}/` for the detail of a project.\n\n\
+                   `limit` (default 100, at most 500) and `offset` (default 0) select the page; \
+                   `total` is the number of visible projects, whatever the page. The list is \
+                   empty if the user has access to no project.",
+    params(
+        PageParams
+    ),
     responses(
         (
             status = 200,
-            description = "Projets visibles par l'utilisateur connecté.",
+            description = "One page of the projects visible to the caller.",
             body = GetProjectsResultView,
             example = json!({
                 "projects": [
                     { "id": 12, "name": "Réfection de la place du marché", "description": "Travaux de voirie 2026", "status": "Active" },
                     { "id": 18, "name": "Numérisation de l'état civil", "description": "", "status": "Completed" }
-                ]
+                ],
+                "total": 2
             })
         ),
         (
+            status = 400,
+            description = "`limit` or `offset` is not a non-negative integer.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Query deserialize error: invalid digit found in string")
+        ),
+        (
             status = 401,
-            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
             body = String,
             content_type = "text/plain",
             example = json!("Jeton expiré")
         ),
         (
             status = 500,
-            description = "Erreur de base de données.",
+            description = "Database error.",
             body = String,
             content_type = "text/plain",
             example = json!("An error occurred while accessing the database.")
@@ -98,7 +117,8 @@ async fn trigger_get_projects(
 pub async fn get_projects(
     state: web::Data<AppState>,
     auth_user: AuthenticatedUser,
+    page: web::Query<PageParams>,
 ) -> Result<impl Responder, GetProjectsError> {
-    let result = trigger_get_projects(state, auth_user.id).await?;
+    let result = trigger_get_projects(state, auth_user.id, page.page()).await?;
     Ok(HttpResponse::Ok().json(result))
 }

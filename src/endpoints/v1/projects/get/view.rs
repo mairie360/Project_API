@@ -67,6 +67,10 @@ impl From<ProjectView> for ProjetView {
 /// Projets visibles par l'utilisateur connecté.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct GetProjectsResultView {
-    /// Projets visibles par l'utilisateur connecté. Vide s'il n'a accès à aucun projet.
+    /// Projects of the page, newest first. Empty if the user has access to no project or the page
+    /// is past the end.
     pub projects: Vec<ProjetView>,
+    /// Number of projects visible to the user, whatever the page.
+    #[schema(example = 2)]
+    pub total: u64,
 }
