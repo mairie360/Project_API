@@ -44,3 +44,10 @@ on `localhost:3001`:
 docker run --rm --network host -v "$PWD/tests/postman:/etc/newman:ro" postman/newman:6.1.3-alpine \
   run collection.json --environment environment.json
 ```
+
+## JWT secret
+
+`JWT_SECRET` must be random, at least 32 bytes and distinct per instance: `mairie360_api_lib`
+refuses to start with a missing, short or well-known one (MAIR-428). The compose stacks use the
+public test value `b"secret"` with `JWT_ALLOW_WEAK_SECRET=true`; never set that variable in a
+deployment.
