@@ -98,6 +98,7 @@ const spec = loadSpec();
 
 const readHandlers = {
   'GET /health': ({ request }) => check(request(), { 'health 200': (r) => r.status === 200 }),
+  'GET /ready': ({ request }) => check(request(), { 'ready 200': (r) => r.status === 200 }),
   'GET /api/v1/projects/': ({ request }) =>
     check(request(), { 'list projects 200': (r) => r.status === 200 }),
   'GET /api/v1/projects/{project_id}/': ({ request, data }) =>

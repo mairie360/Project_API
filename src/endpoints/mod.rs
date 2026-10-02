@@ -16,6 +16,4 @@ pub fn config(cfg: &mut web::ServiceConfig) {
             .error_handler(|error, _| actix_web::error::ErrorBadRequest(error.to_string())),
     );
     cfg.configure(v1::config);
-    cfg.service(health::health);
-    cfg.service(hello::hello);
 }
