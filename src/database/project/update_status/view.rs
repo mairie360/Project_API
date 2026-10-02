@@ -1,4 +1,6 @@
-use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
+use mairie360_api_lib::database::db_interface::{
+    id_from_sql, id_to_sql, ApiRequestDto, QueryParam,
+};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ProjectStatus {
@@ -44,7 +46,7 @@ impl UpdateProjectStatusQueryView {
         Self {
             params: vec![
                 QueryParam::Text(status.to_string()),
-                QueryParam::I32(project_id as i32),
+                QueryParam::I32(id_to_sql(project_id)),
             ],
         }
     }
@@ -54,7 +56,7 @@ impl UpdateProjectStatusQueryView {
     }
 
     pub fn project_id(&self) -> u64 {
-        self.params[1].as_i32() as u64
+        id_from_sql(self.params[1].as_i32())
     }
 }
 

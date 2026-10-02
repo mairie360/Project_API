@@ -23,9 +23,9 @@ impl From<TaskCollaborationRow> for TaskCollaborationView {
     fn from(row: TaskCollaborationRow) -> Self {
         Self {
             comments: row.comments.items.into_iter().map(|c| c.value).collect(),
-            comments_total: row.comments.total.max(0) as u64,
+            comments_total: u64::try_from(row.comments.total).unwrap_or(0),
             history: row.history.items.into_iter().map(Into::into).collect(),
-            history_total: row.history.total.max(0) as u64,
+            history_total: u64::try_from(row.history.total).unwrap_or(0),
         }
     }
 }

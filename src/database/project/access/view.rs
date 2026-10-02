@@ -1,4 +1,4 @@
-use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
+use mairie360_api_lib::database::db_interface::{id_to_sql, ApiRequestDto, QueryParam};
 
 /// Droits de l'utilisateur sur un projet (et éventuellement une tâche de ce projet), en une requête.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -10,9 +10,9 @@ impl ProjectAccessQueryView {
     pub fn new(project_id: u64, task_id: Option<u64>, user_id: u64) -> Self {
         Self {
             params: vec![
-                QueryParam::I32(user_id as i32),
-                QueryParam::I32(project_id as i32),
-                QueryParam::OptionI32(task_id.map(|id| id as i32)),
+                QueryParam::I32(id_to_sql(user_id)),
+                QueryParam::I32(id_to_sql(project_id)),
+                QueryParam::OptionI32(task_id.map(id_to_sql)),
             ],
         }
     }
@@ -74,7 +74,7 @@ pub struct LockProjectQueryView {
 impl LockProjectQueryView {
     pub fn new(project_id: u64) -> Self {
         Self {
-            params: vec![QueryParam::I32(project_id as i32)],
+            params: vec![QueryParam::I32(id_to_sql(project_id))],
         }
     }
 }

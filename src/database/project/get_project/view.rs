@@ -1,4 +1,6 @@
-use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
+use mairie360_api_lib::database::db_interface::{
+    id_from_sql, id_to_sql, ApiRequestDto, QueryParam,
+};
 
 /// Le projet `project_id` s'il est visible par l'utilisateur (aucune ligne sinon, ou s'il n'existe pas).
 /// Les lignes sont des `get_projects::view::ProjectView`.
@@ -11,18 +13,18 @@ impl GetVisibleProjectQueryView {
     pub fn new(project_id: u64, user_id: u64) -> Self {
         Self {
             params: vec![
-                QueryParam::I32(user_id as i32),
-                QueryParam::I32(project_id as i32),
+                QueryParam::I32(id_to_sql(user_id)),
+                QueryParam::I32(id_to_sql(project_id)),
             ],
         }
     }
 
     pub fn user_id(&self) -> u64 {
-        self.params[0].as_i32() as u64
+        id_from_sql(self.params[0].as_i32())
     }
 
     pub fn project_id(&self) -> u64 {
-        self.params[1].as_i32() as u64
+        id_from_sql(self.params[1].as_i32())
     }
 }
 

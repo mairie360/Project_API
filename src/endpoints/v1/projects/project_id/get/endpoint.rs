@@ -78,7 +78,7 @@ async fn trigger_get_project(
     Ok(GetProjectResultView {
         project: project.into(),
         tasks: tasks.items.into_iter().map(Into::into).collect(),
-        tasks_total: tasks.total.max(0) as u64,
+        tasks_total: u64::try_from(tasks.total).unwrap_or(0),
         users: users.into_iter().map(Into::into).collect(),
     })
 }

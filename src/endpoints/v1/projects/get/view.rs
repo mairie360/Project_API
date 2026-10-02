@@ -1,3 +1,4 @@
+use mairie360_api_lib::database::db_interface::id_from_sql;
 use utoipa::ToSchema;
 
 use crate::database::project::get_projects::view::ProjectView;
@@ -56,7 +57,7 @@ pub struct ProjetView {
 impl From<ProjectView> for ProjetView {
     fn from(value: ProjectView) -> Self {
         Self {
-            id: value.id() as u64,
+            id: id_from_sql(value.id()),
             name: value.title().to_string(),
             description: value.description().unwrap_or_default().to_string(),
             status: value.status().to_string().into(),

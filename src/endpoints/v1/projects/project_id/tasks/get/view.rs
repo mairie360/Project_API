@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use mairie360_api_lib::database::db_interface::id_from_sql;
 use utoipa::ToSchema;
 
 use crate::{
@@ -35,13 +36,13 @@ pub struct TaskView {
 impl From<Task> for TaskView {
     fn from(task: Task) -> Self {
         TaskView {
-            id: task.id() as u64,
+            id: id_from_sql(task.id()),
             title: task.title().to_string(),
             description: task.description().to_string(),
             status: task.status().to_string().into(),
             priority: task.priority().to_string().into(),
             due_date: task.due_date(),
-            assigned_to: task.assigned_to().map(|id| id as u64),
+            assigned_to: task.assigned_to().map(id_from_sql),
             fields: task.fields(),
         }
     }

@@ -1,4 +1,6 @@
-use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
+use mairie360_api_lib::database::db_interface::{
+    id_from_sql, id_to_sql, ApiRequestDto, QueryParam,
+};
 
 use crate::database::tasks::get_project_tasks::view::DynamicTaskField;
 
@@ -109,21 +111,21 @@ impl CreateTaskQueryView {
     ) -> Self {
         Self {
             params: vec![
-                QueryParam::I32(project_id as i32),
+                QueryParam::I32(id_to_sql(project_id)),
                 QueryParam::Text(title.to_string()),
                 QueryParam::Text(status.to_string()),
                 QueryParam::Text(priority.to_string()),
                 QueryParam::Text(due_date.map(|d| d.to_rfc3339()).unwrap_or_default()),
-                QueryParam::OptionI32(assigned_to.map(|id| id as i32)),
+                QueryParam::OptionI32(assigned_to.map(id_to_sql)),
                 QueryParam::Text(serde_json::json!({ "fields": fields }).to_string()),
                 QueryParam::Text(description.to_string()),
-                QueryParam::I32(created_by as i32),
+                QueryParam::I32(id_to_sql(created_by)),
             ],
         }
     }
 
     pub fn project_id(&self) -> u64 {
-        self.params[0].as_i32() as u64
+        id_from_sql(self.params[0].as_i32())
     }
 
     pub fn title(&self) -> &str {

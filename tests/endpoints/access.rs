@@ -366,3 +366,43 @@ async fn invalid_path_segments_and_bodies_are_rejected() {
     let missing = post(&format!("{}users/", s.project()), s.manager, json!({}));
     assert_eq!(status(&app, missing).await, 400);
 }
+
+#[actix_web::test]
+#[serial]
+async fn ids_beyond_int4_do_not_alias_existing_rows() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let s = scenario(&ctx, &app).await;
+    // `as i32` used to wrap 2^32 + n to n: these ids designated the scenario's rows (MAIR-422).
+    let wrap = 1_u64 << 32;
+    let aliased_project = format!("/api/v1/projects/{}/", wrap + s.project_id);
+    assert_eq!(status(&app, get(&aliased_project, s.manager)).await, 404);
+    assert_eq!(status(&app, delete(&aliased_project, s.manager)).await, 404);
+    let aliased_task = format!("{}tasks/{}/", s.project(), wrap + s.task_id);
+    assert_eq!(
+        status(
+            &app,
+            patch(&aliased_task, s.manager, json!({ "status": "Completed" }))
+        )
+        .await,
+        404
+    );
+
+    let aliased_assignee = patch(
+        &s.task(),
+        s.manager,
+        json!({ "assigned_to": wrap + s.member }),
+    );
+    assert_eq!(status(&app, aliased_assignee).await, 400);
+    let aliased_user = post(
+        &format!("{}users/", s.project()),
+        s.manager,
+        json!({ "user_id": wrap + s.outsider }),
+    );
+    assert_eq!(status(&app, aliased_user).await, 404);
+
+    // Nothing was changed through the aliases.
+    let project = json(&app, get(&s.project(), s.manager)).await;
+    assert_eq!(project["tasks"][0]["assigned_to"], s.assignee);
+    assert_eq!(project["users"].as_array().unwrap().len(), 2);
+}
