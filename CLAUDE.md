@@ -104,6 +104,14 @@ its own project and deletes it at the end, so it is replayable against a persist
 
 Integration tests (`tests/queries/`) require a **running Docker daemon and network access to ghcr.io**: each `#[tokio::test]` calls `mairie360_api_lib::test_setup::queries_setup::get_shared_db()`, which starts a `ghcr.io/mairie360/database` Postgres container (published on a random host port), runs Liquibase migrations against it, truncates + seeds it once per test run, and hands back a connection string. `tests/common::get_smart_db(url)` wraps it in a `SmartDatabase` (real Redis not needed — no query view sets a `cache_key`). Tests drive the query views through `execute` / `fetch_*` and hit real SQL — there is no compile-time query checking.
 
+Handler tests (`tests/endpoints/`, MAIR-419) run in the same binary and database: `init_app!` mounts the real
+`/api` scope behind `JwtMiddleware`, `jwt_for(user_id)` signs tokens with a test secret set in-process, and
+`access::scenario` builds a project owned by a Responsable with a plain member, an assignee and two outsiders.
+They assert the refusals (`401` without a valid JWT, `404` for a project the caller cannot see, `403` for a
+member without manager role, assignee limited to the status, task reachable only through its own project) and
+an end-to-end manager flow. **A new route or access rule gets its negative test here.** `cargo cov` / `cov_test`
+only exclude `main.rs` and `lib.rs`: `endpoints/` counts toward the 60 % line gate.
+
 ## Architecture
 
 ### Request pipeline (`src/main.rs`)
