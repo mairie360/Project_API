@@ -6,6 +6,7 @@ use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority, TaskStatus,
 };
+use project_api::database::users::add_user_to_project::view::AddUserToProjectQueryView;
 
 #[tokio::test]
 async fn test_project_access_distinguishes_managers_assignees_and_outsiders() {
@@ -23,10 +24,16 @@ async fn test_project_access_distinguishes_managers_assignees_and_outsiders() {
         .fetch_scalar::<i32, _>(&CreateProjectQueryView::new("Autre", None, owner))
         .await
         .unwrap() as u64;
+    // A task can only be assigned to the owner or a member of the project (MAIR-393).
+    db.execute(AddUserToProjectQueryView::new(project_id, assignee))
+        .await
+        .unwrap();
     let task_id = db
         .fetch_scalar::<i32, _>(&CreateTaskQueryView::new(
             project_id,
+            1,
             "Tâche",
+            "",
             TaskStatus::Todo,
             TaskPriority::Low,
             None,
@@ -39,7 +46,7 @@ async fn test_project_access_distinguishes_managers_assignees_and_outsiders() {
         ProjectAccessQueryView::new(project, task, user)
     };
 
-    // L'assigné voit la tâche via son affectation, pas le projet : il n'en est ni membre ni propriétaire.
+    // The assignee sees the project as a member and acts on the task through the assignment.
     let owner_access: ProjectAccess = db
         .fetch_one(&access(project_id, Some(task_id), owner))
         .await
@@ -65,7 +72,10 @@ async fn test_project_access_distinguishes_managers_assignees_and_outsiders() {
     assert!(owner_access.visible && owner_access.task_exists && !owner_access.can_manage());
     assert!(!owner_access.assigned && !owner_access.can_act_on_task());
     assert!(
-        !assignee_access.visible && assignee_access.assigned && !assignee_access.can_act_on_task()
+        assignee_access.visible
+            && assignee_access.assigned
+            && assignee_access.can_act_on_task()
+            && !assignee_access.can_manage()
     );
     assert!(
         !outsider_access.visible && outsider_access.manager_role && !outsider_access.can_manage()

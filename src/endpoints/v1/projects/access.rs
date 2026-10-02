@@ -1,6 +1,8 @@
 use actix_web::web;
 use mairie360_api_lib::state::AppState;
 
+use crate::endpoints::db_error::log_db_error;
+
 use crate::database::project::access::view::{ProjectAccess, ProjectAccessQueryView};
 
 /// Refus d'accès commun aux opérations sur un projet.
@@ -33,7 +35,10 @@ pub async fn require_access(
         .get_smart_db()
         .fetch_one(&ProjectAccessQueryView::new(project_id, task_id, user_id))
         .await
-        .map_err(|_| AccessDenied::DatabaseError)?;
+        .map_err(|e| {
+            log_db_error("projects/access", &e);
+            AccessDenied::DatabaseError
+        })?;
 
     if !access.visible || (task_id.is_some() && !access.task_exists) {
         return Err(AccessDenied::NotFound);
@@ -59,7 +64,10 @@ pub async fn require_manager_role(
         .get_smart_db()
         .fetch_one(&ProjectAccessQueryView::new(0, None, user_id))
         .await
-        .map_err(|_| AccessDenied::DatabaseError)?;
+        .map_err(|e| {
+            log_db_error("projects/access", &e);
+            AccessDenied::DatabaseError
+        })?;
     if access.manager_role {
         Ok(())
     } else {

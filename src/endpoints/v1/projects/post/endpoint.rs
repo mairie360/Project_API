@@ -3,6 +3,8 @@ use actix_web::{post, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::endpoints::db_error::log_db_error;
+
 use crate::database::project::create::view::CreateProjectQueryView;
 use crate::endpoints::v1::projects::access::{require_manager_role, AccessDenied};
 use crate::endpoints::v1::projects::post::view::{CreateProjectResultView, CreateProjectView};
@@ -51,7 +53,10 @@ async fn trigger_create_project(
         .get_smart_db()
         .fetch_scalar::<i32, _>(&view)
         .await
-        .map_err(|_| CreateProjectError::DatabaseError)?;
+        .map_err(|e| {
+            log_db_error("projects/post", &e);
+            CreateProjectError::DatabaseError
+        })?;
 
     Ok(result)
 }

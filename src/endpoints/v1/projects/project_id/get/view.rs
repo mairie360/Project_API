@@ -73,13 +73,16 @@ impl std::fmt::Display for TaskPriority {
     }
 }
 
-/// Projet visible par l'appelant, avec ses tâches et ses membres.
+/// Project visible to the caller, with one page of its tasks and all its members.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct GetProjectResultView {
-    /// Le projet demandé.
+    /// The requested project.
     pub project: ProjetView,
-    /// Toutes ses tâches. Vide si le projet n'en a aucune.
+    /// One page of its tasks, oldest first. Empty if the project has none or the page is past the end.
     pub tasks: Vec<TaskView>,
-    /// Tous ses membres.
+    /// Number of tasks of the project, whatever the page.
+    #[schema(example = 1)]
+    pub tasks_total: u64,
+    /// All its members.
     pub users: Vec<User>,
 }

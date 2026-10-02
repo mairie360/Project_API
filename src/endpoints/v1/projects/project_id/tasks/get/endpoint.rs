@@ -3,7 +3,11 @@ use actix_web::{get, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::endpoints::db_error::log_db_error;
+
+use crate::database::paged::PagedRows;
 use crate::database::tasks::get_project_tasks::view::{GetProjectTasksQueryView, Task};
+use crate::endpoints::pagination::{Page, PageParams};
 use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::tasks::get::view::GetTasksResultView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
@@ -49,16 +53,17 @@ impl ResponseError for GetTasksError {
 async fn trigger_get_project_tasks(
     state: web::Data<AppState>,
     project_id: u64,
+    page: Page,
 ) -> Result<GetTasksResultView, GetTasksError> {
-    let view = GetProjectTasksQueryView::new(project_id);
-    let result: Vec<Task> = state
-        .get_smart_db()
-        .fetch_all(&view)
-        .await
-        .map_err(|_| GetTasksError::DatabaseError)?;
+    let view = GetProjectTasksQueryView::new(project_id, page.limit, page.offset);
+    let result: PagedRows<Task> = state.get_smart_db().fetch_one(&view).await.map_err(|e| {
+        log_db_error("projects/project_id/tasks/get", &e);
+        GetTasksError::DatabaseError
+    })?;
 
     Ok(GetTasksResultView {
-        tasks: result.into_iter().map(|t| t.into()).collect(),
+        tasks: result.items.into_iter().map(Into::into).collect(),
+        total: result.total.max(0) as u64,
     })
 }
 
@@ -66,63 +71,65 @@ async fn trigger_get_project_tasks(
     get,
     params(
         ProjectPathParams,
+        PageParams,
     ),
     path = "",
-    summary = "Lister les tâches d'un projet",
-    description = "Renvoie toutes les tâches du projet, avec leur statut, leur priorité, leur \
-                   échéance, leur agent assigné et leurs champs personnalisés. Il suffit d'être \
-                   membre du projet.\n\n\
-                   `GET /api/v1/projects/{project_id}/` renvoie déjà ces mêmes tâches avec le \
-                   projet et ses membres : cet endpoint sert à rafraîchir la seule liste des \
-                   tâches.\n\n\
-                   Le champ `description` est toujours une chaîne vide : la table des tâches n'en \
-                   stocke pas.",
+    summary = "List the tasks of a project",
+    description = "Returns one page of the tasks of the project, oldest first, with their \
+                   description, status, priority, due date, assignee and custom fields. Being a \
+                   member of the project is enough.\n\n\
+                   `limit` (default 100, at most 500) and `offset` (default 0) select the page; \
+                   `total` is the number of tasks of the project, whatever the page.\n\n\
+                   `GET /api/v1/projects/{project_id}/` already returns the first page of these \
+                   tasks with the project and its members: this endpoint refreshes or pages \
+                   through the task list alone.",
     responses(
         (
             status = 200,
-            description = "Tâches du projet. Vide si le projet n'en a aucune.",
+            description = "One page of the tasks of the project. Empty if it has none, or if `offset` is past the end.",
             body = GetTasksResultView,
             example = json!({
                 "tasks": [
                     {
                         "id": 77,
                         "title": "Consulter les riverains",
-                        "description": "",
+                        "description": "Réunion publique à organiser avant le 15 octobre",
                         "status": "InProgress",
                         "priority": "High",
                         "due_date": "2026-10-15T00:00:00Z",
                         "assigned_to": 42,
                         "fields": [
-                            { "label": "Budget engagé", "task_type": "Number", "fields_options": [] }
+                            { "label": "Date de la réunion", "task_type": "date", "fields_options": [] }
                         ]
                     }
-                ]
+                ],
+                "total": 1
             })
         ),
         (
             status = 400,
-            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            description = "A URL segment is not an integer, or `limit` / `offset` is not a non-negative integer.",
             body = String,
             content_type = "text/plain",
             example = json!("Path deserialize error: can not parse `abc` to a u64")
         ),
         (
             status = 401,
-            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
             body = String,
             content_type = "text/plain",
             example = json!("Jeton expiré")
         ),
         (
             status = 404,
-            description = "Projet inexistant, ou invisible pour l'appelant — les deux cas sont volontairement indiscernables.",
+            description = "Unknown project, or project not visible to the caller — both cases are deliberately indistinguishable.",
             body = String,
             content_type = "text/plain",
             example = json!("Not found.")
         ),
         (
             status = 500,
-            description = "Erreur de base de données.",
+            description = "Database error.",
             body = String,
             content_type = "text/plain",
             example = json!("An error occurred while accessing the database.")
@@ -138,6 +145,7 @@ pub async fn get_project_tasks(
     state: web::Data<AppState>,
     auth_user: AuthenticatedUser,
     params: web::Path<ProjectPathParams>,
+    page: web::Query<PageParams>,
 ) -> Result<impl Responder, GetTasksError> {
     require_access(
         &state,
@@ -147,7 +155,7 @@ pub async fn get_project_tasks(
         Requirement::ViewProject,
     )
     .await?;
-    let result = trigger_get_project_tasks(state, params.project_id).await?;
+    let result = trigger_get_project_tasks(state, params.project_id, page.page()).await?;
     Ok(HttpResponse::Ok().json(result))
 }
 

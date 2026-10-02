@@ -16,7 +16,9 @@ async fn test_delete_task_success() {
 
     let view = CreateTaskQueryView::new(
         project_id,
+        1,
         "Test Task",
+        "",
         TaskStatus::Todo,
         TaskPriority::Medium,
         Some(chrono::Utc::now()),

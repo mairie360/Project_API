@@ -16,8 +16,7 @@ pub struct CreateTaskView {
     /// Intitulé de la tâche. Obligatoire.
     #[schema(min_length = 1, max_length = 255, example = "Consulter les riverains")]
     name: String,
-    /// Description. Renvoyée dans la réponse mais **non persistée** : les lectures ultérieures
-    /// la donneront vide.
+    /// Description, at most 5000 characters. Optional: stored as an empty string when absent.
     #[schema(
         max_length = 5000,
         example = "Réunion publique à organiser avant le 15 octobre"
@@ -88,9 +87,9 @@ pub struct CreateTaskResultView {
     /// Intitulé enregistré.
     #[schema(example = "Consulter les riverains")]
     pub name: String,
-    /// Description telle qu'envoyée. Elle n'est pas persistée et ne sera pas relue.
+    /// Stored description; empty string if none was sent — never `null`.
     #[schema(example = "Réunion publique à organiser avant le 15 octobre")]
-    pub description: Option<String>,
+    pub description: String,
 }
 
 impl Validate for CreateTaskView {

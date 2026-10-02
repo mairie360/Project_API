@@ -1,6 +1,7 @@
 use crate::common::fixtures::{create_group, create_user};
 use crate::common::get_smart_db;
 use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
+use project_api::database::paged::PagedRows;
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::project::get_project::view::GetVisibleProjectQueryView;
 use project_api::database::project::get_projects::view::{GetProjectsQueryView, ProjectView};
@@ -39,9 +40,10 @@ async fn test_project_visibility_follows_roles_membership_and_teams() {
         (foreign_responsable, false),
     ] {
         let listed: Vec<ProjectView> = db
-            .fetch_all(&GetProjectsQueryView::new(user))
+            .fetch_one::<PagedRows<ProjectView>, _>(&GetProjectsQueryView::new(user, 500, 0))
             .await
-            .unwrap();
+            .unwrap()
+            .items;
         let single: Vec<ProjectView> = db
             .fetch_all(&GetVisibleProjectQueryView::new(project_id, user))
             .await
@@ -76,9 +78,10 @@ async fn test_projects_are_listed_newest_first() {
         .unwrap();
 
     let projects: Vec<ProjectView> = db
-        .fetch_all(&GetProjectsQueryView::new(owner))
+        .fetch_one::<PagedRows<ProjectView>, _>(&GetProjectsQueryView::new(owner, 500, 0))
         .await
-        .unwrap();
+        .unwrap()
+        .items;
 
     assert_eq!(
         projects.iter().map(ProjectView::id).collect::<Vec<_>>(),

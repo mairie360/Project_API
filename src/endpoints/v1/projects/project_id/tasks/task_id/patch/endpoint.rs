@@ -5,10 +5,12 @@ use mairie360_api_lib::error::ApiLibError;
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::endpoints::db_error::log_db_error;
+
 use crate::database::tasks::create_task::view::{
     TaskPriority as DbTaskPriority, TaskStatus as DbTaskStatus,
 };
-use crate::database::tasks::patch_task::view::PatchTaskQueryView;
+use crate::database::tasks::patch_task::view::{PatchTaskQueryView, TaskChanges};
 use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::patch::view::PatchTaskView;
@@ -22,6 +24,7 @@ pub enum PatchTaskError {
     NotFound,
     DatabaseError,
     UnknownAssignee,
+    AssigneeNotInProject,
 }
 
 impl std::fmt::Display for PatchTaskError {
@@ -34,6 +37,9 @@ impl std::fmt::Display for PatchTaskError {
                 write!(f, "An error occurred while accessing the database.")
             }
             PatchTaskError::UnknownAssignee => write!(f, "`assigned_to` does not match any user."),
+            PatchTaskError::AssigneeNotInProject => {
+                write!(f, "`assigned_to` is not a member of the project.")
+            }
         }
     }
 }
@@ -46,6 +52,7 @@ impl ResponseError for PatchTaskError {
             PatchTaskError::NotFound => StatusCode::NOT_FOUND,
             PatchTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             PatchTaskError::UnknownAssignee => StatusCode::BAD_REQUEST,
+            PatchTaskError::AssigneeNotInProject => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -58,6 +65,7 @@ async fn trigger_patch_task(
     state: web::Data<AppState>,
     project_id: u64,
     task_id: u64,
+    user_id: u64,
     view: PatchTaskView,
 ) -> Result<(), PatchTaskError> {
     if view
@@ -70,7 +78,7 @@ async fn trigger_patch_task(
     let status = view
         .status
         .map(|status| DbTaskStatus::from(status.to_string()));
-    // La base ne connaît pas « urgent » : la priorité la plus haute est retenue.
+    // The database has no "urgent" priority: the highest one is used.
     let priority = view.priority.map(|priority| match priority {
         TaskPriority::Urgent => DbTaskPriority::High,
         priority => DbTaskPriority::from(priority.to_string()),
@@ -84,76 +92,88 @@ async fn trigger_patch_task(
         .fetch_scalar(&PatchTaskQueryView::new(
             project_id,
             task_id,
-            view.name.as_deref().map(str::trim),
-            status,
-            priority,
-            view.due_date,
-            view.assigned_to,
+            user_id,
+            TaskChanges {
+                title: view.name.as_deref().map(str::trim),
+                description: view.description.as_deref(),
+                status,
+                priority,
+                due_date: view.due_date,
+                assigned_to: view.assigned_to,
+                fields: view.fields.as_deref(),
+            },
         ))
         .await
         .map_err(|e| match e {
             ApiLibError::Database(DbError::ForeignKeyViolation(_)) => {
                 PatchTaskError::UnknownAssignee
             }
-            _ => PatchTaskError::DatabaseError,
+            e => {
+                log_db_error("projects/project_id/tasks/task_id/patch", &e);
+                PatchTaskError::DatabaseError
+            }
         })?;
 
-    if updated {
-        Ok(())
-    } else {
-        Err(PatchTaskError::NotFound)
+    match (updated, view.assigned_to) {
+        (true, _) => Ok(()),
+        // The task exists (checked by `require_access`): the new assignee was refused.
+        (false, Some(Some(_))) => Err(PatchTaskError::AssigneeNotInProject),
+        (false, _) => Err(PatchTaskError::NotFound),
     }
 }
 
 #[utoipa::path(
     patch,
     path = "",
-    summary = "Modifier une tâche",
-    description = "Met à jour partiellement une tâche : un champ absent reste inchangé.\n\n\
-                   Deux niveaux de droits se superposent ici. Un **responsable du projet** peut \
-                   tout modifier. Un **agent assigné à la tâche** ne peut changer que son statut : \
-                   si son corps de requête touche à autre chose, la réponse est `403`.\n\n\
-                   `assigned_to` distingue l'absence du `null` : omettre le champ conserve \
-                   l'assignation, l'envoyer à `null` la retire.\n\n\
-                   Deux champs sont acceptés mais **non persistés** par cette opération : \
-                   `description`, que la table des tâches ne stocke pas, et `fields`. La réponse a \
-                   un corps vide.",
+    summary = "Update a task",
+    description = "Partially updates a task: an absent field is left unchanged.\n\n\
+                   Two levels of rights apply. A **project manager** can change everything. An \
+                   **agent assigned to the task** can only change its status: if the body touches \
+                   anything else, the answer is `403`.\n\n\
+                   `assigned_to` tells absence from `null`: omitting it keeps the assignee, \
+                   sending `null` removes it. A new assignee must be the owner or a member of the \
+                   project. `description` replaces the stored description (send `\"\"` to clear \
+                   it); `fields` replaces the whole list of custom fields.\n\n\
+                   Every change is logged server-side and signed by the caller: one \
+                   `status_changed` entry for a status change, one `task_updated` entry listing \
+                   the other changed fields (see `GET …/tasks/{task_id}/collaboration`). The \
+                   response has an empty body.",
     responses(
         (
             status = 204,
-            description = "Tâche mise à jour. Corps vide.",
+            description = "Task updated. Empty body.",
         ),
         (
             status = 400,
-            description = "A URL segment is not an integer, malformed JSON body, `assigned_to` that does not match any user, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character, no `<` or `>`; `description` at most 5000 characters, no `<` or `>`, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of `<`, `>` and control characters.",
+            description = "A URL segment is not an integer, malformed JSON body, `assigned_to` that does not match any user or is neither the owner nor a member of the project, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character, no `<` or `>`; `description` at most 5000 characters, no `<` or `>`, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of `<`, `>` and control characters.",
             body = String,
             content_type = "text/plain",
-            example = json!("`assigned_to` does not match any user.")
+            example = json!("`assigned_to` is not a member of the project.")
         ),
         (
             status = 401,
-            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
             body = String,
             content_type = "text/plain",
             example = json!("Jeton expiré")
         ),
         (
             status = 403,
-            description = "Droits insuffisants sur la tâche, ou agent assigné tentant de modifier autre chose que le statut.",
+            description = "Insufficient rights on the task, or an assigned agent trying to change something else than the status.",
             body = String,
             content_type = "text/plain",
             example = json!("Forbidden.")
         ),
         (
             status = 404,
-            description = "Projet ou tâche inexistant, ou projet invisible pour l'appelant.",
+            description = "Unknown project or task, or project not visible to the caller.",
             body = String,
             content_type = "text/plain",
             example = json!("Unknown task.")
         ),
         (
             status = 500,
-            description = "Erreur de base de données.",
+            description = "Database error.",
             body = String,
             content_type = "text/plain",
             example = json!("An error occurred while accessing the database.")
@@ -164,7 +184,7 @@ async fn trigger_patch_task(
     ),
     request_body(
         content = PatchTaskView,
-        description = "Champs à modifier. Tous facultatifs.",
+        description = "Fields to change. All optional.",
         example = json!({ "status": "Completed" })
     ),
     security(
@@ -188,11 +208,18 @@ pub async fn patch_task(
         Requirement::ActOnTask,
     )
     .await?;
-    // L'agent assigné qui ne gère pas le projet ne peut modifier que le statut de sa tâche.
+    // An assigned agent who does not manage the project may only change the status of their task.
     if !access.can_manage() && !view.only_changes_status() {
         return Err(PatchTaskError::Forbidden);
     }
-    trigger_patch_task(state, params.project_id(), params.task_id(), view).await?;
+    trigger_patch_task(
+        state,
+        params.project_id(),
+        params.task_id(),
+        auth_user.id,
+        view,
+    )
+    .await?;
     Ok(HttpResponse::NoContent().finish())
 }
 

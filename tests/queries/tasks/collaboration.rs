@@ -4,8 +4,7 @@ use mairie360_api_lib::smart_db::SmartDatabase;
 use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::tasks::collaboration::view::{
-    AddTaskCommentQueryView, AppendTaskHistoryQueryView, GetTaskCollaborationQueryView,
-    TaskCollaborationRow, TaskComment, TaskHistoryEntry,
+    AddTaskCommentQueryView, GetTaskCollaborationQueryView, TaskCollaborationRow, TaskComment,
 };
 use project_api::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority, TaskStatus,
@@ -20,7 +19,9 @@ async fn create_task(db: &SmartDatabase, owner: u64) -> (u64, u64) {
     let task_id = db
         .fetch_scalar::<i32, _>(&CreateTaskQueryView::new(
             project_id,
+            owner,
             "Tâche",
+            "",
             TaskStatus::Todo,
             TaskPriority::Medium,
             None,
@@ -32,12 +33,34 @@ async fn create_task(db: &SmartDatabase, owner: u64) -> (u64, u64) {
     (project_id, task_id)
 }
 
-async fn collaboration(db: &SmartDatabase, project_id: u64, task_id: u64) -> TaskCollaborationView {
+async fn collaboration(
+    db: &SmartDatabase,
+    project_id: u64,
+    task_id: u64,
+    limit: u32,
+    offset: u32,
+) -> TaskCollaborationView {
     let rows: Vec<TaskCollaborationRow> = db
-        .fetch_all(&GetTaskCollaborationQueryView::new(project_id, task_id))
+        .fetch_all(&GetTaskCollaborationQueryView::new(
+            project_id, task_id, limit, offset,
+        ))
         .await
         .unwrap();
-    rows.into_iter().next().expect("tâche trouvée").into()
+    rows.into_iter().next().expect("task found").into()
+}
+
+async fn comment(
+    db: &SmartDatabase,
+    project_id: u64,
+    task_id: u64,
+    author: u64,
+    message: &str,
+) -> Vec<TaskComment> {
+    db.fetch_all(&AddTaskCommentQueryView::new(
+        project_id, task_id, author, message,
+    ))
+    .await
+    .unwrap()
 }
 
 #[tokio::test]
@@ -47,75 +70,58 @@ async fn test_comments_and_history_are_signed_and_read_back() {
     let author = create_user(&db, "Jeanne", None).await;
     let (project_id, task_id) = create_task(&db, author).await;
 
-    let comments: Vec<TaskComment> = db
-        .fetch_all(&AddTaskCommentQueryView::new(
-            project_id,
-            task_id,
-            author,
-            "  Devis reçu.  ",
-        ))
-        .await
-        .unwrap();
-    let entries: Vec<TaskHistoryEntry> = db
-        .fetch_all(&AppendTaskHistoryQueryView::new(
-            project_id,
-            task_id,
-            author,
-            "task_updated",
-            "Tâche modifiée.",
-            Some(&serde_json::json!({ "title": "Tâche" })),
-        ))
-        .await
-        .unwrap();
+    let comments = comment(&db, project_id, task_id, author, "  Devis reçu.  ").await;
     set_task_status(&db, task_id, "in_progress").await;
 
-    let comment = &comments[0];
-    assert!(comment.id.starts_with("comment-"));
-    assert_eq!(comment.message, "Devis reçu.");
-    assert_eq!(comment.author.id, format!("user-{author}"));
-    assert_eq!(comment.author.name, "Jeanne Test");
-    assert!(comment.created_at.ends_with('Z'));
-    assert_eq!(
-        entries[0].changes,
-        Some(serde_json::json!({ "title": "Tâche" }))
-    );
+    let created = &comments[0];
+    assert!(created.id.starts_with("comment-"));
+    assert_eq!(created.message, "Devis reçu.");
+    assert_eq!(created.author.id, format!("user-{author}"));
+    assert_eq!(created.author.name, "Jeanne Test");
+    assert!(created.created_at.ends_with('Z'));
 
-    let view = collaboration(&db, project_id, task_id).await;
+    let view = collaboration(&db, project_id, task_id, 100, 0).await;
     assert_eq!(view.comments, comments);
+    assert_eq!(view.comments_total, 1);
     assert_eq!(
         view.history
             .iter()
             .map(|entry| entry.action.as_str())
             .collect::<Vec<_>>(),
-        vec!["status_changed", "task_updated"]
+        vec!["status_changed", "task_created"]
     );
-    assert_eq!(view.history[0].label, "Statut modifié : todo → in_progress");
+    assert_eq!(view.history_total, 2);
+    assert_eq!(view.history[0].label, "Status changed: todo → in_progress");
     assert_eq!(
         view.history[0].changes,
         Some(serde_json::json!({ "status": { "from": "todo", "to": "in_progress" } }))
     );
+    assert_eq!(view.history[1].label, "Task created");
+    assert_eq!(view.history[1].author.id, format!("user-{author}"));
+    assert_eq!(view.history[1].changes, None);
 }
 
 #[tokio::test]
-async fn test_history_without_changes_omits_the_field() {
+async fn test_comments_are_paginated_in_reading_order() {
     let (_container, host) = get_shared_db().await;
     let db = get_smart_db(host.to_string()).await;
     let author = create_user(&db, "Paul", None).await;
     let (project_id, task_id) = create_task(&db, author).await;
+    for message in ["un", "deux", "trois"] {
+        comment(&db, project_id, task_id, author, message).await;
+    }
 
-    let entries: Vec<TaskHistoryEntry> = db
-        .fetch_all(&AppendTaskHistoryQueryView::new(
-            project_id,
-            task_id,
-            author,
-            "task_created",
-            "Tâche créée.",
-            None,
-        ))
-        .await
-        .unwrap();
-
-    assert_eq!(entries[0].changes, None);
+    let page = collaboration(&db, project_id, task_id, 2, 1).await;
+    assert_eq!(page.comments_total, 3);
+    assert_eq!(
+        page.comments
+            .iter()
+            .map(|c| c.message.as_str())
+            .collect::<Vec<_>>(),
+        vec!["deux", "trois"]
+    );
+    assert_eq!(page.history_total, 1);
+    assert!(page.history.is_empty());
 }
 
 #[tokio::test]
@@ -127,23 +133,22 @@ async fn test_collaboration_of_a_task_from_another_project_is_not_found() {
     let other_project = project_id + 10_000;
 
     let rows: Vec<TaskCollaborationRow> = db
-        .fetch_all(&GetTaskCollaborationQueryView::new(other_project, task_id))
-        .await
-        .unwrap();
-    let comments: Vec<TaskComment> = db
-        .fetch_all(&AddTaskCommentQueryView::new(
+        .fetch_all(&GetTaskCollaborationQueryView::new(
             other_project,
             task_id,
-            author,
-            "Non",
+            100,
+            0,
         ))
         .await
         .unwrap();
+    let comments = comment(&db, other_project, task_id, author, "Non").await;
 
     assert!(rows.is_empty());
     assert!(comments.is_empty());
-    assert!(collaboration(&db, project_id, task_id)
-        .await
-        .comments
-        .is_empty());
+    assert_eq!(
+        collaboration(&db, project_id, task_id, 100, 0)
+            .await
+            .comments_total,
+        0
+    );
 }

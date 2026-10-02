@@ -5,8 +5,6 @@
 //! paramètres, SQL) et les conversions d'enums (`From<String>` / `Display`) ainsi
 //! que la (dé)sérialisation des DTOs de résultat.
 
-use std::collections::HashMap;
-
 use mairie360_api_lib::database::db_interface::ApiRequestDto;
 
 use project_api::database::project::create::view::CreateProjectQueryView;
@@ -15,17 +13,15 @@ use project_api::database::project::get_projects::view::{GetProjectsQueryView, P
 use project_api::database::project::update_status::view::{
     ProjectStatus, UpdateProjectStatusQueryView,
 };
+use project_api::database::tasks::collaboration::view::{TaskHistoryEntry, TaskHistoryRow};
 use project_api::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority, TaskStatus,
 };
 use project_api::database::tasks::delete_task::view::DeleteTaskQueryView;
-use project_api::database::tasks::fields::add_field_to_task::view::AddFieldToTaskQueryView;
-use project_api::database::tasks::fields::change_value::view::ChangeFieldValueQueryView;
-use project_api::database::tasks::fields::get_fields::view::GetTaskFieldsQueryView;
 use project_api::database::tasks::get_project_tasks::view::{
-    DynamicTaskField, FieldOption, FieldType, GetProjectTasksQueryView, Task,
+    DynamicTaskField, FieldType, GetProjectTasksQueryView, Task,
 };
-use project_api::database::tasks::patch_task::view::PatchTaskQueryView;
+use project_api::database::tasks::patch_task::view::{PatchTaskQueryView, TaskChanges};
 use project_api::database::users::add_user_to_project::view::AddUserToProjectQueryView;
 use project_api::database::users::get_project_users::view::GetProjectUsersQueryView;
 use project_api::database::users::remove_user_from_project::view::RemoveUserFromProjectQueryView;
@@ -60,10 +56,13 @@ fn delete_project_view_accessors() {
 
 #[test]
 fn get_projects_view_accessors() {
-    let view = GetProjectsQueryView::new(9);
+    let view = GetProjectsQueryView::new(9, 50, 100);
     assert_eq!(view.user_id(), 9);
-    assert_eq!(view.query_params().len(), 1);
+    assert_eq!(view.query_params().len(), 3);
+    assert_eq!(view.query_params()[1].as_i64(), 50);
+    assert_eq!(view.query_params()[2].as_i64(), 100);
     assert!(view.query_sql().contains("project_members"));
+    assert!(view.query_sql().contains("'total', count(*)"));
 }
 
 #[test]
@@ -150,7 +149,9 @@ fn project_status_round_trips_through_view() {
 fn create_task_view_accessors() {
     let view = CreateTaskQueryView::new(
         3,
+        5,
         "Ma tache",
+        "Ma description",
         TaskStatus::InProgress,
         TaskPriority::High,
         Some(chrono::Utc::now()),
@@ -159,16 +160,28 @@ fn create_task_view_accessors() {
     );
     assert_eq!(view.project_id(), 3);
     assert_eq!(view.title(), "Ma tache");
-    assert_eq!(view.query_params().len(), 7);
+    assert_eq!(view.query_params().len(), 9);
+    assert_eq!(view.query_params()[7].as_text(), "Ma description");
+    assert_eq!(view.query_params()[8].as_i32(), 5);
     assert!(view.query_sql().contains("INSERT INTO tasks"));
+    assert!(view.query_sql().contains("project_members"));
 }
 
 #[test]
 fn create_task_view_without_optionals() {
-    let view =
-        CreateTaskQueryView::new(1, "T", TaskStatus::Todo, TaskPriority::Low, None, None, &[]);
+    let view = CreateTaskQueryView::new(
+        1,
+        2,
+        "T",
+        "",
+        TaskStatus::Todo,
+        TaskPriority::Low,
+        None,
+        None,
+        &[],
+    );
     assert_eq!(view.title(), "T");
-    assert_eq!(view.query_params().len(), 7);
+    assert_eq!(view.query_params().len(), 9);
     assert_eq!(view.query_params()[6].as_text(), r#"{"fields":[]}"#);
 }
 
@@ -223,10 +236,11 @@ fn delete_task_view_accessors() {
 
 #[test]
 fn get_project_tasks_view_accessors() {
-    let view = GetProjectTasksQueryView::new(12);
+    let view = GetProjectTasksQueryView::new(12, 100, 0);
     assert_eq!(view.project_id(), 12);
-    assert_eq!(view.query_params().len(), 1);
+    assert_eq!(view.query_params().len(), 3);
     assert!(view.query_sql().contains("FROM tasks WHERE project_id"));
+    assert!(view.query_sql().contains("description"));
 }
 
 #[test]
@@ -234,28 +248,54 @@ fn patch_task_view_accessors() {
     let due = chrono::DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z")
         .unwrap()
         .with_timezone(&chrono::Utc);
+    let fields = [DynamicTaskField {
+        label: "Budget".to_string(),
+        task_type: FieldType::Select,
+        fields_options: vec![],
+    }];
     let view = PatchTaskQueryView::new(
         4,
         99,
-        Some("nouveau titre"),
-        Some(TaskStatus::Completed),
-        Some(TaskPriority::Medium),
-        Some(due),
-        Some(Some(7)),
+        3,
+        TaskChanges {
+            title: Some("nouveau titre"),
+            description: Some(""),
+            status: Some(TaskStatus::Completed),
+            priority: Some(TaskPriority::Medium),
+            due_date: Some(due),
+            assigned_to: Some(Some(7)),
+            fields: Some(&fields),
+        },
     );
     assert_eq!(view.task_id(), 99);
     assert_eq!(view.project_id(), 4);
-    assert_eq!(view.query_params().len(), 8);
+    assert_eq!(view.query_params().len(), 12);
     assert!(view.query_params()[6].as_bool());
     assert_eq!(view.query_params()[7].as_option_i32(), Some(7));
+    // An empty description is a change (it clears the description), not an absence.
+    assert!(view.query_params()[8].as_bool());
+    assert_eq!(view.query_params()[9].as_text(), "");
+    assert!(view.query_params()[10].as_text().contains("Budget"));
+    assert_eq!(view.query_params()[11].as_i32(), 3);
     assert!(view.query_sql().contains("UPDATE tasks SET"));
+    assert!(view.query_sql().contains("updated_by = $12"));
 }
 
 #[test]
 fn patch_task_view_distinguishes_absent_and_cleared_assignee() {
-    let absent = PatchTaskQueryView::new(1, 2, None, None, None, None, None);
-    let cleared = PatchTaskQueryView::new(1, 2, None, None, None, None, Some(None));
+    let absent = PatchTaskQueryView::new(1, 2, 3, TaskChanges::default());
+    let cleared = PatchTaskQueryView::new(
+        1,
+        2,
+        3,
+        TaskChanges {
+            assigned_to: Some(None),
+            ..TaskChanges::default()
+        },
+    );
     assert!(!absent.query_params()[6].as_bool());
+    assert!(!absent.query_params()[8].as_bool());
+    assert_eq!(absent.query_params()[10].as_text(), "");
     assert!(cleared.query_params()[6].as_bool());
     assert_eq!(cleared.query_params()[7].as_option_i32(), None);
 }
@@ -344,47 +384,55 @@ fn field_type_deserialization() {
 }
 
 // ---------------------------------------------------------------------------
-// tasks / fields
+// tasks / history
 // ---------------------------------------------------------------------------
 
-fn sample_fields() -> HashMap<String, DynamicTaskField> {
-    let mut map = HashMap::new();
-    map.insert(
-        "priorite".to_string(),
-        DynamicTaskField {
-            label: "Priorité".to_string(),
-            task_type: FieldType::Select,
-            fields_options: vec![FieldOption {
-                option: serde_json::json!("urgent"),
-                is_selected: true,
-            }],
-        },
-    );
-    map
+fn history_row(action: &str, changes: Option<serde_json::Value>) -> TaskHistoryRow {
+    TaskHistoryRow {
+        id: 8,
+        action: action.to_string(),
+        label: None,
+        changes,
+        old_status: Some("todo".to_string()),
+        new_status: Some("in_progress".to_string()),
+        author_id: Some(42),
+        author_name: Some("Jean Dupont".to_string()),
+        created_at: "2026-09-15T10:04:00.000Z".to_string(),
+    }
 }
 
 #[test]
-fn add_field_to_task_view_accessors() {
-    let view = AddFieldToTaskQueryView::new(4, sample_fields());
-    assert_eq!(view.task_id(), 4);
-    assert_eq!(view.query_params().len(), 2);
-    assert!(view.query_sql().contains("custom_fields"));
+fn history_labels_are_generated_from_action_and_changes() {
+    let created: TaskHistoryEntry = history_row("task_created", None).into();
+    assert_eq!(created.id, "history-8");
+    assert_eq!(created.label, "Task created");
+    assert_eq!(created.author.id, "user-42");
+    assert_eq!(created.author.name, "Jean Dupont");
+
+    let status: TaskHistoryEntry = history_row("status_changed", None).into();
+    assert_eq!(status.label, "Status changed: todo → in_progress");
+
+    let updated: TaskHistoryEntry = history_row(
+        "task_updated",
+        Some(serde_json::json!({
+            "fields": { "from": [], "to": [] },
+            "title": { "from": "A", "to": "B" }
+        })),
+    )
+    .into();
+    assert_eq!(updated.label, "Task updated: title, fields");
 }
 
 #[test]
-fn change_field_value_view_accessors() {
-    let view = ChangeFieldValueQueryView::new(6, sample_fields());
-    assert_eq!(view.task_id(), 6);
-    assert_eq!(view.query_params().len(), 2);
-    assert!(view.query_sql().contains("SET custom_fields = $2::jsonb"));
-}
-
-#[test]
-fn get_task_fields_view_accessors() {
-    let view = GetTaskFieldsQueryView::new(10);
-    assert_eq!(view.id(), 10);
-    assert_eq!(view.query_params().len(), 1);
-    assert!(view.query_sql().contains("custom_fields"));
+fn history_keeps_a_migrated_label_and_signs_system_writes() {
+    let mut row = history_row("task_updated", None);
+    row.label = Some("Budget revised".to_string());
+    row.author_id = None;
+    row.author_name = None;
+    let entry: TaskHistoryEntry = row.into();
+    assert_eq!(entry.label, "Budget revised");
+    assert_eq!(entry.author.id, "system");
+    assert_eq!(entry.author.name, "System");
 }
 
 // ---------------------------------------------------------------------------

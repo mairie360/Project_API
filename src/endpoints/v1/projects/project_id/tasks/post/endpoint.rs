@@ -5,8 +5,10 @@ use mairie360_api_lib::error::ApiLibError;
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::endpoints::db_error::log_db_error;
+
 use crate::database::tasks::create_task::view::{
-    CreateTaskQueryView, TaskPriority as DbTaskPriority, TaskStatus,
+    CreateTaskQueryView, TaskPriority as DbTaskPriority, TaskStatus, ASSIGNEE_NOT_IN_PROJECT,
 };
 use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority as ApiTaskPriority;
@@ -23,6 +25,7 @@ pub enum CreateTaskError {
     DatabaseError,
     BadRequest,
     UnknownAssignee,
+    AssigneeNotInProject,
 }
 
 impl std::fmt::Display for CreateTaskError {
@@ -34,6 +37,9 @@ impl std::fmt::Display for CreateTaskError {
                 write!(f, "An error occurred while accessing the database.")
             }
             CreateTaskError::UnknownAssignee => write!(f, "`assigned_to` does not match any user."),
+            CreateTaskError::AssigneeNotInProject => {
+                write!(f, "`assigned_to` is not a member of the project.")
+            }
             CreateTaskError::BadRequest => {
                 write!(f, "Bad request.")
             }
@@ -48,6 +54,7 @@ impl ResponseError for CreateTaskError {
             CreateTaskError::NotFound => StatusCode::NOT_FOUND,
             CreateTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             CreateTaskError::UnknownAssignee => StatusCode::BAD_REQUEST,
+            CreateTaskError::AssigneeNotInProject => StatusCode::BAD_REQUEST,
             CreateTaskError::BadRequest => StatusCode::BAD_REQUEST,
         }
     }
@@ -59,13 +66,13 @@ impl ResponseError for CreateTaskError {
 
 async fn trigger_create_task(
     state: web::Data<AppState>,
-    _user_id: u64,
+    user_id: u64,
     project_id: u64,
     view: CreateTaskView,
 ) -> Result<CreateTaskResultView, CreateTaskError> {
     let name = view.name().to_string();
 
-    // Statut et priorité facultatifs : valeurs par défaut de la table (todo, medium).
+    // Optional status and priority: defaults of the table (todo, medium).
     let status = view
         .status()
         .map(|status| status.to_string().into())
@@ -78,9 +85,16 @@ async fn trigger_create_task(
     if status == TaskStatus::Error || priority == DbTaskPriority::Error {
         return Err(CreateTaskError::BadRequest);
     }
+    let description = view
+        .description()
+        .as_deref()
+        .unwrap_or_default()
+        .to_string();
     let query_view = CreateTaskQueryView::new(
         project_id,
+        user_id,
         &name,
+        &description,
         status,
         priority,
         *view.due_date(),
@@ -95,13 +109,20 @@ async fn trigger_create_task(
             ApiLibError::Database(DbError::ForeignKeyViolation(_)) => {
                 CreateTaskError::UnknownAssignee
             }
-            _ => CreateTaskError::DatabaseError,
+            e => {
+                log_db_error("projects/project_id/tasks/post", &e);
+                CreateTaskError::DatabaseError
+            }
         })?;
+
+    if result == ASSIGNEE_NOT_IN_PROJECT {
+        return Err(CreateTaskError::AssigneeNotInProject);
+    }
 
     Ok(CreateTaskResultView {
         task_id: result as u64,
-        name: name.to_string(),
-        description: None,
+        name,
+        description,
     })
 }
 
@@ -111,18 +132,21 @@ async fn trigger_create_task(
         ProjectPathParams,
     ),
     path = "",
-    summary = "Créer une tâche",
-    description = "Ajoute une tâche au projet. Réservé aux responsables du projet : un agent \
-                   simplement assigné à d'autres tâches ne peut pas en créer.\n\n\
-                   `status` et `priority` sont facultatifs et prennent leur valeur par défaut si \
-                   absents. `fields` porte les champs personnalisés du projet et doit être présent, \
-                   quitte à être un tableau vide.\n\n\
-                   La description passée ici n'est pas persistée : elle est renvoyée dans la \
-                   réponse, mais les lectures ultérieures la donneront vide.",
+    summary = "Create a task",
+    description = "Adds a task to the project. Reserved to the project managers: an agent merely \
+                   assigned to other tasks cannot create one.\n\n\
+                   `status` and `priority` are optional and take their default value when absent. \
+                   `description` is optional (empty string when absent). `fields` carries the \
+                   custom fields of the project and must be present, even as an empty array.\n\n\
+                   `assigned_to` must be the owner or a member of the project (add them with \
+                   `POST …/users/` first), otherwise the task would be invisible to its \
+                   assignee.\n\n\
+                   The creation is logged as a `task_created` history entry signed by the caller \
+                   (see `GET …/tasks/{task_id}/collaboration`).",
     responses(
         (
             status = 200,
-            description = "Tâche créée.",
+            description = "Task created.",
             body = CreateTaskResultView,
             example = json!({
                 "task_id": 77,
@@ -132,35 +156,35 @@ async fn trigger_create_task(
         ),
         (
             status = 400,
-            description = "A URL segment is not an integer, malformed JSON body, `assigned_to` that does not match any user, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character, no `<` or `>`; `description` at most 5000 characters, no `<` or `>`, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of `<`, `>` and control characters.",
+            description = "A URL segment is not an integer, malformed JSON body, `assigned_to` that does not match any user or is neither the owner nor a member of the project, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character, no `<` or `>`; `description` at most 5000 characters, no `<` or `>`, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of `<`, `>` and control characters.",
             body = String,
             content_type = "text/plain",
-            example = json!("`assigned_to` does not match any user.")
+            example = json!("`assigned_to` is not a member of the project.")
         ),
         (
             status = 401,
-            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
             body = String,
             content_type = "text/plain",
             example = json!("Jeton expiré")
         ),
         (
             status = 403,
-            description = "Projet visible par l'appelant, mais droits insuffisants pour cette opération.",
+            description = "Project visible to the caller, but insufficient rights for this operation.",
             body = String,
             content_type = "text/plain",
             example = json!("Forbidden.")
         ),
         (
             status = 404,
-            description = "Projet inexistant, ou invisible pour l'appelant — les deux cas sont volontairement indiscernables.",
+            description = "Unknown project, or project not visible to the caller — both cases are deliberately indistinguishable.",
             body = String,
             content_type = "text/plain",
             example = json!("Not found.")
         ),
         (
             status = 500,
-            description = "Erreur de base de données.",
+            description = "Database error.",
             body = String,
             content_type = "text/plain",
             example = json!("An error occurred while accessing the database.")
@@ -168,7 +192,7 @@ async fn trigger_create_task(
     ),
     request_body(
         content = CreateTaskView,
-        description = "Définition de la tâche. `fields` est obligatoire, même vide.",
+        description = "Definition of the task. `fields` is required, even empty.",
         example = json!({
             "name": "Consulter les riverains",
             "description": "Réunion publique à organiser avant le 15 octobre",

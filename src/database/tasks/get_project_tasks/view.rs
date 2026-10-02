@@ -2,15 +2,20 @@ use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+/// One page of the tasks of a project, oldest first. Read with `fetch_one::<PagedRows<Task>, _>`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GetProjectTasksQueryView {
     params: Vec<QueryParam>,
 }
 
 impl GetProjectTasksQueryView {
-    pub fn new(project_id: u64) -> Self {
+    pub fn new(project_id: u64, limit: u32, offset: u32) -> Self {
         Self {
-            params: vec![QueryParam::I32(project_id as i32)],
+            params: vec![
+                QueryParam::I32(project_id as i32),
+                QueryParam::I64(i64::from(limit)),
+                QueryParam::I64(i64::from(offset)),
+            ],
         }
     }
 
@@ -21,14 +26,17 @@ impl GetProjectTasksQueryView {
 
 impl ApiRequestDto for GetProjectTasksQueryView {
     fn query_sql(&self) -> &'static str {
-        // Les colonnes TIMESTAMP (sans fuseau) sont converties en UTC pour être relues en DateTime<Utc>.
-        "SELECT to_jsonb(t) FROM ( \
-            SELECT id, title, status, priority, created_at, assigned_to, \
-                   due_date AT TIME ZONE 'UTC' AS due_date, \
-                   COALESCE(custom_fields, '{}'::jsonb) AS custom_fields \
-            FROM tasks WHERE project_id = $1 \
-            ORDER BY created_at, id \
-         ) t"
+        // TIMESTAMP columns (no time zone) are converted to UTC to be read back as DateTime<Utc>.
+        concat!(
+            crate::paged_rows_sql!("$2", "$3"),
+            " FROM ( \
+                SELECT id, title, description, status, priority, created_at, assigned_to, \
+                       due_date AT TIME ZONE 'UTC' AS due_date, \
+                       COALESCE(custom_fields, '{}'::jsonb) AS custom_fields, \
+                       row_number() OVER (ORDER BY created_at, id) AS rn \
+                FROM tasks WHERE project_id = $1 \
+             ) t"
+        )
     }
 
     fn query_params(&self) -> &[QueryParam] {
@@ -77,6 +85,8 @@ pub struct DynamicTaskField {
 pub struct Task {
     id: i32,
     title: String,
+    #[serde(default)]
+    description: String,
     status: String,
     priority: String,
     #[serde(default)]
@@ -96,6 +106,10 @@ impl Task {
 
     pub fn title(&self) -> &str {
         &self.title
+    }
+
+    pub fn description(&self) -> &str {
+        &self.description
     }
 
     pub fn status(&self) -> &str {
@@ -118,9 +132,8 @@ impl Task {
         self.due_date
     }
 
-    /// Champs dynamiques de la tâche. `custom_fields` contient soit la liste `fields` (format écrit à la
-    /// création, qui conserve l'ordre), soit des champs indexés par clé ; les autres entrées (`comments`,
-    /// `history`) et les valeurs mal formées sont ignorées.
+    /// Custom fields of the task. `custom_fields` holds either the ordered `fields` list (written at
+    /// creation and by `PATCH`) or fields keyed by name; malformed values are skipped.
     pub fn fields(&self) -> Vec<DynamicTaskField> {
         let Some(entries) = self.custom_fields.as_object() else {
             return Vec::new();
@@ -132,7 +145,7 @@ impl Task {
             .flatten();
         let keyed = entries
             .iter()
-            .filter(|(key, _)| !matches!(key.as_str(), "fields" | "comments" | "history"))
+            .filter(|(key, _)| key.as_str() != "fields")
             .map(|(_, value)| value);
         listed
             .chain(keyed)

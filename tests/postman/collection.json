@@ -1128,6 +1128,64 @@
           "response": []
         },
         {
+          "name": "Task cannot be assigned to a non-member",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Tâche hors projet\",\n  \"fields\": [],\n  \"assigned_to\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test(\"The assignee is refused\", function () {",
+                  "    pm.expect(pm.response.text()).to.eql(\"`assigned_to` is not a member of the project.\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
           "name": "List the tasks",
           "request": {
             "method": "GET",
@@ -1167,9 +1225,13 @@
                   "    const task = tasks.find(t => t.id === Number(pm.environment.get(\"task_id\")));",
                   "    pm.expect(task, 'task').to.exist;",
                   "    pm.expect(task.title).to.eql(\"Consulter les riverains\");",
+                  "    pm.expect(task.description).to.eql(\"Réunion publique à organiser\");",
                   "    pm.expect(task.status).to.eql(\"Todo\");",
                   "    pm.expect(task.priority).to.eql(\"High\");",
                   "    pm.expect(task.assigned_to).to.eql(Number(pm.environment.get(\"agent_user_id\")));",
+                  "});",
+                  "pm.test(\"The page carries the total\", function () {",
+                  "    pm.expect(pm.response.json().total).to.be.a(\"number\").at.least(1);",
                   "});"
                 ]
               }
@@ -1463,123 +1525,6 @@
           "response": []
         },
         {
-          "name": "Admin appends a history entry",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{jwt_admin}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/{{task_id}}/history",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "projects",
-                "{{project_id}}",
-                "tasks",
-                "{{task_id}}",
-                "history"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"action\": \"task_updated\",\n  \"label\": \"Budget révisé après consultation\",\n  \"changes\": {\n    \"budget\": {\n      \"from\": 12000,\n      \"to\": 15500\n    }\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status is 201\", function () {",
-                  "    pm.response.to.have.status(201);",
-                  "});",
-                  "pm.test(\"Entry is returned with its action\", function () {",
-                  "    const entry = pm.response.json();",
-                  "    pm.expect(entry.action).to.eql(\"task_updated\");",
-                  "    pm.expect(entry.label).to.eql(\"Budget révisé après consultation\");",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "response": []
-        },
-        {
-          "name": "Unknown history action is rejected",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{jwt_admin}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/{{task_id}}/history",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "projects",
-                "{{project_id}}",
-                "tasks",
-                "{{task_id}}",
-                "history"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"action\": \"task_deleted\",\n  \"label\": \"Interdit\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status is 400\", function () {",
-                  "    pm.response.to.have.status(400);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "response": []
-        },
-        {
           "name": "Get the task collaboration",
           "request": {
             "method": "GET",
@@ -1615,10 +1560,21 @@
                   "pm.test(\"Status is 200\", function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
-                  "pm.test(\"Comment and history entries are returned\", function () {",
+                  "pm.test(\"Comment and server-written history are returned\", function () {",
                   "    const body = pm.response.json();",
                   "    pm.expect(body.comments.map(c => c.message)).to.include(\"La réunion publique est calée au 3 octobre.\");",
-                  "    pm.expect(body.history.map(h => h.action)).to.include(\"task_updated\");",
+                  "    pm.expect(body.comments_total).to.eql(body.comments.length);",
+                  "    const actions = body.history.map(h => h.action);",
+                  "    pm.expect(actions).to.include.members([\"task_created\", \"status_changed\", \"task_updated\"]);",
+                  "    pm.expect(body.history_total).to.eql(body.history.length);",
+                  "});",
+                  "pm.test(\"History entries are signed by the caller of each change\", function () {",
+                  "    const history = pm.response.json().history;",
+                  "    const status = history.find(h => h.action === \"status_changed\");",
+                  "    pm.expect(status.author.id).to.eql(\"user-\" + pm.environment.get(\"agent_user_id\"));",
+                  "    const rename = history.find(h => h.action === \"task_updated\");",
+                  "    pm.expect(rename.author.id).to.eql(\"user-1\");",
+                  "    pm.expect(rename.changes).to.have.property(\"title\");",
                   "});"
                 ]
               }

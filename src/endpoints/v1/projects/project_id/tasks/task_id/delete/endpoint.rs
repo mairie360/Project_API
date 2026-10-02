@@ -3,6 +3,8 @@ use actix_web::{delete, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::endpoints::db_error::log_db_error;
+
 use crate::database::tasks::delete_task::view::DeleteTaskQueryView;
 use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
@@ -52,11 +54,10 @@ async fn trigger_delete_task(
     task_id: u64,
 ) -> Result<(), DeleteTaskError> {
     let view = DeleteTaskQueryView::new(task_id);
-    state
-        .get_smart_db()
-        .execute(view)
-        .await
-        .map_err(|_| DeleteTaskError::DatabaseError)?;
+    state.get_smart_db().execute(view).await.map_err(|e| {
+        log_db_error("projects/project_id/tasks/task_id/delete", &e);
+        DeleteTaskError::DatabaseError
+    })?;
 
     Ok(())
 }
@@ -84,14 +85,14 @@ async fn trigger_delete_task(
         ),
         (
             status = 401,
-            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
             body = String,
             content_type = "text/plain",
             example = json!("Jeton expiré")
         ),
         (
             status = 403,
-            description = "Projet visible par l'appelant, mais droits insuffisants pour cette opération.",
+            description = "Project visible to the caller, but insufficient rights for this operation.",
             body = String,
             content_type = "text/plain",
             example = json!("Forbidden.")
@@ -105,7 +106,7 @@ async fn trigger_delete_task(
         ),
         (
             status = 500,
-            description = "Erreur de base de données.",
+            description = "Database error.",
             body = String,
             content_type = "text/plain",
             example = json!("An error occurred while accessing the database.")

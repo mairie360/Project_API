@@ -3,6 +3,10 @@ use actix_web::{get, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::database::paged::PagedRows;
+use crate::endpoints::db_error::log_db_error;
+use crate::endpoints::pagination::{Page, PageParams};
+
 use crate::database::project::get_project::view::GetVisibleProjectQueryView;
 use crate::database::project::get_projects::view::ProjectView;
 use crate::database::tasks::get_project_tasks::view::{GetProjectTasksQueryView, Task};
@@ -44,29 +48,37 @@ async fn trigger_get_project(
     state: web::Data<AppState>,
     user_id: u64,
     project_id: u64,
+    page: Page,
 ) -> Result<GetProjectResultView, GetProjectError> {
     let smart_db = state.get_smart_db();
     let projects: Vec<ProjectView> = smart_db
         .fetch_all(&GetVisibleProjectQueryView::new(project_id, user_id))
         .await
-        .map_err(|_| GetProjectError::DatabaseError)?;
-    // Un projet invisible pour l'appelant est traité comme inexistant.
+        .map_err(|e| {
+            log_db_error("projects/project_id/get", &e);
+            GetProjectError::DatabaseError
+        })?;
+    // A project the caller cannot see is treated as missing.
     let project = projects
         .into_iter()
         .next()
         .ok_or(GetProjectError::NotFound)?;
 
-    let tasks_view = GetProjectTasksQueryView::new(project_id);
+    let tasks_view = GetProjectTasksQueryView::new(project_id, page.limit, page.offset);
     let users_view = GetProjectUsersQueryView::new(project_id);
     let (tasks, users) = futures_util::try_join!(
-        smart_db.fetch_all::<Task, _>(&tasks_view),
+        smart_db.fetch_one::<PagedRows<Task>, _>(&tasks_view),
         smart_db.fetch_all::<ProjectMemberRow, _>(&users_view),
     )
-    .map_err(|_| GetProjectError::DatabaseError)?;
+    .map_err(|e| {
+        log_db_error("projects/project_id/get", &e);
+        GetProjectError::DatabaseError
+    })?;
 
     Ok(GetProjectResultView {
         project: project.into(),
-        tasks: tasks.into_iter().map(Into::into).collect(),
+        tasks: tasks.items.into_iter().map(Into::into).collect(),
+        tasks_total: tasks.total.max(0) as u64,
         users: users.into_iter().map(Into::into).collect(),
     })
 }
@@ -75,18 +87,22 @@ async fn trigger_get_project(
     get,
     params(
         ProjectPathParams,
+        PageParams,
     ),
     path = "",
-    summary = "Consulter un projet",
-    description = "Renvoie un projet avec **toutes ses tâches et tous ses membres** en une seule \
-                   requête : c'est l'appel que fait le front pour afficher un tableau de projet, \
-                   plutôt que d'enchaîner `/tasks/` et `/users/`.\n\n\
-                   Il suffit d'être membre du projet. Un projet auquel l'appelant n'a pas accès \
-                   répond `404`, pas `403`.",
+    summary = "Read a project",
+    description = "Returns a project with **one page of its tasks and all its members** in a \
+                   single request: the call the front makes to display a project board, rather \
+                   than chaining `/tasks/` and `/users/`.\n\n\
+                   `limit` (default 100, at most 500) and `offset` (default 0) page the tasks, \
+                   oldest first; `tasks_total` is the number of tasks of the project. Use \
+                   `GET …/tasks/` to fetch the next pages alone.\n\n\
+                   Being a member of the project is enough. A project the caller cannot access \
+                   answers `404`, not `403`.",
     responses(
         (
             status = 200,
-            description = "Projet, ses tâches et ses membres.",
+            description = "The project, one page of its tasks and its members.",
             body = GetProjectResultView,
             example = json!({
                 "project": { "id": 12, "name": "Réfection de la place du marché", "description": "Travaux de voirie 2026", "status": "Active" },
@@ -94,7 +110,7 @@ async fn trigger_get_project(
                     {
                         "id": 77,
                         "title": "Consulter les riverains",
-                        "description": "",
+                        "description": "Réunion publique à organiser avant le 15 octobre",
                         "status": "InProgress",
                         "priority": "High",
                         "due_date": "2026-10-15T00:00:00Z",
@@ -102,6 +118,7 @@ async fn trigger_get_project(
                         "fields": []
                     }
                 ],
+                "tasks_total": 1,
                 "users": [
                     { "id": 42, "name": "Jean Dupont" },
                     { "id": 51, "name": "Amina Bensaïd" }
@@ -110,28 +127,28 @@ async fn trigger_get_project(
         ),
         (
             status = 400,
-            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            description = "A URL segment is not an integer, or `limit` / `offset` is not a non-negative integer.",
             body = String,
             content_type = "text/plain",
             example = json!("Path deserialize error: can not parse `abc` to a u64")
         ),
         (
             status = 401,
-            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
             body = String,
             content_type = "text/plain",
             example = json!("Jeton expiré")
         ),
         (
             status = 404,
-            description = "Projet inexistant, ou invisible pour l'appelant — les deux cas sont volontairement indiscernables.",
+            description = "Unknown project, or project not visible to the caller — both cases are deliberately indistinguishable.",
             body = String,
             content_type = "text/plain",
             example = json!("Not found.")
         ),
         (
             status = 500,
-            description = "Erreur de base de données.",
+            description = "Database error.",
             body = String,
             content_type = "text/plain",
             example = json!("An error occurred while accessing the database.")
@@ -147,7 +164,8 @@ pub async fn get_project(
     state: web::Data<AppState>,
     auth_user: AuthenticatedUser,
     params: web::Path<ProjectPathParams>,
+    page: web::Query<PageParams>,
 ) -> Result<impl Responder, GetProjectError> {
-    let result = trigger_get_project(state, auth_user.id, params.project_id()).await?;
+    let result = trigger_get_project(state, auth_user.id, params.project_id(), page.page()).await?;
     Ok(HttpResponse::Ok().json(result))
 }

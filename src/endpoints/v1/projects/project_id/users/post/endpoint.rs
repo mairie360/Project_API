@@ -5,6 +5,8 @@ use mairie360_api_lib::error::ApiLibError;
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::endpoints::db_error::log_db_error;
+
 use crate::database::users::add_user_to_project::view::AddUserToProjectQueryView;
 use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::users::post::view::AddUserToProjectView;
@@ -76,7 +78,10 @@ async fn trigger_add_user_to_project(
             ApiLibError::Database(DbError::UniqueViolation(_)) => {
                 AddUserToProjectError::AlreadyMember
             }
-            _ => AddUserToProjectError::DatabaseError,
+            e => {
+                log_db_error("projects/project_id/users/post", &e);
+                AddUserToProjectError::DatabaseError
+            }
         })?;
 
     Ok(())

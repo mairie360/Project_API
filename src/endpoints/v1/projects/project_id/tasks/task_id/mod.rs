@@ -2,7 +2,6 @@ pub mod collaboration;
 pub mod comments;
 pub mod delete;
 pub mod doc;
-pub mod history;
 pub mod patch;
 
 /// Paramètres de chemin des routes d'une tâche.
@@ -42,7 +41,6 @@ pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
             .service(delete::endpoint::delete_task)
             .service(patch::endpoint::patch_task)
             .service(collaboration::endpoint::get_task_collaboration)
-            .service(comments::endpoint::add_task_comment)
-            .service(history::endpoint::append_task_history),
+            .service(comments::endpoint::add_task_comment),
     );
 }

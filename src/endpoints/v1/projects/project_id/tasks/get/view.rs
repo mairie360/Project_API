@@ -15,8 +15,8 @@ pub struct TaskView {
     /// Intitulé de la tâche.
     #[schema(example = "Consulter les riverains")]
     pub title: String,
-    /// Toujours une chaîne vide : la table des tâches ne stocke pas de description.
-    #[schema(example = "")]
+    /// Description of the task; empty string if it has none — never `null`.
+    #[schema(example = "Réunion publique à organiser avant le 15 octobre")]
     pub description: String,
     /// Statut courant. `Error` signale une valeur en base que l'API ne sait pas interpréter.
     pub status: TaskStatus,
@@ -37,7 +37,7 @@ impl From<Task> for TaskView {
         TaskView {
             id: task.id() as u64,
             title: task.title().to_string(),
-            description: "".to_string(),
+            description: task.description().to_string(),
             status: task.status().to_string().into(),
             priority: task.priority().to_string().into(),
             due_date: task.due_date(),
@@ -47,9 +47,12 @@ impl From<Task> for TaskView {
     }
 }
 
-/// Tâches d'un projet.
+/// One page of the tasks of a project.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct GetTasksResultView {
-    /// Tâches du projet. Vide si le projet n'en a aucune.
+    /// Tasks of the page, oldest first. Empty if the project has none or the page is past the end.
     pub tasks: Vec<TaskView>,
+    /// Number of tasks of the project, whatever the page.
+    #[schema(example = 1)]
+    pub total: u64,
 }
