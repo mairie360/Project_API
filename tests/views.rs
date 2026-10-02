@@ -450,9 +450,9 @@ fn add_user_to_project_view_accessors() {
 
 #[test]
 fn get_project_users_view_accessors() {
-    let view = GetProjectUsersQueryView::new(15);
+    let view = GetProjectUsersQueryView::new(15, 100, 0);
     assert_eq!(view.project_id(), 15);
-    assert_eq!(view.query_params().len(), 1);
+    assert_eq!(view.query_params().len(), 3);
     assert!(view.query_sql().contains("WHERE pm.project_id = $1"));
 }
 

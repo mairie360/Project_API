@@ -14,11 +14,14 @@ pub struct User {
     pub name: Option<String>,
 }
 
-/// Membres d'un projet.
+/// One page of the members of a project.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct GetProjectUsersResultView {
-    /// Membres rattachés au projet.
+    /// Members of the page, sorted by last name, first name, then id.
     pub users: Vec<User>,
+    /// Number of members of the project, whatever the page.
+    #[schema(example = 2)]
+    pub total: u64,
 }
 
 impl From<ProjectMemberRow> for User {

@@ -83,6 +83,9 @@ pub struct GetProjectResultView {
     /// Number of tasks of the project, whatever the page.
     #[schema(example = 1)]
     pub tasks_total: u64,
-    /// All its members.
+    /// The first 100 members of the project, sorted by name (see `GET …/users/` for the rest).
     pub users: Vec<User>,
+    /// Number of members of the project, whatever the page.
+    #[schema(example = 2)]
+    pub users_total: u64,
 }
