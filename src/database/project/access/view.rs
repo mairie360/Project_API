@@ -58,3 +58,33 @@ impl ProjectAccess {
         self.can_manage() || (self.visible && self.assigned)
     }
 }
+
+/// Locks the project row (`FOR UPDATE`) until the end of the transaction and returns how many rows
+/// were locked (0 for an unknown project).
+///
+/// Every write on a project, its tasks or its members takes this lock before checking access, so
+/// the check and the write see the same project: a concurrent removal of the caller from the
+/// members, or a deletion of the project, waits for the write to commit instead of slipping in
+/// between.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LockProjectQueryView {
+    params: Vec<QueryParam>,
+}
+
+impl LockProjectQueryView {
+    pub fn new(project_id: u64) -> Self {
+        Self {
+            params: vec![QueryParam::I32(project_id as i32)],
+        }
+    }
+}
+
+impl ApiRequestDto for LockProjectQueryView {
+    fn query_sql(&self) -> &'static str {
+        "SELECT count(*) FROM (SELECT id FROM projects WHERE id = $1 FOR UPDATE) locked"
+    }
+
+    fn query_params(&self) -> &[QueryParam] {
+        &self.params
+    }
+}

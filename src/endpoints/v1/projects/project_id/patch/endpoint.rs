@@ -1,13 +1,14 @@
 use actix_web::http::StatusCode;
 use actix_web::{patch, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
 use crate::endpoints::db_error::log_db_error;
 
 use crate::database::project::update::view::UpdateProjectQueryView;
 use crate::database::project::update_status::view::ProjectStatus as DbProjectStatus;
-use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::get::view::ProjectStatus;
 use crate::endpoints::v1::projects::project_id::patch::view::UpdateProjectView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
@@ -50,7 +51,7 @@ impl ResponseError for UpdateProjectError {
 }
 
 async fn trigger_update_project(
-    state: web::Data<AppState>,
+    tx: &mut SmartTransaction,
     project_id: u64,
     view: UpdateProjectView,
 ) -> Result<(), UpdateProjectError> {
@@ -67,8 +68,7 @@ async fn trigger_update_project(
         None => None,
     };
 
-    let updated: bool = state
-        .get_smart_db()
+    let updated: bool = tx
         .fetch_scalar(&UpdateProjectQueryView::new(
             project_id,
             view.name.as_deref().map(str::trim),
@@ -161,7 +161,7 @@ pub async fn update_project(
     params: web::Path<ProjectPathParams>,
     view: ValidatedJson<UpdateProjectView>,
 ) -> Result<impl Responder, UpdateProjectError> {
-    require_access(
+    let (mut tx, _) = begin_write(
         &state,
         auth_user.id,
         params.project_id(),
@@ -169,7 +169,8 @@ pub async fn update_project(
         Requirement::ManageProject,
     )
     .await?;
-    trigger_update_project(state, params.project_id(), view.into_inner()).await?;
+    trigger_update_project(&mut tx, params.project_id(), view.into_inner()).await?;
+    commit(tx, "projects/project_id/patch").await?;
     Ok(HttpResponse::NoContent().finish())
 }
 

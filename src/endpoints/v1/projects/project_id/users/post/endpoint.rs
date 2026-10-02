@@ -3,12 +3,13 @@ use actix_web::{post, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::database::error::DbError;
 use mairie360_api_lib::error::ApiLibError;
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
 use crate::endpoints::db_error::log_db_error;
 
 use crate::database::users::add_user_to_project::view::AddUserToProjectQueryView;
-use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::users::post::view::AddUserToProjectView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
@@ -62,27 +63,21 @@ impl ResponseError for AddUserToProjectError {
 }
 
 async fn trigger_add_user_to_project(
-    state: web::Data<AppState>,
+    tx: &mut SmartTransaction,
     project_id: u64,
     view: AddUserToProjectView,
 ) -> Result<(), AddUserToProjectError> {
     let query_view = AddUserToProjectQueryView::new(project_id, view.user_id);
-    state
-        .get_smart_db()
-        .execute(query_view)
-        .await
-        .map_err(|e| match e {
-            ApiLibError::Database(DbError::ForeignKeyViolation(_)) => {
-                AddUserToProjectError::UserNotFound
-            }
-            ApiLibError::Database(DbError::UniqueViolation(_)) => {
-                AddUserToProjectError::AlreadyMember
-            }
-            e => {
-                log_db_error("projects/project_id/users/post", &e);
-                AddUserToProjectError::DatabaseError
-            }
-        })?;
+    tx.execute(&query_view).await.map_err(|e| match e {
+        ApiLibError::Database(DbError::ForeignKeyViolation(_)) => {
+            AddUserToProjectError::UserNotFound
+        }
+        ApiLibError::Database(DbError::UniqueViolation(_)) => AddUserToProjectError::AlreadyMember,
+        e => {
+            log_db_error("projects/project_id/users/post", &e);
+            AddUserToProjectError::DatabaseError
+        }
+    })?;
 
     Ok(())
 }
@@ -163,7 +158,7 @@ pub async fn add_user_to_project(
     view: web::Json<AddUserToProjectView>,
     params: web::Path<ProjectPathParams>,
 ) -> Result<impl Responder, AddUserToProjectError> {
-    require_access(
+    let (mut tx, _) = begin_write(
         &state,
         auth_user.id,
         params.project_id(),
@@ -174,7 +169,8 @@ pub async fn add_user_to_project(
     let view = view
         .try_into()
         .map_err(|_| AddUserToProjectError::BadRequest)?;
-    trigger_add_user_to_project(state, params.project_id, view).await?;
+    trigger_add_user_to_project(&mut tx, params.project_id, view).await?;
+    commit(tx, "projects/project_id/users/post").await?;
     Ok(HttpResponse::Ok().finish())
 }
 

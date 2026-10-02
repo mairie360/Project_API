@@ -21,7 +21,12 @@ impl ApiRequestDto for FixtureSql {
     }
 }
 
-fn fixture(sql: String) -> FixtureSql {
+/// Raw SQL without parameters, for test set-up only.
+pub fn fixture(sql: String) -> impl ApiRequestDto {
+    fixture_sql(sql)
+}
+
+fn fixture_sql(sql: String) -> FixtureSql {
     FixtureSql {
         sql: Box::leak(sql.into_boxed_str()),
         params: Vec::new(),
@@ -46,7 +51,7 @@ const FIXTURE_PASSWORD_HASH: &str = "$argon2id$v=19$m=16,t=2,p=1$dGVzdHNhbHQ$dGV
 pub async fn create_user(db: &SmartDatabase, first_name: &str, role: Option<&str>) -> u64 {
     let suffix = unique_suffix();
     let id: i32 = db
-        .fetch_scalar(&fixture(format!(
+        .fetch_scalar(&fixture_sql(format!(
             "INSERT INTO users (first_name, last_name, email, password) \
              VALUES ('{first_name}', 'Test', '{}.{suffix}@project-api.test', '{FIXTURE_PASSWORD_HASH}') RETURNING id",
             first_name.to_lowercase()
@@ -54,7 +59,7 @@ pub async fn create_user(db: &SmartDatabase, first_name: &str, role: Option<&str
         .await
         .unwrap();
     if let Some(role) = role {
-        db.execute(fixture(format!(
+        db.execute(fixture_sql(format!(
             "INSERT INTO user_roles (user_id, role_id) SELECT {id}, id FROM roles WHERE name = '{role}'"
         )))
         .await
@@ -66,14 +71,14 @@ pub async fn create_user(db: &SmartDatabase, first_name: &str, role: Option<&str
 /// Crée un groupe contenant `members` et renvoie son identifiant.
 pub async fn create_group(db: &SmartDatabase, owner_id: u64, members: &[u64]) -> u64 {
     let id: i32 = db
-        .fetch_scalar(&fixture(format!(
+        .fetch_scalar(&fixture_sql(format!(
             "INSERT INTO groups (owner_id, name) VALUES ({owner_id}, 'Groupe {}') RETURNING id",
             unique_suffix()
         )))
         .await
         .unwrap();
     for member in members {
-        db.execute(fixture(format!(
+        db.execute(fixture_sql(format!(
             "INSERT INTO group_members (group_id, user_id) VALUES ({id}, {member}) ON CONFLICT DO NOTHING"
         )))
         .await
@@ -84,7 +89,7 @@ pub async fn create_group(db: &SmartDatabase, owner_id: u64, members: &[u64]) ->
 
 /// Force le statut d'une tâche sans passer par l'API (déclenche le trigger d'historique).
 pub async fn set_task_status(db: &SmartDatabase, task_id: u64, status: &str) {
-    db.execute(fixture(format!(
+    db.execute(fixture_sql(format!(
         "UPDATE tasks SET status = '{status}'::task_status WHERE id = {task_id}"
     )))
     .await

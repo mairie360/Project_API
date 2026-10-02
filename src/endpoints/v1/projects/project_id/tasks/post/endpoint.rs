@@ -3,6 +3,7 @@ use actix_web::{post, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::database::error::DbError;
 use mairie360_api_lib::error::ApiLibError;
 use mairie360_api_lib::security::AuthenticatedUser;
+use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
 use crate::endpoints::db_error::log_db_error;
@@ -10,7 +11,7 @@ use crate::endpoints::db_error::log_db_error;
 use crate::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority as DbTaskPriority, TaskStatus, ASSIGNEE_NOT_IN_PROJECT,
 };
-use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority as ApiTaskPriority;
 use crate::endpoints::v1::projects::project_id::tasks::post::view::{
     CreateTaskResultView, CreateTaskView,
@@ -65,7 +66,7 @@ impl ResponseError for CreateTaskError {
 }
 
 async fn trigger_create_task(
-    state: web::Data<AppState>,
+    tx: &mut SmartTransaction,
     user_id: u64,
     project_id: u64,
     view: CreateTaskView,
@@ -101,8 +102,7 @@ async fn trigger_create_task(
         *view.assigned_to(),
         view.fields(),
     );
-    let result: i32 = state
-        .get_smart_db()
+    let result: i32 = tx
         .fetch_scalar::<i32, _>(&query_view)
         .await
         .map_err(|e| match e {
@@ -215,7 +215,7 @@ pub async fn create_task(
     view: ValidatedJson<CreateTaskView>,
     params: web::Path<ProjectPathParams>,
 ) -> Result<impl Responder, CreateTaskError> {
-    require_access(
+    let (mut tx, _) = begin_write(
         &state,
         auth_user.id,
         params.project_id(),
@@ -224,7 +224,8 @@ pub async fn create_task(
     )
     .await?;
     let view = view.into_inner();
-    let result = trigger_create_task(state, auth_user.id, params.project_id, view).await?;
+    let result = trigger_create_task(&mut tx, auth_user.id, params.project_id, view).await?;
+    commit(tx, "projects/project_id/tasks/post").await?;
     Ok(HttpResponse::Ok().json(result))
 }
 

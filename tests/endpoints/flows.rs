@@ -79,3 +79,30 @@ async fn a_manager_runs_a_project_end_to_end() {
     assert_eq!(status(&app, delete(&p, s.manager)).await, 204);
     assert_eq!(status(&app, get(&p, s.manager)).await, 404);
 }
+
+#[actix_web::test]
+#[serial]
+async fn removing_a_member_unassigns_their_tasks_in_the_same_write() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let s = scenario(&ctx, &app).await;
+    let p = s.project();
+    let tasks = json(&app, get(&format!("{p}tasks/"), s.manager)).await;
+    assert_eq!(tasks["tasks"][0]["assigned_to"], s.assignee);
+
+    let removed = delete(&format!("{p}users/{}/", s.assignee), s.manager);
+    assert_eq!(status(&app, removed).await, 204);
+
+    let tasks = json(&app, get(&format!("{p}tasks/"), s.manager)).await;
+    let task = &tasks["tasks"][0];
+    assert_eq!(task["id"], s.task_id);
+    assert!(task["assigned_to"].is_null(), "{task}");
+    // The former assignee lost every access to the task.
+    let t = s.task();
+    let comment = post(
+        &format!("{t}comments"),
+        s.assignee,
+        json!({ "message": "Encore là ?" }),
+    );
+    assert_eq!(status(&app, comment).await, 404);
+}
