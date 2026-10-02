@@ -163,7 +163,10 @@ List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/
 take `limit` (default 100, clamped to 1–500) / `offset` (`endpoints::pagination::PageParams`) and return a
 total; their query views select `paged_rows_sql!` over rows numbered `rn` and are read with
 `fetch_one::<PagedRows<T>, _>`. Database errors are logged with `endpoints::db_error::log_db_error` before
-answering `500` (`tracing`, level from `RUST_LOG`, default `info`).
+answering `500` (`tracing`, level from `RUST_LOG`, default `info`); a handler that turns some of them into a
+client status maps them with `db_error::classify` (`Conflict` / `InvalidReference` / `NotFound` logged at `warn`,
+`Internal` at `error`) instead of matching `DbError` by hand (MAIR-421). A path segment that is not a valid id
+answers `400` (`PathConfig` in `endpoints::config`), as every route documents.
 
 ### Deployment
 

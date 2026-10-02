@@ -339,12 +339,21 @@ async fn invalid_path_segments_and_bodies_are_rejected() {
 
     assert_eq!(
         status(&app, get("/api/v1/projects/abc/", s.manager)).await,
-        404
+        400
     );
     assert_eq!(
         status(&app, get("/api/v1/projects/-1/", s.manager)).await,
-        404,
-        "a negative id is not a route"
+        400,
+        "a negative id is not an id"
+    );
+    let task = format!("{}tasks/x/", s.project());
+    assert_eq!(
+        status(
+            &app,
+            patch(&task, s.manager, json!({ "status": "Completed" }))
+        )
+        .await,
+        400
     );
     let blank = patch(&s.project(), s.manager, json!({ "name": "   " }));
     assert_eq!(status(&app, blank).await, 400);
