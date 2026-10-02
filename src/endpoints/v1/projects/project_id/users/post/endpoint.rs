@@ -1,12 +1,10 @@
 use actix_web::http::StatusCode;
 use actix_web::{post, web, HttpResponse, Responder, ResponseError};
-use mairie360_api_lib::database::error::DbError;
-use mairie360_api_lib::error::ApiLibError;
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
-use crate::endpoints::db_error::log_db_error;
+use crate::endpoints::db_error::{classify, DbFailure};
 
 use crate::database::users::add_user_to_project::view::AddUserToProjectQueryView;
 use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
@@ -14,12 +12,10 @@ use crate::endpoints::v1::projects::project_id::users::post::view::AddUserToProj
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub enum AddUserToProjectError {
     Forbidden,
     NotFound,
     DatabaseError,
-    BadRequest,
     UserNotFound,
     AlreadyMember,
 }
@@ -31,9 +27,6 @@ impl std::fmt::Display for AddUserToProjectError {
             AddUserToProjectError::NotFound => write!(f, "Not found."),
             AddUserToProjectError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
-            }
-            AddUserToProjectError::BadRequest => {
-                write!(f, "Bad request.")
             }
             AddUserToProjectError::UserNotFound => {
                 write!(f, "User not found.")
@@ -51,7 +44,6 @@ impl ResponseError for AddUserToProjectError {
             AddUserToProjectError::Forbidden => StatusCode::FORBIDDEN,
             AddUserToProjectError::NotFound => StatusCode::NOT_FOUND,
             AddUserToProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
-            AddUserToProjectError::BadRequest => StatusCode::BAD_REQUEST,
             AddUserToProjectError::UserNotFound => StatusCode::NOT_FOUND,
             AddUserToProjectError::AlreadyMember => StatusCode::CONFLICT,
         }
@@ -68,14 +60,11 @@ async fn trigger_add_user_to_project(
     view: AddUserToProjectView,
 ) -> Result<(), AddUserToProjectError> {
     let query_view = AddUserToProjectQueryView::new(project_id, view.user_id);
-    tx.execute(&query_view).await.map_err(|e| match e {
-        ApiLibError::Database(DbError::ForeignKeyViolation(_)) => {
-            AddUserToProjectError::UserNotFound
-        }
-        ApiLibError::Database(DbError::UniqueViolation(_)) => AddUserToProjectError::AlreadyMember,
-        e => {
-            log_db_error("projects/project_id/users/post", &e);
-            AddUserToProjectError::DatabaseError
+    tx.execute(&query_view).await.map_err(|e| {
+        match classify("projects/project_id/users/post", &e) {
+            DbFailure::InvalidReference => AddUserToProjectError::UserNotFound,
+            DbFailure::Conflict => AddUserToProjectError::AlreadyMember,
+            _ => AddUserToProjectError::DatabaseError,
         }
     })?;
 
@@ -166,9 +155,7 @@ pub async fn add_user_to_project(
         Requirement::ManageProject,
     )
     .await?;
-    let view = view
-        .try_into()
-        .map_err(|_| AddUserToProjectError::BadRequest)?;
+    let view = view.into_inner();
     trigger_add_user_to_project(&mut tx, params.project_id, view).await?;
     commit(tx, "projects/project_id/users/post").await?;
     Ok(HttpResponse::Ok().finish())
