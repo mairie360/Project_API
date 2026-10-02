@@ -5,7 +5,7 @@ use mairie360_api_lib::state::AppState;
 
 use crate::database::paged::PagedRows;
 use crate::endpoints::db_error::log_db_error;
-use crate::endpoints::pagination::{Page, PageParams};
+use crate::endpoints::pagination::{Page, PageParams, DEFAULT_PAGE_SIZE};
 
 use crate::database::project::get_project::view::GetVisibleProjectQueryView;
 use crate::database::project::get_projects::view::ProjectView;
@@ -65,10 +65,11 @@ async fn trigger_get_project(
         .ok_or(GetProjectError::NotFound)?;
 
     let tasks_view = GetProjectTasksQueryView::new(project_id, page.limit, page.offset);
-    let users_view = GetProjectUsersQueryView::new(project_id);
+    // The members are bounded too: the first page, `users_total` tells whether there are more.
+    let users_view = GetProjectUsersQueryView::new(project_id, DEFAULT_PAGE_SIZE, 0);
     let (tasks, users) = futures_util::try_join!(
         smart_db.fetch_one::<PagedRows<Task>, _>(&tasks_view),
-        smart_db.fetch_all::<ProjectMemberRow, _>(&users_view),
+        smart_db.fetch_one::<PagedRows<ProjectMemberRow>, _>(&users_view),
     )
     .map_err(|e| {
         log_db_error("projects/project_id/get", &e);
@@ -79,7 +80,8 @@ async fn trigger_get_project(
         project: project.into(),
         tasks: tasks.items.into_iter().map(Into::into).collect(),
         tasks_total: u64::try_from(tasks.total).unwrap_or(0),
-        users: users.into_iter().map(Into::into).collect(),
+        users: users.items.into_iter().map(Into::into).collect(),
+        users_total: u64::try_from(users.total).unwrap_or(0),
     })
 }
 
@@ -91,18 +93,20 @@ async fn trigger_get_project(
     ),
     path = "",
     summary = "Read a project",
-    description = "Returns a project with **one page of its tasks and all its members** in a \
+    description = "Returns a project with **one page of its tasks and the first 100 of its members** in a \
                    single request: the call the front makes to display a project board, rather \
                    than chaining `/tasks/` and `/users/`.\n\n\
                    `limit` (default 100, at most 500) and `offset` (default 0) page the tasks, \
                    oldest first; `tasks_total` is the number of tasks of the project. Use \
                    `GET …/tasks/` to fetch the next pages alone.\n\n\
+                   `users` holds at most the first 100 members, sorted by name; `users_total` is \
+                   the number of members, and `GET …/users/` pages through the rest.\n\n\
                    Being a member of the project is enough. A project the caller cannot access \
                    answers `404`, not `403`.",
     responses(
         (
             status = 200,
-            description = "The project, one page of its tasks and its members.",
+            description = "The project, one page of its tasks and the first page of its members.",
             body = GetProjectResultView,
             example = json!({
                 "project": { "id": 12, "name": "Réfection de la place du marché", "description": "Travaux de voirie 2026", "status": "Active" },
@@ -122,7 +126,8 @@ async fn trigger_get_project(
                 "users": [
                     { "id": 42, "name": "Jean Dupont" },
                     { "id": 51, "name": "Amina Bensaïd" }
-                ]
+                ],
+                "users_total": 2
             })
         ),
         (
