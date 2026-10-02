@@ -1,2 +1,3 @@
-mod common; // Accès à ton pool
+mod common; // Shared test database and fixtures
+mod endpoints;
 mod queries;
