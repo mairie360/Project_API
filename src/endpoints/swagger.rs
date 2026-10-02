@@ -1,8 +1,10 @@
 use crate::endpoints::health::HealthDoc;
-use crate::endpoints::hello::HelloDoc;
 use crate::endpoints::v1::doc::V1Doc;
+use actix_web::web;
+use mairie360_api_lib::env_manager::get_env_var;
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
+use utoipa_swagger_ui::SwaggerUi;
 
 // Dans votre ApiDoc principale
 #[derive(OpenApi)]
@@ -75,7 +77,6 @@ body names the first invalid field, e.g. ``Invalid `name`: must not contain `<` 
     nest(
         (path = "/api/v1", api = V1Doc),
         (path = "/", api = HealthDoc),
-        (path = "/", api = HelloDoc),
     ),
     modifiers(&SecurityAddon)
 )]
@@ -99,5 +100,27 @@ impl Modify for SecurityAddon {
                     .build(),
             ),
         )
+    }
+}
+
+/// Set to `true` (or `1`) to serve Swagger UI (`/swagger-ui/`) and the contract
+/// (`/api-docs/openapi.json`). Off by default, so off in production (MAIR-424): the dev and test
+/// stacks enable it, ZAP and k6 read the spec from there.
+pub const API_DOCS_ENV: &str = "API_DOCS_ENABLED";
+
+/// Whether [`API_DOCS_ENV`] enables the documentation routes.
+pub fn docs_enabled() -> bool {
+    get_env_var(API_DOCS_ENV).is_some_and(|value| {
+        let value = value.trim();
+        value == "1" || value.eq_ignore_ascii_case("true")
+    })
+}
+
+/// Mounts Swagger UI and `/api-docs/openapi.json` when `enabled`, nothing otherwise.
+pub fn configure_docs(cfg: &mut web::ServiceConfig, enabled: bool) {
+    if enabled {
+        cfg.service(
+            SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", ApiDoc::openapi()),
+        );
     }
 }

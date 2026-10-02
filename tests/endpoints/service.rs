@@ -83,3 +83,28 @@ async fn probes_are_not_mounted_under_api() {
     assert_eq!(status(&app, get("/api/health", user)).await, 404);
     assert_eq!(status(&app, get("/api/ready", user)).await, 404);
 }
+
+#[actix_web::test]
+#[serial]
+async fn api_docs_are_only_served_when_enabled() {
+    use project_api::endpoints::swagger::{configure_docs, docs_enabled, API_DOCS_ENV};
+
+    for enabled in [false, true] {
+        let app =
+            actix_web::test::init_service(App::new().configure(|cfg| configure_docs(cfg, enabled)))
+                .await;
+        let expected = if enabled { 200 } else { 404 };
+        let spec = TestRequest::get().uri("/api-docs/openapi.json");
+        assert_eq!(status(&app, spec).await, expected, "enabled = {enabled}");
+        let ui = TestRequest::get().uri("/swagger-ui/index.html");
+        assert_eq!(status(&app, ui).await, expected, "enabled = {enabled}");
+    }
+
+    std::env::remove_var(API_DOCS_ENV);
+    assert!(!docs_enabled(), "off by default");
+    for (value, expected) in [("true", true), ("1", true), ("TRUE", true), ("no", false)] {
+        std::env::set_var(API_DOCS_ENV, value);
+        assert_eq!(docs_enabled(), expected, "{API_DOCS_ENV}={value}");
+    }
+    std::env::remove_var(API_DOCS_ENV);
+}
