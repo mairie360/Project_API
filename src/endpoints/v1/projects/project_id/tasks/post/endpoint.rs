@@ -1,5 +1,6 @@
 use actix_web::http::StatusCode;
 use actix_web::{post, web, HttpResponse, Responder, ResponseError};
+use mairie360_api_lib::database::db_interface::id_from_sql;
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
@@ -112,7 +113,7 @@ async fn trigger_create_task(
     }
 
     Ok(CreateTaskResultView {
-        task_id: result as u64,
+        task_id: id_from_sql(result),
         name,
         description,
     })
