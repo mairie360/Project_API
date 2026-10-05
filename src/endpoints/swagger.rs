@@ -1,7 +1,10 @@
 use crate::endpoints::health::HealthDoc;
 use crate::endpoints::v1::doc::V1Doc;
+use actix_web::web;
+use mairie360_api_lib::env_manager::get_env_var;
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
+use utoipa_swagger_ui::SwaggerUi;
 
 // Dans votre ApiDoc principale
 #[derive(OpenApi)]
