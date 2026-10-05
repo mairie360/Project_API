@@ -1,12 +1,10 @@
 use actix_web::http::StatusCode;
 use actix_web::{post, web, HttpResponse, Responder, ResponseError};
-use mairie360_api_lib::database::error::DbError;
-use mairie360_api_lib::error::ApiLibError;
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
-use crate::endpoints::db_error::log_db_error;
+use crate::endpoints::db_error::{classify, DbFailure};
 
 use crate::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority as DbTaskPriority, TaskStatus, ASSIGNEE_NOT_IN_PROJECT,
@@ -102,18 +100,12 @@ async fn trigger_create_task(
         *view.assigned_to(),
         view.fields(),
     );
-    let result: i32 = tx
-        .fetch_scalar::<i32, _>(&query_view)
-        .await
-        .map_err(|e| match e {
-            ApiLibError::Database(DbError::ForeignKeyViolation(_)) => {
-                CreateTaskError::UnknownAssignee
-            }
-            e => {
-                log_db_error("projects/project_id/tasks/post", &e);
-                CreateTaskError::DatabaseError
-            }
-        })?;
+    let result: i32 = tx.fetch_scalar::<i32, _>(&query_view).await.map_err(|e| {
+        match classify("projects/project_id/tasks/post", &e) {
+            DbFailure::InvalidReference => CreateTaskError::UnknownAssignee,
+            _ => CreateTaskError::DatabaseError,
+        }
+    })?;
 
     if result == ASSIGNEE_NOT_IN_PROJECT {
         return Err(CreateTaskError::AssigneeNotInProject);
