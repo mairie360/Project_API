@@ -3,6 +3,7 @@
 use actix_web::test::TestRequest;
 use actix_web::{web, App};
 use mairie360_api_lib::state::AppState;
+use mairie360_api_lib::test_setup::db_setup::start_postgres_container;
 use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use mairie360_api_lib::test_setup::redis_setup::start_redis_container;
 use project_api::endpoints::health;
@@ -13,7 +14,6 @@ use crate::init_app;
 
 /// Nothing listens on port 1: the connection is refused immediately.
 const UNREACHABLE_REDIS: &str = "redis://127.0.0.1:1";
-const UNREACHABLE_POSTGRES: &str = "postgres://postgres:password@127.0.0.1:1/mairie_360_database";
 
 async fn ready(state: AppState) -> (u16, serde_json::Value) {
     let app = actix_web::test::init_service(
@@ -63,8 +63,16 @@ async fn not_ready_without_redis() {
 #[actix_web::test]
 #[serial]
 async fn not_ready_without_postgres() {
+    // `AppState::new` panics without Postgres, so the state is built on a dedicated database
+    // that is stopped afterwards (the shared one is used by the other tests).
+    let (postgres, db) = start_postgres_container().await;
+    let pg_url = format!(
+        "postgres://postgres:postgres@{}:{}/postgres",
+        db.host, db.port
+    );
     let (_redis, redis) = start_redis_container().await;
-    let state = AppState::new(redis.url.clone(), UNREACHABLE_POSTGRES.to_string()).await;
+    let state = AppState::new(redis.url.clone(), pg_url).await;
+    postgres.stop().await.expect("stop the Postgres container");
 
     let (code, body) = ready(state).await;
     assert_eq!(code, 503);
