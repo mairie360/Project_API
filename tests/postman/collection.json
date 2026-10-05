@@ -34,39 +34,6 @@
       "name": "Service",
       "item": [
         {
-          "name": "Hello",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                ""
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "pm.test(\"Body matches the expected text\", function () {",
-                  "    pm.expect(pm.response.text()).to.eql(\"Hello, world!\");",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "response": []
-        },
-        {
           "name": "Health",
           "request": {
             "method": "GET",

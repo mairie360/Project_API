@@ -41,7 +41,7 @@ Cargo aliases are defined in `.cargo/config.toml`:
 
 ### Running locally
 
-The binary needs these env vars (see `docker-compose.yml` `x-common-env`): `HOST`, `PORT`, `REDIS_URL`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `JWT_SECRET`, `JWT_TIMEOUT`. The Postgres URL is assembled by `database::pg_url::build_pg_url`, which percent-encodes user, password and database name, so `DB_PASSWORD` may contain any character. Normal workflow is Docker:
+The binary needs these env vars (see `docker-compose.yml` `x-common-env`): `HOST`, `PORT`, `REDIS_URL`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `JWT_SECRET`, `JWT_TIMEOUT`, plus the optional `API_DOCS_ENABLED` (`true` serves Swagger UI and `/api-docs/openapi.json`; off by default so off in production, on in every compose stack, MAIR-424). The Postgres URL is assembled by `database::pg_url::build_pg_url`, which percent-encodes user, password and database name, so `DB_PASSWORD` may contain any character. Normal workflow is Docker:
 
 ```bash
 docker compose up            # full stack: postgres + liquibase migrations + redis + seeder + api + nginx
@@ -120,7 +120,7 @@ only exclude `main.rs` and `lib.rs`: `endpoints/` counts toward the 60 % line ga
 
 ### Request pipeline (`src/main.rs`)
 
-`main` refuses to start while Postgres does not answer: `AppState::new` (lib 3.0.0) retries for `DB_CONNECT_TIMEOUT` seconds (default 30), then panics. `HttpServer` mounts, in order: Swagger UI (`/swagger-ui/*`, `/api-docs/openapi.json`), the public probes `health::health` (`/health`, liveness, no dependency) and `health::ready` (`/ready`, readiness: Postgres `SELECT 1` + Redis read, `503` with `{"postgres", "redis"}` when one fails — MAIR-423) and `hello::hello` (`/`), then `web::scope("/api").wrap(JwtMiddleware).configure(endpoints::config)`. Everything under `/api` requires a valid JWT (the probes are not mounted there); handlers get the caller via the `AuthenticatedUser { id }` extractor from `mairie360_api_lib::security`.
+`main` refuses to start while Postgres does not answer: `AppState::new` (lib 3.0.0) retries for `DB_CONNECT_TIMEOUT` seconds (default 30), then panics. `HttpServer` mounts, in order: Swagger UI (`/swagger-ui/*`, `/api-docs/openapi.json`) only when `API_DOCS_ENABLED` is set (`swagger::configure_docs`), the public probes `health::health` (`/health`, liveness, no dependency) and `health::ready` (`/ready`, readiness: Postgres `SELECT 1` + Redis read, `503` with `{"postgres", "redis"}` when one fails — MAIR-423), then `web::scope("/api").wrap(JwtMiddleware).configure(endpoints::config)`. Everything under `/api` requires a valid JWT (the probes are not mounted there); handlers get the caller via the `AuthenticatedUser { id }` extractor from `mairie360_api_lib::security`.
 
 Route tree: `endpoints::config` → `v1::config` → `/v1/projects` → `projects::{get,post}` + `project_id::config` (`/{project_id}/close`, `/delete`, `/tasks/...`, `/users/...`) + `templates::config`. `src/lib.rs` re-exports `database` and `endpoints`; the crate is both a lib and a bin so `examples/` and `tests/` can depend on the lib.
 
