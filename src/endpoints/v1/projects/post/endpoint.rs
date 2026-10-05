@@ -1,5 +1,6 @@
 use actix_web::http::StatusCode;
 use actix_web::{post, web, HttpResponse, Responder, ResponseError};
+use mairie360_api_lib::database::db_interface::id_from_sql;
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
@@ -131,7 +132,7 @@ pub async fn create_project(
     let view = view.into_inner();
     let project_id = trigger_create_project(state, auth_user.id, view).await?;
     Ok(HttpResponse::Ok().json(CreateProjectResultView {
-        project_id: project_id as u64,
+        project_id: id_from_sql(project_id),
     }))
 }
 

@@ -1,4 +1,6 @@
-use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
+use mairie360_api_lib::database::db_interface::{
+    id_from_sql, id_to_sql, ApiRequestDto, QueryParam,
+};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CreateProjectQueryView {
@@ -11,7 +13,7 @@ impl CreateProjectQueryView {
             params: vec![
                 QueryParam::Text(title.to_string()),
                 QueryParam::Text(description.unwrap_or_default().to_string()),
-                QueryParam::I32(owner_id as i32),
+                QueryParam::I32(id_to_sql(owner_id)),
             ],
         }
     }
@@ -25,7 +27,7 @@ impl CreateProjectQueryView {
     }
 
     pub fn owner_id(&self) -> u64 {
-        self.params[2].as_i32() as u64
+        id_from_sql(self.params[2].as_i32())
     }
 }
 

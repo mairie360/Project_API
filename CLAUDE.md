@@ -18,6 +18,10 @@ Every DB operation is described by a **query view** — a struct in `src/databas
 - `fetch_scalar::<T, _>(&view)` — one primitive column (e.g. `RETURNING id` → `i32`).
 - `fetch_one::<T, _>(&view)` / `fetch_all::<T, _>(&view)` — `T: Serialize + DeserializeOwned`; **the SQL must return a single JSON column**, so multi-column reads wrap rows in `to_jsonb(t)`.
 
+Ids are `u64` in the API and `INT4` in the database: convert them with the lib's `id_to_sql` / `id_from_sql`
+(saturating, so `2^32 + 1` no longer wraps to row `1`), never with `as`; `src/lib.rs` denies the
+`cast_possible_truncation` / `cast_possible_wrap` / `cast_sign_loss` lints (MAIR-422).
+
 `QueryParam` only has `I32 / I64 / Bool / Text / Uuid / DateTime / IpAddr / OptionI32` — nullable text/enum/timestamp params are passed as `Text` and reconciled in SQL with `NULLIF($n,'')` + a `::type` cast; JSONB is passed as a serialized `Text` with `$n::jsonb`.
 
 ## Commands

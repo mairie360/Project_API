@@ -1,3 +1,4 @@
+use mairie360_api_lib::database::db_interface::id_from_sql;
 use utoipa::ToSchema;
 
 use crate::database::users::get_project_users::view::ProjectMemberRow;
@@ -23,7 +24,7 @@ pub struct GetProjectUsersResultView {
 impl From<ProjectMemberRow> for User {
     fn from(row: ProjectMemberRow) -> Self {
         Self {
-            id: row.id as u64,
+            id: id_from_sql(row.id),
             name: row.name,
         }
     }
