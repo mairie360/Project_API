@@ -137,7 +137,7 @@ services:
         condition: service_healthy
 
   # The published image is distroless (no shell, no curl), so the API cannot carry its own
-  # healthcheck: this sidecar polls /health and the services that need the API wait for it to
+  # healthcheck: this sidecar polls /ready (Postgres + Redis) and the services that need the API wait for it to
   # complete instead.
   project-ready:
     image: curlimages/curl:latest
@@ -145,7 +145,7 @@ services:
       project:
         condition: service_started
     command: >
-      sh -c 'until curl -fsS http://project:3001/health >/dev/null; do
+      sh -c 'until curl -fsS http://project:3001/ready >/dev/null; do
       echo "waiting for project..."; sleep 2; done; echo "project ready"'
     networks:
       - backend

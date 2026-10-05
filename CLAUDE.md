@@ -69,7 +69,7 @@ End-to-end tests (what CI runs on `main` after the dev release, needs Docker + G
 The service under test in these three stacks is `image: ${IMAGE_REF}` (no `build:` block). CI sets `IMAGE_REF` to the
 published `ghcr.io/mairie360/project-api:dev-<sha>` image; when it is empty the scripts build `project-api:local` from
 `development.Dockerfile` first. That image is distroless (no shell, no curl), so readiness is a `project-ready` sidecar
-polling `/health`, and dependent services wait for it with `service_completed_successfully`.
+polling `/ready`, and dependent services wait for it with `service_completed_successfully`.
 
 The ZAP scan is authenticated: `security-scan` injects a static admin JWT (`sub=1`, signed with
 `JWT_SECRET=b"secret"`, see the comment in `docker-compose-security.yml`) on every request, waits for the `seeder`
@@ -120,7 +120,7 @@ only exclude `main.rs` and `lib.rs`: `endpoints/` counts toward the 60 % line ga
 
 ### Request pipeline (`src/main.rs`)
 
-`HttpServer` mounts, in order: Swagger UI (`/swagger-ui/*`, `/api-docs/openapi.json`), public `health::health` (`/health`) and `hello::hello` (`/`), then `web::scope("/api").wrap(JwtMiddleware).configure(endpoints::config)`. Everything under `/api` requires a valid JWT; handlers get the caller via the `AuthenticatedUser { id }` extractor from `mairie360_api_lib::security`.
+`main` refuses to start while Postgres does not answer: `AppState::new` (lib 3.0.0) retries for `DB_CONNECT_TIMEOUT` seconds (default 30), then panics. `HttpServer` mounts, in order: Swagger UI (`/swagger-ui/*`, `/api-docs/openapi.json`), the public probes `health::health` (`/health`, liveness, no dependency) and `health::ready` (`/ready`, readiness: Postgres `SELECT 1` + Redis read, `503` with `{"postgres", "redis"}` when one fails — MAIR-423) and `hello::hello` (`/`), then `web::scope("/api").wrap(JwtMiddleware).configure(endpoints::config)`. Everything under `/api` requires a valid JWT (the probes are not mounted there); handlers get the caller via the `AuthenticatedUser { id }` extractor from `mairie360_api_lib::security`.
 
 Route tree: `endpoints::config` → `v1::config` → `/v1/projects` → `projects::{get,post}` + `project_id::config` (`/{project_id}/close`, `/delete`, `/tasks/...`, `/users/...`) + `templates::config`. `src/lib.rs` re-exports `database` and `endpoints`; the crate is both a lib and a bin so `examples/` and `tests/` can depend on the lib.
 
