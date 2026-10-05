@@ -113,10 +113,10 @@ async fn trigger_add_task_comment(
         ),
         (
             status = 400,
-            description = "Malformed JSON body, URL segment not an integer, or `message` empty, longer than 2000 characters, containing `<` / `>` or a control character other than line breaks and tabs.",
+            description = "Malformed JSON body, URL segment not an integer, or `message` empty, longer than 2000 characters, or containing a control character other than line breaks and tabs.",
             body = String,
             content_type = "text/plain",
-            example = json!("Invalid `message`: must not contain `<` or `>`")
+            example = json!("Invalid `message`: must be at most 2000 characters")
         ),
         (
             status = 401,

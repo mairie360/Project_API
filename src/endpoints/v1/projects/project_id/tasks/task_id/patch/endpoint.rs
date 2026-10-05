@@ -140,7 +140,7 @@ async fn trigger_patch_task(
         ),
         (
             status = 400,
-            description = "A URL segment is not an integer, malformed JSON body, `assigned_to` that does not match any user or is neither the owner nor a member of the project, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character, no `<` or `>`; `description` at most 5000 characters, no `<` or `>`, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of `<`, `>` and control characters.",
+            description = "A URL segment is not an integer, malformed JSON body, `assigned_to` that does not match any user or is neither the owner nor a member of the project, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of control characters other than line breaks and tabs.",
             body = String,
             content_type = "text/plain",
             example = json!("`assigned_to` is not a member of the project.")
