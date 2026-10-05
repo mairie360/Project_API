@@ -19,8 +19,6 @@ use mairie360_api_lib::security::JwtMiddleware;
 use mairie360_api_lib::state::AppState;
 
 use tracing_subscriber::EnvFilter;
-use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 
 /// Postgres gets this many tries at startup, [`STARTUP_DB_RETRY_DELAY`] apart (about 30 s in all with
 /// the 2 s timeout of each try), before the API gives up.
@@ -59,6 +57,11 @@ async fn main() -> std::io::Result<()> {
     let docs_enabled = api_docs_enabled(get_env_var(API_DOCS_ENABLED).as_deref());
     tracing::info!(docs_enabled, "Swagger UI and OpenAPI document served");
 
+    let docs = docs_enabled();
+    if docs {
+        tracing::info!("API documentation served on /swagger-ui/ and /api-docs/openapi.json");
+    }
+
     let server = HttpServer::new(move || {
         App::new()
             .app_data(data.clone())
@@ -91,4 +94,27 @@ async fn main() -> std::io::Result<()> {
     });
 
     server.run().await
+}
+
+/// How long the API waits for Postgres at startup before giving up.
+const STARTUP_DATABASE_WAIT: Duration = Duration::from_secs(30);
+
+/// Refuses to start without Postgres (MAIR-423): the lib builds the state even when the database
+/// is unreachable, and the API would then answer `500` on every route. Retries for
+/// [`STARTUP_DATABASE_WAIT`] to absorb a database that starts at the same time, then exits with an
+/// error so the orchestrator restarts the pod. Redis is only checked by `GET /ready`.
+async fn wait_for_database(state: &AppState) -> std::io::Result<()> {
+    let deadline = tokio::time::Instant::now() + STARTUP_DATABASE_WAIT;
+    loop {
+        let readiness = health::check_dependencies(state, Duration::from_secs(2)).await;
+        if readiness.postgres {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            tracing::error!("Postgres is unreachable, refusing to start");
+            return Err(std::io::Error::other("Postgres is unreachable"));
+        }
+        tracing::warn!("waiting for Postgres...");
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
 }
