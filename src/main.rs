@@ -1,19 +1,31 @@
+// An id read as `u64` and cast with `as i32` silently wraps (`2^32 + 1` becomes `1`, another row):
+// convert with `mairie360_api_lib::database::db_interface::id_to_sql` / `id_from_sql` or
+// `i32::try_from` instead (MAIR-422). Keep these lints on in every API generated from the template.
+#![deny(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
+
 use actix_web::{middleware, web, App, HttpServer};
 
 use project_api::database::pg_url::build_pg_url;
-use project_api::endpoints::swagger::{configure_docs, docs_enabled};
+use project_api::endpoints::swagger::{api_docs_enabled, ApiDoc, API_DOCS_ENABLED};
 use project_api::endpoints::{config, health};
 
-use mairie360_api_lib::env_manager::get_critical_env_var;
+use mairie360_api_lib::env_manager::{get_critical_env_var, get_env_var};
 use mairie360_api_lib::security::JwtMiddleware;
 use mairie360_api_lib::state::AppState;
 
 use tracing_subscriber::EnvFilter;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 //                                        -- MAIN FUNCTION --
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    // Without a subscriber, actix's `Logger` and every `tracing` event are silently dropped.
     // `RUST_LOG` overrides the level; database errors are logged at `error`.
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -34,11 +46,8 @@ async fn main() -> std::io::Result<()> {
     let host = get_critical_env_var("HOST");
     let port = get_critical_env_var("PORT");
     let bind_address = format!("{}:{}", host, port);
-
-    let docs = docs_enabled();
-    if docs {
-        tracing::info!("API documentation served on /swagger-ui/ and /api-docs/openapi.json");
-    }
+    let docs_enabled = api_docs_enabled(get_env_var(API_DOCS_ENABLED).as_deref());
+    tracing::info!(docs_enabled, "Swagger UI and OpenAPI document served");
 
     let server = HttpServer::new(move || {
         App::new()
@@ -46,12 +55,20 @@ async fn main() -> std::io::Result<()> {
             .wrap(middleware::Logger::default())
             // Every response is JSON or plain text: forbid browsers from sniffing it as HTML.
             .wrap(middleware::DefaultHeaders::new().add(("X-Content-Type-Options", "nosniff")))
-            // Swagger UI and the OpenAPI contract, only when API_DOCS_ENABLED is set.
-            .configure(|cfg| configure_docs(cfg, docs))
-            // Public probes
+            // 1. Swagger UI and the OpenAPI document (public), only where explicitly enabled:
+            //    dev and test stacks, never the production deployment.
+            .configure(|cfg| {
+                if docs_enabled {
+                    cfg.service(
+                        SwaggerUi::new("/swagger-ui/{_:.*}")
+                            .url("/api-docs/openapi.json", ApiDoc::openapi()),
+                    );
+                }
+            })
+            // 2. Public probes
             .service(health::health)
             .service(health::ready)
-            // Everything else requires a JWT
+            // 3. Endpoints protected by the JWT
             .service(web::scope("/api").wrap(JwtMiddleware).configure(config))
     })
     .bind(bind_address)?;

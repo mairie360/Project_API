@@ -5,7 +5,7 @@ use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
-use crate::endpoints::db_error::{classify, DbFailure};
+use crate::endpoints::db_error::{classify_db_error, DbFailure};
 
 use crate::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority as DbTaskPriority, TaskStatus, ASSIGNEE_NOT_IN_PROJECT,
@@ -102,7 +102,7 @@ async fn trigger_create_task(
         view.fields(),
     );
     let result: i32 = tx.fetch_scalar::<i32, _>(&query_view).await.map_err(|e| {
-        match classify("projects/project_id/tasks/post", &e) {
+        match classify_db_error("projects/project_id/tasks/post", &e) {
             DbFailure::InvalidReference => CreateTaskError::UnknownAssignee,
             _ => CreateTaskError::DatabaseError,
         }

@@ -4,7 +4,7 @@ use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
-use crate::endpoints::db_error::{classify, DbFailure};
+use crate::endpoints::db_error::{classify_db_error, DbFailure};
 
 use crate::database::users::add_user_to_project::view::AddUserToProjectQueryView;
 use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
@@ -61,7 +61,7 @@ async fn trigger_add_user_to_project(
 ) -> Result<(), AddUserToProjectError> {
     let query_view = AddUserToProjectQueryView::new(project_id, view.user_id);
     tx.execute(&query_view).await.map_err(|e| {
-        match classify("projects/project_id/users/post", &e) {
+        match classify_db_error("projects/project_id/users/post", &e) {
             DbFailure::InvalidReference => AddUserToProjectError::UserNotFound,
             DbFailure::Conflict => AddUserToProjectError::AlreadyMember,
             _ => AddUserToProjectError::DatabaseError,
