@@ -10,7 +10,6 @@
 use actix_web::{middleware, web, App, HttpServer};
 
 use project_api::database::pg_url::build_pg_url;
-use project_api::endpoints::health::wait_for_postgres;
 use project_api::endpoints::swagger::{api_docs_enabled, ApiDoc, API_DOCS_ENABLED};
 use project_api::endpoints::{config, health};
 
@@ -19,11 +18,8 @@ use mairie360_api_lib::security::JwtMiddleware;
 use mairie360_api_lib::state::AppState;
 
 use tracing_subscriber::EnvFilter;
-
-/// Postgres gets this many tries at startup, [`STARTUP_DB_RETRY_DELAY`] apart (about 30 s in all with
-/// the 2 s timeout of each try), before the API gives up.
-const STARTUP_DB_ATTEMPTS: u32 = 10;
-const STARTUP_DB_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 //                                        -- MAIN FUNCTION --
 
@@ -43,24 +39,15 @@ async fn main() -> std::io::Result<()> {
     let db_port = get_critical_env_var("DB_PORT");
     let db_name = get_critical_env_var("DB_NAME");
     let pg_url = build_pg_url(&db_user, &db_password, &db_host, &db_port, &db_name);
+    // Panics when Postgres stays unreachable for `DB_CONNECT_TIMEOUT` seconds (MAIR-423): the pod
+    // crashes and is restarted instead of answering `500` on every route.
     let state = AppState::new(redis_url, pg_url).await;
-    // The lib keeps going without a pool when Postgres is unreachable: refuse to start instead, so
-    // the pod restarts (with backoff) rather than staying up and answering 500 to every request.
-    if !wait_for_postgres(&state, STARTUP_DB_ATTEMPTS, STARTUP_DB_RETRY_DELAY).await {
-        tracing::error!("Postgres did not answer at startup, exiting");
-        return Err(std::io::Error::other("Postgres unreachable at startup"));
-    }
     let data = web::Data::new(state);
     let host = get_critical_env_var("HOST");
     let port = get_critical_env_var("PORT");
     let bind_address = format!("{}:{}", host, port);
     let docs_enabled = api_docs_enabled(get_env_var(API_DOCS_ENABLED).as_deref());
     tracing::info!(docs_enabled, "Swagger UI and OpenAPI document served");
-
-    let docs = docs_enabled();
-    if docs {
-        tracing::info!("API documentation served on /swagger-ui/ and /api-docs/openapi.json");
-    }
 
     let server = HttpServer::new(move || {
         App::new()
@@ -94,27 +81,4 @@ async fn main() -> std::io::Result<()> {
     });
 
     server.run().await
-}
-
-/// How long the API waits for Postgres at startup before giving up.
-const STARTUP_DATABASE_WAIT: Duration = Duration::from_secs(30);
-
-/// Refuses to start without Postgres (MAIR-423): the lib builds the state even when the database
-/// is unreachable, and the API would then answer `500` on every route. Retries for
-/// [`STARTUP_DATABASE_WAIT`] to absorb a database that starts at the same time, then exits with an
-/// error so the orchestrator restarts the pod. Redis is only checked by `GET /ready`.
-async fn wait_for_database(state: &AppState) -> std::io::Result<()> {
-    let deadline = tokio::time::Instant::now() + STARTUP_DATABASE_WAIT;
-    loop {
-        let readiness = health::check_dependencies(state, Duration::from_secs(2)).await;
-        if readiness.postgres {
-            return Ok(());
-        }
-        if tokio::time::Instant::now() >= deadline {
-            tracing::error!("Postgres is unreachable, refusing to start");
-            return Err(std::io::Error::other("Postgres is unreachable"));
-        }
-        tracing::warn!("waiting for Postgres...");
-        tokio::time::sleep(Duration::from_secs(2)).await;
-    }
 }
