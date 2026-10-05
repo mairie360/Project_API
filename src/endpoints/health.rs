@@ -81,21 +81,6 @@ pub async fn postgres_answers(state: &AppState) -> bool {
     .await
 }
 
-/// Startup check: tries [`postgres_answers`] up to `attempts` times, `delay` apart, and says whether
-/// Postgres ever answered. `main.rs` refuses to start when it does not, instead of serving `500`s.
-pub async fn wait_for_postgres(state: &AppState, attempts: u32, delay: Duration) -> bool {
-    for attempt in 1..=attempts {
-        if postgres_answers(state).await {
-            return true;
-        }
-        tracing::warn!(attempt, attempts, "Postgres does not answer yet");
-        if attempt < attempts {
-            tokio::time::sleep(delay).await;
-        }
-    }
-    false
-}
-
 async fn within_timeout(check: impl Future<Output = bool>) -> bool {
     tokio::time::timeout(DEPENDENCY_TIMEOUT, check)
         .await
