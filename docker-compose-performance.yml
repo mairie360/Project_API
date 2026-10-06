@@ -42,7 +42,7 @@ x-service: &service-template
 
 services:
   postgres:
-    image: ghcr.io/mairie360/database:dev-fb7c223
+    image: ghcr.io/mairie360/database:3.0.0
     restart: always
     container_name: mairie360-db-project-api
     environment:
@@ -62,7 +62,7 @@ services:
       retries: 5
 
   liquibase:
-    image: ghcr.io/mairie360/liquibase-migrations:dev-fb7c223
+    image: ghcr.io/mairie360/liquibase-migrations:3.0.0
     container_name: mairie360-liquibase-project-api
     depends_on:
       postgres:
@@ -105,9 +105,12 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./init-test.sql:/init-test.sql:ro
+      # Volume seed of the load test (MAIR-474): thousands of projects, tasks and members.
+      - ./init-perf.sql:/init-perf.sql:ro
     # ON_ERROR_STOP: a failing fixture must fail the stack, not leave k6 running without its users.
     command: >
-      psql -h postgres -U postgres -d mairie_360_database -v ON_ERROR_STOP=1 -f /init-test.sql
+      psql -h postgres -U postgres -d mairie_360_database -v ON_ERROR_STOP=1
+      -f /init-test.sql -f /init-perf.sql
     environment:
       PGPASSWORD: ${DB_PASSWORD:-password}
     networks:
@@ -180,9 +183,11 @@ services:
     environment:
       - BASE_URL=http://project:3001
       - OPENAPI_SPEC=/spec/openapi.json
+      # Same value as the API's: load-test.js signs the tokens of the seeded non-admin callers.
+      - JWT_SECRET=b"secret"
     depends_on:
       project-ready:
         condition: service_completed_successfully
-      # The fixtures load-test.js relies on (init-test.sql).
+      # The fixtures load-test.js relies on (init-test.sql, init-perf.sql).
       seeder:
         condition: service_completed_successfully

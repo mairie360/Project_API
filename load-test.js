@@ -6,13 +6,21 @@
 // `readHandlers` (GET) or `writeHandlers` (any other method) and send its request through
 // `request()` (raw `http.*` calls are not counted).
 //
-// Two scenarios share the spec, split by HTTP method:
-// - `reads`: the GET operations under the historical profile (ramp up to 20 VUs), against the
-//   fixtures created once in setup() and removed in teardown();
-// - `writes`: every other operation with 2 VUs. Each handler is self-contained: it creates what it
+// High load on a volume seed (MAIR-474): the performance stack also runs init-perf.sql (5 000
+// projects, 50 000 tasks, 2 100 accounts in 100 teams, a hot project 12 with 2 000 tasks and a
+// task 87 with 1 000 comments and 1 000 history entries). Three scenarios:
+// - `reads`: the GET operations, ramping up to 100 VUs. Each call picks a caller (the Admin, a
+//   seeded Responsable or a seeded agent, tokens signed here with the stack's JWT_SECRET) and a
+//   random page, so the visibility predicate and deep pages are measured, not only page 1 as Admin;
+// - `writes`: every other operation with 10 VUs. Each handler is self-contained: it creates what it
 //   needs through `fixture()`, sends its request, then deletes what it created, so the handlers
-//   do not depend on their order and the database ends as it started.
+//   do not depend on their order and the database ends as it started. The task writes share one
+//   sandbox project, so they also queue on its `FOR UPDATE` lock (access.rs::begin_write);
+// - `list_rush`: `GET /projects/` as non-admins at a fixed arrival rate, failing if k6 has to drop
+//   iterations (the API no longer keeps up).
 import http from 'k6/http';
+import crypto from 'k6/crypto';
+import encoding from 'k6/encoding';
 import { check, fail, sleep } from 'k6';
 import { createCoverage, loadSpec } from '/coverage.js';
 
@@ -26,6 +34,10 @@ const TOKEN =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sZSI6ImFkbWluIiwiZXhwIjo0MTAyNDQ0ODAwfQ.xCeBe_2QxRlXW8WXr3t6F69wbEHA93HbP_7l4OTJwjA';
 const AUTH = { Authorization: `Bearer ${TOKEN}` };
 
+// Secret of the stack (docker-compose-performance.yml passes the API's JWT_SECRET), used to sign
+// the tokens of the seeded non-admin callers.
+const JWT_SECRET = __ENV.JWT_SECRET || 'b"secret"';
+
 // Plain `User` accounts seeded by init-test.sql.
 const MEMBER_ID = 2;
 const OTHER_MEMBER_ID = 3;
@@ -35,6 +47,48 @@ const READ_BUDGET_MS = 200;
 const WRITE_BUDGET_MS = 500;
 
 const READ_METHODS = ['get', 'head', 'options'];
+
+// Rows of init-perf.sql.
+const SEEDED_PROJECTS = 5000;
+const AGENTS = { first: 100001, count: 2000 };
+const MANAGERS = { first: 103001, count: 100 };
+// Responsables whose team (agents 100001..100300) belongs to the hot project 12.
+const HOT_MANAGERS = 15;
+const HOT_PROJECT_ID = 12;
+const HOT_TASK_ID = 87;
+const HOT_TASKS = 2000;
+const HOT_MEMBERS = 300;
+const HOT_FEED = 1000;
+const PAGE = 100;
+
+// Fixed-rate `GET /projects/` as non-admins.
+const LIST_RUSH_RATE = 100; // requests per second
+const LIST_RUSH_BUDGET_MS = 200;
+
+function randomInt(max) {
+  return Math.floor(Math.random() * max);
+}
+
+/** Random page offset of a list of `size` rows. */
+function randomOffset(size) {
+  return randomInt(Math.max(1, Math.ceil(size / PAGE))) * PAGE;
+}
+
+const tokens = {};
+
+/** `Authorization` header of user `sub`, an HS256 token signed with the stack's secret. */
+function bearer(sub) {
+  if (!tokens[sub]) {
+    const part = (value) => encoding.b64encode(JSON.stringify(value), 'rawurl');
+    const unsigned = `${part({ alg: 'HS256', typ: 'JWT' })}.${part({ sub: String(sub), role: 'user', exp: 4102444800 })}`;
+    tokens[sub] = `Bearer ${unsigned}.${crypto.hmac('sha256', JWT_SECRET, unsigned, 'base64rawurl')}`;
+  }
+  return { Authorization: tokens[sub] };
+}
+
+const randomAgent = () => AGENTS.first + randomInt(AGENTS.count);
+const randomManager = () => MANAGERS.first + randomInt(MANAGERS.count);
+const randomHotManager = () => MANAGERS.first + randomInt(HOT_MANAGERS);
 
 /** The served spec restricted to the operations whose method passes `keep`. */
 function specSubset(spec, keep) {
@@ -99,24 +153,51 @@ const spec = loadSpec();
 const readHandlers = {
   'GET /health': ({ request }) => check(request(), { 'health 200': (r) => r.status === 200 }),
   'GET /ready': ({ request }) => check(request(), { 'ready 200': (r) => r.status === 200 }),
-  'GET /api/v1/projects/': ({ request }) =>
-    check(request(), { 'list projects 200': (r) => r.status === 200 }),
-  'GET /api/v1/projects/{project_id}/': ({ request, data }) =>
-    check(request({ path: { project_id: data.projectId } }), {
-      'get project 200': (r) => r.status === 200,
-    }),
-  'GET /api/v1/projects/{project_id}/tasks/': ({ request, data }) =>
-    check(request({ path: { project_id: data.projectId } }), {
-      'list tasks 200': (r) => r.status === 200,
-    }),
-  'GET /api/v1/projects/{project_id}/tasks/{task_id}/collaboration': ({ request, data }) =>
-    check(request({ path: { project_id: data.projectId, task_id: data.taskId } }), {
-      'task collaboration 200': (r) => r.status === 200,
-    }),
-  'GET /api/v1/projects/{project_id}/users/': ({ request, data }) =>
-    check(request({ path: { project_id: data.projectId } }), {
-      'list members 200': (r) => r.status === 200,
-    }),
+  // A third of the calls each as the Admin (any page of the 5 000 projects), a Responsable (their
+  // team's projects) and an agent (their own).
+  'GET /api/v1/projects/': ({ request }) => {
+    const caller = randomInt(3);
+    const res =
+      caller === 0
+        ? request({ query: { limit: PAGE, offset: randomOffset(SEEDED_PROJECTS) } })
+        : request({ headers: bearer(caller === 1 ? randomManager() : randomAgent()) });
+    check(res, { 'list projects 200': (r) => r.status === 200 });
+  },
+  // The k6 fixture as Admin, or the hot project as a Responsable who sees it through their team.
+  'GET /api/v1/projects/{project_id}/': ({ request, data }) => {
+    const res =
+      randomInt(2) === 0
+        ? request({ path: { project_id: data.projectId } })
+        : request({ path: { project_id: HOT_PROJECT_ID }, headers: bearer(randomHotManager()) });
+    check(res, { 'get project 200': (r) => r.status === 200 });
+  },
+  'GET /api/v1/projects/{project_id}/tasks/': ({ request }) =>
+    check(
+      request({
+        path: { project_id: HOT_PROJECT_ID },
+        query: { limit: PAGE, offset: randomOffset(HOT_TASKS) },
+        headers: bearer(randomHotManager()),
+      }),
+      { 'list tasks 200': (r) => r.status === 200 },
+    ),
+  'GET /api/v1/projects/{project_id}/tasks/{task_id}/collaboration': ({ request }) =>
+    check(
+      request({
+        path: { project_id: HOT_PROJECT_ID, task_id: HOT_TASK_ID },
+        query: { limit: PAGE, offset: randomOffset(HOT_FEED) },
+        headers: bearer(randomHotManager()),
+      }),
+      { 'task collaboration 200': (r) => r.status === 200 },
+    ),
+  'GET /api/v1/projects/{project_id}/users/': ({ request }) =>
+    check(
+      request({
+        path: { project_id: HOT_PROJECT_ID },
+        query: { limit: PAGE, offset: randomOffset(HOT_MEMBERS) },
+        headers: bearer(randomHotManager()),
+      }),
+      { 'list members 200': (r) => r.status === 200 },
+    ),
 };
 
 const writeHandlers = {
@@ -227,22 +308,36 @@ export const options = {
       executor: 'ramping-vus',
       exec: 'readScenario',
       stages: [
-        { duration: '30s', target: 20 }, // Ramp up to 20 virtual users
-        { duration: '1m', target: 20 }, // Hold
-        { duration: '10s', target: 0 }, // Ramp down
+        { duration: '30s', target: 50 },
+        { duration: '30s', target: 100 },
+        { duration: '2m', target: 100 }, // Hold
+        { duration: '20s', target: 0 },
       ],
     },
     writes: {
       executor: 'constant-vus',
       exec: 'writeScenario',
-      vus: 2,
-      duration: '1m40s',
+      vus: 10,
+      duration: '3m20s',
+    },
+    list_rush: {
+      executor: 'constant-arrival-rate',
+      exec: 'listRushScenario',
+      startTime: '1m', // once the reads are at full load
+      rate: LIST_RUSH_RATE,
+      timeUnit: '1s',
+      duration: '1m',
+      preAllocatedVUs: 50,
+      maxVUs: 200,
     },
   },
   thresholds: {
     ...reads.thresholds, // every operation exercised, no handler error (shared counters)
     ...latencyThresholds(reads, READ_BUDGET_MS),
     ...latencyThresholds(writes, WRITE_BUDGET_MS),
+    'http_req_duration{op:list_rush}': [`p(95)<${LIST_RUSH_BUDGET_MS}`],
+    dropped_iterations: ['count==0'], // the list rush kept its rate
+    checks: ['rate>0.99'], // a wrong status fails the run, not only a slow one
     http_req_failed: ['rate<0.01'], // Less than 1% errors
   },
 };
@@ -272,4 +367,10 @@ export function readScenario(data) {
 export function writeScenario(data) {
   writes.run({ headers: AUTH, data });
   sleep(1);
+}
+
+export function listRushScenario() {
+  const caller = randomInt(2) === 0 ? randomManager() : randomAgent();
+  const res = http.get(`${BASE_URL}/api/v1/projects/`, { headers: bearer(caller), tags: { op: 'list_rush' } });
+  check(res, { 'list rush 200': (r) => r.status === 200 });
 }

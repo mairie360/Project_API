@@ -91,11 +91,17 @@ Both the ZAP and k6 stacks carry the OpenAPI coverage gate (MAIR-194) from mairi
 `cicd-repo/` (checked out by CI, cloned by the scripts at the pinned `cicd_version` otherwise, override with
 `CICD_VERSION`; gitignored). ZAP runs with `--hook zap_hooks.py` and fails when an operation of the served spec was
 never reached, or when an operation declaring `security(("jwt" = []))` only got 401/403. `load-test.js` is built on
-`coverage.js` and covers every operation (MAIR-195): GET handlers run in the `reads` scenario (20 VUs) against a
-project created in `setup()`, the other methods in the `writes` scenario (2 VUs), each handler creating and deleting
-its own project/task so they are order-independent; one `p(95)` threshold per `op` tag (200 ms reads, 500 ms
-writes) and `http_req_failed < 1%`. The spec k6 reads is the one served by the image under test, saved into the
-`openapi-spec` volume by `project-ready`. **Adding an endpoint = adding its handler in `load-test.js`** (k6 aborts
+`coverage.js` and covers every operation (MAIR-195), under a high load on a volume seed (MAIR-474): the performance
+stack's `seeder` also runs `init-perf.sql` (5 000 projects, 50 000 tasks, 2 100 accounts in 100 teams, hot project 12
+with 2 000 tasks, task 87 with 1 000 comments and history entries). GET handlers run in the `reads` scenario (up to
+100 VUs) as the Admin, a seeded Responsable or a seeded agent (tokens signed in k6 with the stack's `JWT_SECRET`) on
+random pages; the other methods in the `writes` scenario (10 VUs), each handler creating and deleting its own
+project/task so they are order-independent (the task writes share one project, so they also queue on its lock); a
+`list_rush` scenario sends `GET /projects/` at a fixed 100 req/s. Thresholds: one `p(95)` per `op` tag (200 ms
+reads, 500 ms writes), `checks > 99%`, `dropped_iterations == 0`, `http_req_failed < 1%`. Keep `init-perf.sql` and
+the id ranges at the top of `load-test.js` in step. The spec k6 reads is the one served by the image under test,
+saved into the `openapi-spec` volume by `project-ready`. **Adding an endpoint = adding its handler in
+`load-test.js`** (k6 aborts
 at init otherwise), nothing to do for ZAP. `init-test.sql` also seeds the rows of the spec's path examples (project
 12, task 87, user 42) so ZAP reaches real rows, until its own `DELETE` removes them.
 
@@ -120,6 +126,9 @@ Integration tests (`tests/queries/`) require a **running Docker daemon and netwo
 Handler tests (`tests/endpoints/`, MAIR-419) run in the same binary and database: `init_app!` mounts the real
 `/api` scope behind `JwtMiddleware`, `jwt_for(user_id)` signs tokens with a test secret set in-process, and
 `access::scenario` builds a project owned by a Responsable with a plain member, an assignee and two outsiders.
+`token_refusals.rs` sweeps every operation of `ApiDoc` declaring `jwt`: `401` without a token, with another
+scheme, garbage, another secret, an expired token, `alg: none`, a payload swapped under a valid signature or an
+asymmetric algorithm, and `404` for an unknown or archived account; a new route is covered by documenting it.
 They assert the refusals (`401` without a valid JWT, `404` for a project the caller cannot see, `403` for a
 member without manager role, assignee limited to the status, task reachable only through its own project) and
 an end-to-end manager flow. **A new route or access rule gets its negative test here.** `cargo cov` / `cov_test`
