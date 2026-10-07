@@ -161,7 +161,12 @@ const readHandlers = {
       caller === 0
         ? request({ query: { limit: PAGE, offset: randomOffset(SEEDED_PROJECTS) } })
         : request({ headers: bearer(caller === 1 ? randomManager() : randomAgent()) });
-    check(res, { 'list projects 200': (r) => r.status === 200 });
+    check(res, {
+      'list projects 200': (r) => r.status === 200,
+      // The Admin sees the whole seed, a seeded agent or Responsable at least their own projects.
+      'list projects reads the seed': (r) =>
+        r.status === 200 && r.json('total') >= (caller === 0 ? SEEDED_PROJECTS : 1) && r.json('projects').length > 0,
+    });
   },
   // The k6 fixture as Admin, or the hot project as a Responsable who sees it through their team.
   'GET /api/v1/projects/{project_id}/': ({ request, data }) => {
@@ -169,7 +174,10 @@ const readHandlers = {
       randomInt(2) === 0
         ? request({ path: { project_id: data.projectId } })
         : request({ path: { project_id: HOT_PROJECT_ID }, headers: bearer(randomHotManager()) });
-    check(res, { 'get project 200': (r) => r.status === 200 });
+    check(res, {
+      'get project 200': (r) => r.status === 200,
+      'get project reads its tasks and members': (r) => r.status === 200 && r.json('tasks_total') >= 1,
+    });
   },
   'GET /api/v1/projects/{project_id}/tasks/': ({ request }) =>
     check(
@@ -178,7 +186,11 @@ const readHandlers = {
         query: { limit: PAGE, offset: randomOffset(HOT_TASKS) },
         headers: bearer(randomHotManager()),
       }),
-      { 'list tasks 200': (r) => r.status === 200 },
+      {
+        'list tasks 200': (r) => r.status === 200,
+        'list tasks reads the hot project': (r) =>
+          r.status === 200 && r.json('total') >= HOT_TASKS && r.json('tasks').length > 0,
+      },
     ),
   'GET /api/v1/projects/{project_id}/tasks/{task_id}/collaboration': ({ request }) =>
     check(
@@ -187,7 +199,11 @@ const readHandlers = {
         query: { limit: PAGE, offset: randomOffset(HOT_FEED) },
         headers: bearer(randomHotManager()),
       }),
-      { 'task collaboration 200': (r) => r.status === 200 },
+      {
+        'task collaboration 200': (r) => r.status === 200,
+        'task collaboration reads the hot feeds': (r) =>
+          r.status === 200 && r.json('comments_total') >= HOT_FEED && r.json('history_total') >= HOT_FEED,
+      },
     ),
   'GET /api/v1/projects/{project_id}/users/': ({ request }) =>
     check(
@@ -196,7 +212,10 @@ const readHandlers = {
         query: { limit: PAGE, offset: randomOffset(HOT_MEMBERS) },
         headers: bearer(randomHotManager()),
       }),
-      { 'list members 200': (r) => r.status === 200 },
+      {
+        'list members 200': (r) => r.status === 200,
+        'list members reads the hot project': (r) => r.status === 200 && r.json('total') >= HOT_MEMBERS,
+      },
     ),
 };
 
@@ -337,8 +356,9 @@ export const options = {
     ...latencyThresholds(writes, WRITE_BUDGET_MS),
     'http_req_duration{op:list_rush}': [`p(95)<${LIST_RUSH_BUDGET_MS}`],
     dropped_iterations: ['count==0'], // the list rush kept its rate
-    checks: ['rate>0.99'], // a wrong status fails the run, not only a slow one
-    http_req_failed: ['rate<0.01'], // Less than 1% errors
+    // Strict (MAIR-474): one wrong status or one missing seeded row fails the run.
+    checks: ['rate==1'],
+    http_req_failed: ['rate==0'],
   },
 };
 
@@ -372,5 +392,8 @@ export function writeScenario(data) {
 export function listRushScenario() {
   const caller = randomInt(2) === 0 ? randomManager() : randomAgent();
   const res = http.get(`${BASE_URL}/api/v1/projects/`, { headers: bearer(caller), tags: { op: 'list_rush' } });
-  check(res, { 'list rush 200': (r) => r.status === 200 });
+  check(res, {
+    'list rush 200': (r) => r.status === 200,
+    'list rush reads the seed': (r) => r.status === 200 && r.json('total') >= 1,
+  });
 }

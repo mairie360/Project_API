@@ -98,7 +98,7 @@ with 2 000 tasks, task 87 with 1 000 comments and history entries). GET handlers
 random pages; the other methods in the `writes` scenario (10 VUs), each handler creating and deleting its own
 project/task so they are order-independent (the task writes share one project, so they also queue on its lock); a
 `list_rush` scenario sends `GET /projects/` at a fixed 100 req/s. Thresholds: one `p(95)` per `op` tag (200 ms
-reads, 500 ms writes), `checks > 99%`, `dropped_iterations == 0`, `http_req_failed < 1%`. Keep `init-perf.sql` and
+reads, 500 ms writes), `checks == 100%` (status and seeded rows), `dropped_iterations == 0`, `http_req_failed == 0`. Keep `init-perf.sql` and
 the id ranges at the top of `load-test.js` in step. The spec k6 reads is the one served by the image under test,
 saved into the `openapi-spec` volume by `project-ready`. **Adding an endpoint = adding its handler in
 `load-test.js`** (k6 aborts
