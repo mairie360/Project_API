@@ -9,14 +9,14 @@
 // High load on a volume seed (MAIR-474): the performance stack also runs init-perf.sql (5 000
 // projects, 50 000 tasks, 2 100 accounts in 100 teams, a hot project 12 with 2 000 tasks and a
 // task 87 with 1 000 comments and 1 000 history entries). Three scenarios:
-// - `reads`: the GET operations, ramping up to 100 VUs. Each call picks a caller (the Admin, a
+// - `reads`: the GET operations, ramping up to the read VUs of the profile (PROFILES). Each call picks a caller (the Admin, a
 //   seeded Responsable or a seeded agent, tokens signed here with the stack's JWT_SECRET) and a
 //   random page, so the visibility predicate and deep pages are measured, not only page 1 as Admin;
-// - `writes`: every other operation with 10 VUs. Each handler is self-contained: it creates what it
+// - `writes`: every other operation with the write VUs of the profile. Each handler is self-contained: it creates what it
 //   needs through `fixture()`, sends its request, then deletes what it created, so the handlers
 //   do not depend on their order and the database ends as it started. The task writes share one
 //   sandbox project, so they also queue on its `FOR UPDATE` lock (access.rs::begin_write);
-// - `list_rush`: `GET /projects/` as non-admins at a fixed arrival rate, failing if k6 has to drop
+// - `list_rush`: `GET /projects/` as non-admins at the fixed arrival rate of the profile, failing if k6 has to drop
 //   iterations (the API no longer keeps up).
 import http from 'k6/http';
 import crypto from 'k6/crypto';
@@ -61,8 +61,20 @@ const HOT_MEMBERS = 300;
 const HOT_FEED = 1000;
 const PAGE = 100;
 
+// Load profile (MAIR-474), K6_PROFILE:
+// - `ci` (default): what the CI runner holds with the same strict thresholds. The runner
+//   (ubuntu-latest, 4 vCPU) hosts the API, Postgres, Redis and k6 together;
+// - `stress`: the high load, run by hand (`K6_PROFILE=stress ./performance_test.sh`) to find
+//   the breaking point on a larger machine, not on every push.
+const PROFILES = {
+  ci: { readVus: 30, writeVus: 4, rushRate: 30 },
+  stress: { readVus: 100, writeVus: 10, rushRate: 100 },
+};
+const PROFILE = PROFILES[__ENV.K6_PROFILE || 'ci'];
+if (!PROFILE) throw new Error(`Unknown K6_PROFILE ${__ENV.K6_PROFILE}: ${Object.keys(PROFILES).join(', ')}`);
+
 // Fixed-rate `GET /projects/` as non-admins.
-const LIST_RUSH_RATE = 100; // requests per second
+const LIST_RUSH_RATE = PROFILE.rushRate; // requests per second
 const LIST_RUSH_BUDGET_MS = 200;
 
 function randomInt(max) {
@@ -327,16 +339,16 @@ export const options = {
       executor: 'ramping-vus',
       exec: 'readScenario',
       stages: [
-        { duration: '30s', target: 50 },
-        { duration: '30s', target: 100 },
-        { duration: '2m', target: 100 }, // Hold
+        { duration: '30s', target: Math.ceil(PROFILE.readVus / 2) },
+        { duration: '30s', target: PROFILE.readVus },
+        { duration: '2m', target: PROFILE.readVus }, // Hold
         { duration: '20s', target: 0 },
       ],
     },
     writes: {
       executor: 'constant-vus',
       exec: 'writeScenario',
-      vus: 10,
+      vus: PROFILE.writeVus,
       duration: '3m20s',
     },
     list_rush: {

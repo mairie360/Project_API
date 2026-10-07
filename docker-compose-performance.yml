@@ -183,6 +183,8 @@ services:
     environment:
       - BASE_URL=http://project:3001
       - OPENAPI_SPEC=/spec/openapi.json
+      # Load profile of load-test.js: `ci` (default, sized for the CI runner) or `stress` (MAIR-474).
+      - K6_PROFILE=${K6_PROFILE:-ci}
       # Same value as the API's: load-test.js signs the tokens of the seeded non-admin callers.
       - JWT_SECRET=b"secret"
     depends_on:
