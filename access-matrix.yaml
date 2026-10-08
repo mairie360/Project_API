@@ -1,0 +1,82 @@
+# Access matrix of Project_API (MAIR-288, epic MAIR-284).
+#
+# A decision of the mairie, proposed by Mairie 360: for every operation of the OpenAPI, who may
+# call it. tests/endpoints/access_matrix.rs reads the spec the API serves and fails when an
+# operation is missing here or listed here without existing, then calls every operation as each
+# role and as each relation to the project, and checks the answer: an allowed caller never gets
+# 401 / 403 / 404, any other caller gets 403, or 404 when the project is not visible to them
+# (401 without a session). Change this file and the code together.
+#
+# Keys of an operation ("METHOD /path" of the OpenAPI):
+#   access     public          no session needed
+#              authenticated   any session (every role, Guest included)
+#   roles      roles that pass whatever the project (Admin and Maire see every project)
+#   ownership  relations to the project that also pass:
+#              owner           the project's owner (a Responsable: creating a project needs a
+#                              manager role)
+#              member          a member of the project
+#              assignee        the agent the task is assigned to (status changes only on PATCH)
+#   personal   personal fields of the answer (gdpr/inventory.yaml of Database), for the review
+#   note       the rule when it is not obvious
+#
+# Rules of the code (endpoints/v1/projects/access.rs): reading a project needs to see it (Admin,
+# Maire, its owner and members, and a Responsable sharing a group with one of them); managing it
+# needs to see it and a manager role (Admin, Maire, Responsable); acting on a task (status,
+# comments, history) is also open to its assignee.
+# Decisions of the mairie (2026-10-08): a Guest only gets the default access of its role.
+
+version: 1
+api: project
+roles: [Admin, Maire, Responsable, User, Guest]
+
+operations:
+  GET /health: {access: public}
+  GET /ready: {access: public}
+
+  GET /api/v1/projects/:
+    access: authenticated
+    roles: [Admin, Maire, Responsable, User, Guest]
+    note: "lists only the projects the caller sees"
+  POST /api/v1/projects/:
+    access: authenticated
+    roles: [Admin, Maire, Responsable]
+
+  GET /api/v1/projects/{project_id}/:
+    access: authenticated
+    roles: [Admin, Maire]
+    ownership: [owner, member]
+    personal: [users.id, users.name, tasks.assigned_to]
+  PATCH /api/v1/projects/{project_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+  DELETE /api/v1/projects/{project_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+  PATCH /api/v1/projects/{project_id}/close: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+
+  GET /api/v1/projects/{project_id}/tasks/:
+    access: authenticated
+    roles: [Admin, Maire]
+    ownership: [owner, member]
+    personal: [assigned_to]
+  POST /api/v1/projects/{project_id}/tasks/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+  PATCH /api/v1/projects/{project_id}/tasks/{task_id}/:
+    access: authenticated
+    roles: [Admin, Maire]
+    ownership: [owner, assignee]
+    note: "the assignee may only change the status"
+  DELETE /api/v1/projects/{project_id}/tasks/{task_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+  GET /api/v1/projects/{project_id}/tasks/{task_id}/collaboration:
+    access: authenticated
+    roles: [Admin, Maire]
+    ownership: [owner, assignee]
+    personal: [comments.author, comments.message, history.author, history.changes]
+  POST /api/v1/projects/{project_id}/tasks/{task_id}/comments:
+    access: authenticated
+    roles: [Admin, Maire]
+    ownership: [owner, assignee]
+    personal: [author, message]
+
+  GET /api/v1/projects/{project_id}/users/:
+    access: authenticated
+    roles: [Admin, Maire]
+    ownership: [owner, member]
+    personal: [users.id, users.name]
+  POST /api/v1/projects/{project_id}/users/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+  DELETE /api/v1/projects/{project_id}/users/{user_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
