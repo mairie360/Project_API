@@ -43,6 +43,28 @@ async fn a_manager_runs_a_project_end_to_end() {
     assert_eq!(status(&app, task_change).await, 204);
     let tasks = json(&app, get(&format!("{p}tasks/"), s.manager)).await;
     assert_eq!(tasks["total"], 1);
+    // The list carries the aggregates of the tasks and filters on them (MAIR-474).
+    let urgent = json(
+        &app,
+        get(
+            "/api/v1/projects/?priority=High&status=Active&limit=500",
+            s.manager,
+        ),
+    )
+    .await;
+    let listed = urgent["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|project| project["id"] == s.project_id)
+        .expect("the project of the urgent task is listed");
+    assert_eq!(listed["priority"], "High", "an Urgent task is stored High");
+    assert_eq!(listed["tasks_total"], 1);
+    assert_eq!(listed["members_total"], 2);
+    assert_eq!(
+        urgent["summary"]["by_priority"]["high"], urgent["total"],
+        "the summary counts the matching projects"
+    );
 
     let comment = post(
         &format!("{t}comments"),
@@ -108,4 +130,40 @@ async fn removing_a_member_unassigns_their_tasks_in_the_same_write() {
         json!({ "message": "Encore là ?" }),
     );
     assert_eq!(status(&app, comment).await, 404);
+}
+
+/// Invalid filters of the list are refused with a `400` naming the parameter, before any query.
+#[actix_web::test]
+#[serial]
+async fn the_projects_list_refuses_invalid_filters() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let user = ctx.user("Filterer", None).await;
+
+    for query in [
+        "status=active",
+        "status=Active,",
+        "priority=Highest",
+        "priority=Urgent",
+        "priority=",
+        "due_before=2026-13-01T00:00:00Z",
+        "due_after=tomorrow",
+        "search=a%00b",
+    ] {
+        let request = get(&format!("/api/v1/projects/?{query}"), user);
+        assert_eq!(status(&app, request).await, 400, "{query}");
+    }
+    let long = "a".repeat(256);
+    assert_eq!(
+        status(&app, get(&format!("/api/v1/projects/?search={long}"), user)).await,
+        400
+    );
+    for query in [
+        "status=Active,Suspended,Completed,Error",
+        "priority=Low,Medium,High",
+        "search=march%C3%A9&due_before=2026-12-31T23:59:59Z&due_after=2026-01-01T00:00:00%2B02:00",
+    ] {
+        let request = get(&format!("/api/v1/projects/?{query}"), user);
+        assert_eq!(status(&app, request).await, 200, "{query}");
+    }
 }

@@ -3,12 +3,11 @@ use actix_web::{get, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
-use crate::database::paged::PagedRows;
 use crate::endpoints::db_error::log_db_error;
-use crate::endpoints::pagination::{Page, PageParams};
+use crate::endpoints::validation::ValidatedQuery;
 
-use crate::database::project::get_projects::view::{GetProjectsQueryView, ProjectView};
-use crate::endpoints::v1::projects::get::view::GetProjectsResultView;
+use crate::database::project::get_projects::view::{GetProjectsQueryView, ProjectsPage};
+use crate::endpoints::v1::projects::get::view::{GetProjectsQuery, GetProjectsResultView};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GetProjectsError {
@@ -45,33 +44,34 @@ impl ResponseError for GetProjectsError {
 async fn trigger_get_projects(
     state: web::Data<AppState>,
     user_id: u64,
-    page: Page,
+    query: GetProjectsQuery,
 ) -> Result<GetProjectsResultView, GetProjectsError> {
-    let view = GetProjectsQueryView::new(user_id, page.limit, page.offset);
-    let result: PagedRows<ProjectView> =
-        state.get_smart_db().fetch_one(&view).await.map_err(|e| {
-            log_db_error("projects/get", &e);
-            GetProjectsError::DatabaseError
-        })?;
+    let page = query.page();
+    let view = GetProjectsQueryView::filtered(user_id, &query.filters(), page.limit, page.offset);
+    let result: ProjectsPage = state.get_smart_db().fetch_one(&view).await.map_err(|e| {
+        log_db_error("projects/get", &e);
+        GetProjectsError::DatabaseError
+    })?;
 
-    Ok(GetProjectsResultView {
-        projects: result.items.into_iter().map(Into::into).collect(),
-        total: u64::try_from(result.total).unwrap_or(0),
-    })
+    Ok(result.into())
 }
 
 #[utoipa::path(
     get,
     path = "",
     summary = "List my projects",
-    description = "Returns one page of the projects visible to the user of the JWT, newest first. \
-                   List view: neither tasks nor members are included, call \
-                   `GET /api/v1/projects/{project_id}/` for the detail of a project.\n\n\
-                   `limit` (default 100, at most 500) and `offset` (default 0) select the page; \
-                   `total` is the number of visible projects, whatever the page. The list is \
-                   empty if the user has access to no project.",
+    description = "Returns one page of the projects visible to the user of the JWT that match the \
+                   filters, newest first. Each project carries the aggregates of its tasks \
+                   (`tasks_total`, `tasks_completed`, `priority`: the highest priority of its \
+                   tasks, `Medium` without task; `due_date`: their earliest due date) and its first \
+                   5 members; call `GET /api/v1/projects/{project_id}/` for its tasks.\n\n\
+                   The filters (`search`, `status`, `priority`, `due_before`, `due_after`) are \
+                   optional and combine. `limit` (default 100, at most 500) and `offset` (default 0) \
+                   select the page; `total` and `summary` (counts per status and per priority) cover \
+                   every matching project, whatever the page. The list is empty if no visible \
+                   project matches.",
     params(
-        PageParams
+        GetProjectsQuery
     ),
     responses(
         (
@@ -80,18 +80,35 @@ async fn trigger_get_projects(
             body = GetProjectsResultView,
             example = json!({
                 "projects": [
-                    { "id": 12, "name": "Réfection de la place du marché", "description": "Travaux de voirie 2026", "status": "Active" },
-                    { "id": 18, "name": "Numérisation de l'état civil", "description": "", "status": "Completed" }
+                    {
+                        "id": 12, "name": "Réfection de la place du marché", "description": "Travaux de voirie 2026",
+                        "status": "Active", "tasks_total": 12, "tasks_completed": 4, "priority": "High",
+                        "due_date": "2026-10-15T00:00:00Z",
+                        "members": [{ "id": 42, "name": "Jean Dupont" }, { "id": 57, "name": "Marie Durand" }],
+                        "members_total": 2
+                    },
+                    {
+                        "id": 18, "name": "Numérisation de l'état civil", "description": "", "status": "Completed",
+                        "tasks_total": 0, "tasks_completed": 0, "priority": "Medium", "due_date": null,
+                        "members": [], "members_total": 0
+                    }
                 ],
-                "total": 2
+                "total": 2,
+                "summary": {
+                    "by_status": { "active": 1, "suspended": 0, "completed": 1, "other": 0 },
+                    "by_priority": { "low": 0, "medium": 1, "high": 1 }
+                }
             })
         ),
         (
             status = 400,
-            description = "`limit` or `offset` is not a non-negative integer.",
+            description = "`limit` or `offset` is not a non-negative integer, `due_before` or `due_after` \
+                           is not an RFC 3339 instant, `status` or `priority` holds a value outside \
+                           its list, or `search` is longer than 255 characters or holds a control \
+                           character. The body names the first invalid parameter.",
             body = String,
             content_type = "text/plain",
-            example = json!("Query deserialize error: invalid digit found in string")
+            example = json!("Invalid `priority`: must be a comma-separated list of Low, Medium, High")
         ),
         (
             status = 401,
@@ -117,8 +134,8 @@ async fn trigger_get_projects(
 pub async fn get_projects(
     state: web::Data<AppState>,
     auth_user: AuthenticatedUser,
-    page: web::Query<PageParams>,
+    query: ValidatedQuery<GetProjectsQuery>,
 ) -> Result<impl Responder, GetProjectsError> {
-    let result = trigger_get_projects(state, auth_user.id, page.page()).await?;
+    let result = trigger_get_projects(state, auth_user.id, query.into_inner()).await?;
     Ok(HttpResponse::Ok().json(result))
 }

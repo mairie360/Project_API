@@ -181,6 +181,17 @@ Every task write sets `tasks.updated_by` to the caller, which signs the history;
 history and `project_api` only has `SELECT` on that table. History labels are generated in
 `database/tasks/collaboration/view.rs` (`From<TaskHistoryRow>`). `tasks.custom_fields` only holds `fields`.
 
+`GET /projects/` is also the BFF_Project projects page (MAIR-474): each project carries the aggregates of its
+tasks (`tasks_total`, `tasks_completed`, `priority` = highest task priority or `Medium` without task, `due_date` =
+earliest task due date) and its first 5 members (+ `members_total`); optional filters `search` (case-insensitive
+substring of the name or description, `strpos`, so `%`/`_` are plain characters), `status` and `priority`
+(comma-separated lists, `Error` = a stored status the API does not interpret; the database has no `urgent`
+priority), `due_before` / `due_after` (RFC 3339, a project without due date never matches); `summary` counts every
+match per status and per priority. `GetProjectsQueryView` aggregates the tasks once per visible project (lateral
+over `idx_tasks_project_id`, materialized CTE) and reads the members for the page only: about 30 ms for an Admin on
+the 5 000-project seed, 2 ms for an agent (a covering index `tasks (project_id) INCLUDE (status, priority,
+due_date)` would halve the Admin cost, Database follow-up).
+
 List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`,
 `GET …/users/` — MAIR-425; the members embedded in `GET /projects/{id}/` are the first 100 + `users_total`)
 take `limit` (default 100, clamped to 1–500) / `offset` (`endpoints::pagination::PageParams`) and return a

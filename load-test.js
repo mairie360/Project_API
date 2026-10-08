@@ -165,19 +165,31 @@ const spec = loadSpec();
 const readHandlers = {
   'GET /health': ({ request }) => check(request(), { 'health 200': (r) => r.status === 200 }),
   'GET /ready': ({ request }) => check(request(), { 'ready 200': (r) => r.status === 200 }),
-  // A third of the calls each as the Admin (any page of the 5 000 projects), a Responsable (their
-  // team's projects) and an agent (their own).
+  // A third of the calls each as the Admin (any page of the 5 000 projects, or the projects page of the
+  // BFF: high priority, active, a search), a Responsable (their team's projects) and an agent (their own).
+  // Every answer carries the task aggregates and a summary over every matching project (MAIR-474).
   'GET /api/v1/projects/': ({ request }) => {
     const caller = randomInt(3);
+    const filtered = caller === 0 && randomInt(2) === 0;
     const res =
       caller === 0
-        ? request({ query: { limit: PAGE, offset: randomOffset(SEEDED_PROJECTS) } })
+        ? request({
+          query: filtered
+            ? { limit: 10, priority: 'High', status: 'Active', search: `perf project ${randomInt(50)}` }
+            : { limit: PAGE, offset: randomOffset(SEEDED_PROJECTS) },
+        })
         : request({ headers: bearer(caller === 1 ? randomManager() : randomAgent()) });
+    const sum = (counts) => Object.values(counts || {}).reduce((total, n) => total + n, 0);
     check(res, {
       'list projects 200': (r) => r.status === 200,
-      // The Admin sees the whole seed, a seeded agent or Responsable at least their own projects.
+      // The Admin sees the whole seed (every seeded project has a high task), a seeded agent or
+      // Responsable at least their own projects.
       'list projects reads the seed': (r) =>
-        r.status === 200 && r.json('total') >= (caller === 0 ? SEEDED_PROJECTS : 1) && r.json('projects').length > 0,
+        r.status === 200 && r.json('total') >= (caller === 0 && !filtered ? SEEDED_PROJECTS : 1) && r.json('projects').length > 0,
+      'list projects summarizes every match': (r) =>
+        r.status === 200 && sum(r.json('summary.by_status')) === r.json('total')
+        && sum(r.json('summary.by_priority')) === r.json('total')
+        && r.json('projects').every((project) => project.tasks_total >= project.tasks_completed),
     });
   },
   // The k6 fixture as Admin, or the hot project as a Responsable who sees it through their team.
