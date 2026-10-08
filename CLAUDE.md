@@ -192,6 +192,9 @@ over `idx_tasks_project_id`, materialized CTE) and reads the members for the pag
 the 5 000-project seed, 2 ms for an agent (a covering index `tasks (project_id) INCLUDE (status, priority,
 due_date)` would halve the Admin cost, Database follow-up).
 
+`GET /projects/{project_id}/tasks/{task_id}/` reads one task alone (any viewer of the project, 404 for a task of
+another project): BFF_Project's task guards use it instead of reading every task of the project (MAIR-474).
+
 List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`,
 `GET …/users/` — MAIR-425; the members embedded in `GET /projects/{id}/` are the first 100 + `users_total`)
 take `limit` (default 100, clamped to 1–500) / `offset` (`endpoints::pagination::PageParams`) and return a
