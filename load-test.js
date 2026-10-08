@@ -216,6 +216,12 @@ const readHandlers = {
           r.status === 200 && r.json('total') >= HOT_TASKS && r.json('tasks').length > 0,
       },
     ),
+  // One task of the hot project, as a Responsable who sees it through their team (MAIR-474).
+  'GET /api/v1/projects/{project_id}/tasks/{task_id}/': ({ request }) =>
+    check(request({ path: { project_id: HOT_PROJECT_ID, task_id: HOT_TASK_ID }, headers: bearer(randomHotManager()) }), {
+      'get task 200': (r) => r.status === 200,
+      'get task reads the hot task': (r) => r.status === 200 && r.json('id') === HOT_TASK_ID,
+    }),
   'GET /api/v1/projects/{project_id}/tasks/{task_id}/collaboration': ({ request }) =>
     check(
       request({

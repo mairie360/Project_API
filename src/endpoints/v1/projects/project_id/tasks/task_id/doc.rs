@@ -8,6 +8,7 @@ use crate::endpoints::v1::projects::project_id::tasks::task_id::collaboration::v
 use crate::endpoints::v1::projects::project_id::tasks::task_id::comments::endpoint::__path_add_task_comment;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::comments::view::AddTaskCommentView;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::delete::endpoint::__path_delete_task;
+use crate::endpoints::v1::projects::project_id::tasks::task_id::get::endpoint::__path_get_task;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::patch::endpoint::__path_patch_task;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::patch::view::PatchTaskView;
 
@@ -21,7 +22,13 @@ pub struct TaskIdDoc;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(delete_task, patch_task, get_task_collaboration, add_task_comment),
+    paths(
+        get_task,
+        delete_task,
+        patch_task,
+        get_task_collaboration,
+        add_task_comment
+    ),
     components(schemas(
         PatchTaskView,
         TaskCollaborationView,

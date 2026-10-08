@@ -167,3 +167,41 @@ async fn the_projects_list_refuses_invalid_filters() {
         assert_eq!(status(&app, request).await, 200, "{query}");
     }
 }
+
+/// One task read alone (MAIR-474): whoever sees the project sees it; a task of another project, an unknown
+/// task or a project out of sight answer 404.
+#[actix_web::test]
+#[serial]
+async fn a_task_is_read_alone_by_whoever_sees_its_project() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let s = scenario(&ctx, &app).await;
+
+    for viewer in [s.manager, s.member, s.assignee] {
+        let task = json(&app, get(&s.task(), viewer)).await;
+        assert_eq!(task["id"], s.task_id, "viewer {viewer}");
+        assert_eq!(task["assigned_to"], s.assignee);
+        assert_eq!(task["title"], "Consulter les riverains");
+    }
+    for outsider in [s.outsider, s.outsider_manager] {
+        assert_eq!(status(&app, get(&s.task(), outsider)).await, 404);
+    }
+    let unknown = format!("/api/v1/projects/{}/tasks/{}/", s.project_id, i32::MAX);
+    assert_eq!(status(&app, get(&unknown, s.manager)).await, 404);
+
+    // The same task through another project the manager sees is not found.
+    let other = json(
+        &app,
+        post(
+            "/api/v1/projects/",
+            s.manager,
+            serde_json::json!({ "name": "Autre projet", "description": "" }),
+        ),
+    )
+    .await;
+    let elsewhere = format!(
+        "/api/v1/projects/{}/tasks/{}/",
+        other["project_id"], s.task_id
+    );
+    assert_eq!(status(&app, get(&elsewhere, s.manager)).await, 404);
+}
