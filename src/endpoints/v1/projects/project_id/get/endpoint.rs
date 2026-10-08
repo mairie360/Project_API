@@ -9,7 +9,9 @@ use crate::endpoints::pagination::{Page, PageParams, DEFAULT_PAGE_SIZE};
 
 use crate::database::project::get_project::view::GetVisibleProjectQueryView;
 use crate::database::project::get_projects::view::ProjectView;
-use crate::database::tasks::get_project_tasks::view::{GetProjectTasksQueryView, Task};
+use crate::database::tasks::get_project_tasks::view::{
+    CountArchivedTasksQueryView, GetProjectTasksQueryView, Task,
+};
 use crate::database::users::get_project_users::view::{GetProjectUsersQueryView, ProjectMemberRow};
 use crate::endpoints::v1::projects::project_id::get::view::GetProjectResultView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
@@ -67,9 +69,11 @@ async fn trigger_get_project(
     let tasks_view = GetProjectTasksQueryView::new(project_id, page.limit, page.offset);
     // The members are bounded too: the first page, `users_total` tells whether there are more.
     let users_view = GetProjectUsersQueryView::new(project_id, DEFAULT_PAGE_SIZE, 0);
-    let (tasks, users) = futures_util::try_join!(
+    let archived_view = CountArchivedTasksQueryView::new(project_id);
+    let (tasks, users, archived) = futures_util::try_join!(
         smart_db.fetch_one::<PagedRows<Task>, _>(&tasks_view),
         smart_db.fetch_one::<PagedRows<ProjectMemberRow>, _>(&users_view),
+        smart_db.fetch_scalar::<i64, _>(&archived_view),
     )
     .map_err(|e| {
         log_db_error("projects/project_id/get", &e);
@@ -80,6 +84,7 @@ async fn trigger_get_project(
         project: project.into(),
         tasks: tasks.items.into_iter().map(Into::into).collect(),
         tasks_total: u64::try_from(tasks.total).unwrap_or(0),
+        tasks_archived: u64::try_from(archived).unwrap_or(0),
         users: users.items.into_iter().map(Into::into).collect(),
         users_total: u64::try_from(users.total).unwrap_or(0),
     })
@@ -93,12 +98,14 @@ async fn trigger_get_project(
     ),
     path = "",
     summary = "Read a project",
-    description = "Returns a project with **one page of its tasks and the first 100 of its members** in a \
+    description = "Returns a project with **one page of its active tasks and the first 100 of its members** in a \
                    single request: the call the front makes to display a project board, rather \
                    than chaining `/tasks/` and `/users/`.\n\n\
                    `limit` (default 100, at most 500) and `offset` (default 0) page the tasks, \
-                   oldest first; `tasks_total` is the number of tasks of the project. Use \
-                   `GET …/tasks/` to fetch the next pages alone.\n\n\
+                   oldest first; `tasks_total` is the number of active tasks of the project. Use \
+                   `GET …/tasks/` to fetch the next pages alone. A `Completed` task is archived \
+                   (MAIR-502): it is counted in `tasks_archived` and listed by \
+                   `GET …/archived-tasks/`.\n\n\
                    `users` holds at most the first 100 members, sorted by name; `users_total` is \
                    the number of members, and `GET …/users/` pages through the rest.\n\n\
                    Being a member of the project is enough. A project the caller cannot access \
@@ -118,11 +125,13 @@ async fn trigger_get_project(
                         "status": "InProgress",
                         "priority": "High",
                         "due_date": "2026-10-15T00:00:00Z",
+                        "archived_at": null,
                         "assigned_to": 42,
                         "fields": []
                     }
                 ],
                 "tasks_total": 1,
+                "tasks_archived": 3,
                 "users": [
                     { "id": 42, "name": "Jean Dupont" },
                     { "id": 51, "name": "Amina Bensaïd" }

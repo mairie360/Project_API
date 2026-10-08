@@ -35,6 +35,7 @@ impl ApiRequestDto for GetTaskQueryView {
         "SELECT to_jsonb(t) FROM ( \
             SELECT id, title, description, status, priority, created_at, assigned_to, \
                    due_date AT TIME ZONE 'UTC' AS due_date, \
+                   archived_at AT TIME ZONE 'UTC' AS archived_at, \
                    COALESCE(custom_fields, '{}'::jsonb) AS custom_fields \
             FROM tasks WHERE project_id = $1 AND id = $2 \
          ) t"

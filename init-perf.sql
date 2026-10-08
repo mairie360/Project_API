@@ -8,7 +8,7 @@
 --   non-admin, the expensive branch of `project_visible_to_user_sql!`;
 -- - 5 000 projects owned by the agents, 5 members each, 10 tasks each (50 000 tasks, their
 --   `task_created` history written by the database trigger);
--- - project 12 (init-test.sql) becomes the hot project: 300 members, 2 000 tasks, and task 87
+-- - project 12 (init-test.sql) becomes the hot project: 300 members, 2 000 tasks (1 800 completed, hence archived), and task 87
 --   gets 1 000 comments and 1 000 status changes, so its pages are read deep.
 --
 -- Fixed ids, ON CONFLICT DO NOTHING / NOT EXISTS: the file is idempotent, like init-test.sql.
@@ -74,8 +74,12 @@ INSERT INTO project_members (project_id, user_id)
 SELECT 12, n FROM generate_series(100001, 100300) AS n
 ON CONFLICT DO NOTHING;
 
+-- MAIR-502: like a long-lived project, most of them are done, hence archived by the database
+-- (tasks.archived_at): 200 active tasks (t % 10 = 0), 1 800 archived.
 INSERT INTO tasks (project_id, title, status, priority, assigned_to, updated_by)
-SELECT 12, 'Perf hot task ' || t, 'todo', 'medium', 100001 + t % 300, 1
+SELECT 12, 'Perf hot task ' || t,
+       (CASE WHEN t % 10 = 0 THEN 'todo' ELSE 'completed' END)::task_status,
+       'medium', 100001 + t % 300, 1
 FROM generate_series(1, 2000) AS t
 WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE project_id = 12 AND title = 'Perf hot task 1');
 

@@ -78,11 +78,17 @@ impl std::fmt::Display for TaskPriority {
 pub struct GetProjectResultView {
     /// The requested project.
     pub project: ProjetView,
-    /// One page of its tasks, oldest first. Empty if the project has none or the page is past the end.
+    /// One page of its active tasks, oldest first. Empty if the project has none or the page is past
+    /// the end.
     pub tasks: Vec<TaskView>,
-    /// Number of tasks of the project, whatever the page.
+    /// Number of active tasks of the project, whatever the page.
     #[schema(example = 1)]
     pub tasks_total: u64,
+    /// Number of its archived tasks (MAIR-502: a `Completed` task is archived), listed by
+    /// `GET /api/v1/projects/{project_id}/archived-tasks/`. Every task of the project counts in
+    /// `tasks_total + tasks_archived`.
+    #[schema(example = 3)]
+    pub tasks_archived: u64,
     /// The first 100 members of the project, sorted by name (see `GET …/users/` for the rest).
     pub users: Vec<User>,
     /// Number of members of the project, whatever the page.

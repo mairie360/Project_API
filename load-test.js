@@ -7,7 +7,7 @@
 // `request()` (raw `http.*` calls are not counted).
 //
 // High load on a volume seed (MAIR-474): the performance stack also runs init-perf.sql (5 000
-// projects, 50 000 tasks, 2 100 accounts in 100 teams, a hot project 12 with 2 000 tasks and a
+// projects, 50 000 tasks, 2 100 accounts in 100 teams, a hot project 12 with 2 000 tasks (200 active, 1 800 archived) and a
 // task 87 with 1 000 comments and 1 000 history entries). Three scenarios:
 // - `reads`: the GET operations, ramping up to the read VUs of the profile (PROFILES). Each call picks a caller (the Admin, a
 //   seeded Responsable or a seeded agent, tokens signed here with the stack's JWT_SECRET) and a
@@ -56,7 +56,9 @@ const MANAGERS = { first: 103001, count: 100 };
 const HOT_MANAGERS = 15;
 const HOT_PROJECT_ID = 12;
 const HOT_TASK_ID = 87;
-const HOT_TASKS = 2000;
+// Hot project 12 (init-perf.sql): 200 active tasks, 1 800 completed hence archived (MAIR-502).
+const HOT_TASKS = 200;
+const HOT_ARCHIVED_TASKS = 1800;
 const HOT_MEMBERS = 300;
 const HOT_FEED = 1000;
 const PAGE = 100;
@@ -203,6 +205,20 @@ const readHandlers = {
       'get project reads its tasks and members': (r) => r.status === 200 && r.json('tasks_total') >= 1,
     });
   },
+  'GET /api/v1/projects/{project_id}/archived-tasks/': ({ request }) =>
+    check(
+      request({
+        path: { project_id: HOT_PROJECT_ID },
+        query: { limit: PAGE, offset: randomOffset(HOT_ARCHIVED_TASKS) },
+        headers: bearer(randomHotManager()),
+      }),
+      {
+        'list archived tasks 200': (r) => r.status === 200,
+        'list archived tasks reads the hot project': (r) =>
+          r.status === 200 && r.json('total') >= HOT_ARCHIVED_TASKS && r.json('tasks').length > 0
+          && r.json('tasks').every((task) => task.archived_at),
+      },
+    ),
   'GET /api/v1/projects/{project_id}/tasks/': ({ request }) =>
     check(
       request({

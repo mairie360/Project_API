@@ -13,35 +13,35 @@ use crate::endpoints::v1::projects::project_id::tasks::get::view::GetTasksResult
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum GetTasksError {
+pub enum GetArchivedTasksError {
     Forbidden,
     NotFound,
     BadRequest,
     DatabaseError,
 }
 
-impl std::fmt::Display for GetTasksError {
+impl std::fmt::Display for GetArchivedTasksError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GetTasksError::Forbidden => write!(f, "Forbidden."),
-            GetTasksError::NotFound => write!(f, "Not found."),
-            GetTasksError::DatabaseError => {
+            GetArchivedTasksError::Forbidden => write!(f, "Forbidden."),
+            GetArchivedTasksError::NotFound => write!(f, "Not found."),
+            GetArchivedTasksError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
-            GetTasksError::BadRequest => {
+            GetArchivedTasksError::BadRequest => {
                 write!(f, "Bad request.")
             }
         }
     }
 }
 
-impl ResponseError for GetTasksError {
+impl ResponseError for GetArchivedTasksError {
     fn status_code(&self) -> StatusCode {
         match self {
-            GetTasksError::Forbidden => StatusCode::FORBIDDEN,
-            GetTasksError::NotFound => StatusCode::NOT_FOUND,
-            GetTasksError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
-            GetTasksError::BadRequest => StatusCode::BAD_REQUEST,
+            GetArchivedTasksError::Forbidden => StatusCode::FORBIDDEN,
+            GetArchivedTasksError::NotFound => StatusCode::NOT_FOUND,
+            GetArchivedTasksError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
+            GetArchivedTasksError::BadRequest => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -50,15 +50,15 @@ impl ResponseError for GetTasksError {
     }
 }
 
-async fn trigger_get_project_tasks(
+async fn trigger_get_archived_tasks(
     state: web::Data<AppState>,
     project_id: u64,
     page: Page,
-) -> Result<GetTasksResultView, GetTasksError> {
-    let view = GetProjectTasksQueryView::new(project_id, page.limit, page.offset);
+) -> Result<GetTasksResultView, GetArchivedTasksError> {
+    let view = GetProjectTasksQueryView::archived(project_id, page.limit, page.offset);
     let result: PagedRows<Task> = state.get_smart_db().fetch_one(&view).await.map_err(|e| {
-        log_db_error("projects/project_id/tasks/get", &e);
-        GetTasksError::DatabaseError
+        log_db_error("projects/project_id/archived_tasks/get", &e);
+        GetArchivedTasksError::DatabaseError
     })?;
 
     Ok(GetTasksResultView {
@@ -74,21 +74,18 @@ async fn trigger_get_project_tasks(
         PageParams,
     ),
     path = "",
-    summary = "List the active tasks of a project",
-    description = "Returns one page of the active tasks of the project, oldest first, with their \
-                   description, status, priority, due date, assignee and custom fields. Being a \
-                   member of the project is enough.\n\n\
+    summary = "List the archived tasks of a project",
+    description = "Returns one page of the archived tasks of the project (MAIR-502): a task is \
+                   archived as soon as it is `Completed`, and comes back to the active tasks of \
+                   `GET /api/v1/projects/{project_id}/tasks/` when it is reopened. The most recently \
+                   archived first, each with its `archived_at`. Being a member of the project is \
+                   enough.\n\n\
                    `limit` (default 100, at most 500) and `offset` (default 0) select the page; \
-                   `total` is the number of active tasks of the project, whatever the page. A \
-                   `Completed` task is archived (MAIR-502) and listed by \
-                   `GET /api/v1/projects/{project_id}/archived-tasks/` instead.\n\n\
-                   `GET /api/v1/projects/{project_id}/` already returns the first page of these \
-                   tasks with the project and its members: this endpoint refreshes or pages \
-                   through the task list alone.",
+                   `total` is the number of archived tasks of the project, whatever the page.",
     responses(
         (
             status = 200,
-            description = "One page of the tasks of the project. Empty if it has none, or if `offset` is past the end.",
+            description = "One page of the archived tasks of the project. Empty if it has none, or if `offset` is past the end.",
             body = GetTasksResultView,
             example = json!({
                 "tasks": [
@@ -96,10 +93,10 @@ async fn trigger_get_project_tasks(
                         "id": 77,
                         "title": "Consulter les riverains",
                         "description": "Réunion publique à organiser avant le 15 octobre",
-                        "status": "InProgress",
+                        "status": "Completed",
                         "priority": "High",
                         "due_date": "2026-10-15T00:00:00Z",
-                        "archived_at": null,
+                        "archived_at": "2026-10-02T14:30:00Z",
                         "assigned_to": 42,
                         "fields": [
                             { "label": "Date de la réunion", "task_type": "date", "fields_options": [] }
@@ -144,12 +141,12 @@ async fn trigger_get_project_tasks(
     tag = "Tasks",
 )]
 #[get("/")]
-pub async fn get_project_tasks(
+pub async fn get_archived_tasks(
     state: web::Data<AppState>,
     auth_user: AuthenticatedUser,
     params: web::Path<ProjectPathParams>,
     page: web::Query<PageParams>,
-) -> Result<impl Responder, GetTasksError> {
+) -> Result<impl Responder, GetArchivedTasksError> {
     require_access(
         &state,
         auth_user.id,
@@ -158,16 +155,16 @@ pub async fn get_project_tasks(
         Requirement::ViewProject,
     )
     .await?;
-    let result = trigger_get_project_tasks(state, params.project_id, page.page()).await?;
+    let result = trigger_get_archived_tasks(state, params.project_id, page.page()).await?;
     Ok(HttpResponse::Ok().json(result))
 }
 
-impl From<AccessDenied> for GetTasksError {
+impl From<AccessDenied> for GetArchivedTasksError {
     fn from(denied: AccessDenied) -> Self {
         match denied {
-            AccessDenied::NotFound => GetTasksError::NotFound,
-            AccessDenied::Forbidden => GetTasksError::Forbidden,
-            AccessDenied::DatabaseError => GetTasksError::DatabaseError,
+            AccessDenied::NotFound => GetArchivedTasksError::NotFound,
+            AccessDenied::Forbidden => GetArchivedTasksError::Forbidden,
+            AccessDenied::DatabaseError => GetArchivedTasksError::DatabaseError,
         }
     }
 }

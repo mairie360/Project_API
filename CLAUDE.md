@@ -93,7 +93,7 @@ Both the ZAP and k6 stacks carry the OpenAPI coverage gate (MAIR-194) from mairi
 never reached, or when an operation declaring `security(("jwt" = []))` only got 401/403. `load-test.js` is built on
 `coverage.js` and covers every operation (MAIR-195), under a high load on a volume seed (MAIR-474): the performance
 stack's `seeder` also runs `init-perf.sql` (5 000 projects, 50 000 tasks, 2 100 accounts in 100 teams, hot project 12
-with 2 000 tasks, task 87 with 1 000 comments and history entries). GET handlers run in the `reads` scenario (up to
+with 2 000 tasks (200 active, 1 800 completed hence archived, MAIR-502), task 87 with 1 000 comments and history entries). GET handlers run in the `reads` scenario (up to
 100 VUs) as the Admin, a seeded Responsable or a seeded agent (tokens signed in k6 with the stack's `JWT_SECRET`) on
 random pages; the other methods in the `writes` scenario (10 VUs), each handler creating and deleting its own
 project/task so they are order-independent (the task writes share one project, so they also queue on its lock); a
@@ -194,6 +194,11 @@ due_date)` would halve the Admin cost, Database follow-up).
 
 `GET /projects/{project_id}/tasks/{task_id}/` reads one task alone (any viewer of the project, 404 for a task of
 another project): BFF_Project's task guards use it instead of reading every task of the project (MAIR-474).
+
+A completed task is archived (MAIR-502, Database `tasks.archived_at`, kept by a trigger): `GET /projects/{id}/`
+and `GET …/tasks/` only list the active tasks (`tasks_total` counts them, `tasks_archived` the others),
+`GET …/archived-tasks/` pages the archived ones (most recently archived first), and every task read carries
+`archived_at`. The project list aggregates (`tasks_total`, `tasks_completed`) still count every task.
 
 List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`,
 `GET …/users/` — MAIR-425; the members embedded in `GET /projects/{id}/` are the first 100 + `users_total`)
