@@ -192,6 +192,33 @@ client status maps them with `db_error::classify_db_error` (`Conflict` / `Invali
 `Internal` at `error`) instead of matching `DbError` by hand (MAIR-421). A path segment that is not a valid id
 answers `400` (`PathConfig` in `endpoints::config`), as every route documents.
 
+### Observability (MAIR-503)
+
+`src/telemetry.rs` (same approach as the Core API POC, MAIR-131) exports traces over OTLP/HTTP (protobuf),
+opt-in and driven by the standard `OTEL_*` variables: nothing changes unless `OTEL_EXPORTER_OTLP_ENDPOINT` (or
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) is set, and `OTEL_SDK_DISABLED=true` forces it off. The endpoint is an
+agent that relays to Scaleway Cockpit (OTel Collector or Grafana Alloy, e.g. `http://alloy:4318`, `/v1/traces` is
+appended); `OTEL_SERVICE_NAME` defaults to `project-api`, `OTEL_EXPORTER_OTLP_HEADERS` carries a token when the
+endpoint needs one. `telemetry::init()` always installs the stdout logs (`RUST_LOG`, default `info`); a failure to
+build the exporter is printed and never stops the API.
+
+- `main.rs` wraps the app in `tracing_actix_web::TracingLogger`, inside the request log (`middleware::Logger`,
+  kept), so requests refused by `JwtMiddleware` get a span too. Root spans are named `<METHOD> <route pattern>`,
+  carry `http.*` attributes and continue an incoming `traceparent`.
+- No personal data leaves in a span (MAIR-290, MAIR-501): `telemetry::Redact` drops `http.client_ip` and the
+  query string of `http.target` before the export, and the trace layer ignores the request log. Build providers
+  with `telemetry::tracer_provider`, never `SdkTracerProvider::builder()` directly, so the redaction always
+  applies. The root span also holds them in memory, so `telemetry::log_layer` hides it from the stdout logs (the
+  fmt layer would print its fields in front of every event of the request).
+- The SQL of `mairie360_api_lib` (sqlx) appears as span **events** (`db.statement` with `$n` placeholders, never
+  the bound values, plus `elapsed` and the row counts), not as child spans.
+- The `opentelemetry*`, `opentelemetry-otlp`, `opentelemetry_sdk`, `tracing-opentelemetry` and
+  `tracing-actix-web` versions are coupled (`tracing-actix-web` 0.7 supports OpenTelemetry up to 0.32,
+  `tracing-opentelemetry` 0.33): bump them together, never one alone.
+- `tests/endpoints/telemetry.rs` asserts the span, the continued trace id and the SQL events against an
+  in-memory exporter, and (without database) that neither the spans nor the logs carry the query string or the
+  client address.
+
 ### Deployment
 
 `Dockerfile` = multi-stage release build onto `gcr.io/distroless/cc-debian12`, copied from `API_template` (MAIR-427): images pinned by digest, a dependency-only layer, `cargo build --release --locked`. `.cargo/audit.toml`, `.github/workflows/cicd.yml` and `src/main.rs` are the template's too: keep them in sync with it rather than editing them here alone. `development.Dockerfile` + `entrypoint.sh` = `cargo watch` dev container used by compose. `nginx.conf` reverse-proxies `:80` → api `:3001`. CI (`.github/workflows/cicd.yml`) just calls the reusable `mairie360/CICD` workflow, which builds/pushes the `project-api` image and runs the three `*_test.sh` scripts with `IMAGE_REF` set to the `dev-<sha>` image published by `release-dev` (newman, no Postman account involved).

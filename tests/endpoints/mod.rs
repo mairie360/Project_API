@@ -6,6 +6,7 @@
 pub mod access;
 pub mod flows;
 pub mod service;
+pub mod telemetry;
 pub mod token_refusals;
 
 use std::sync::Once;
