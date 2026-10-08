@@ -28,6 +28,8 @@ actix-http = "3"
 # Forges the tokens the refusal sweep sends (same version and features as mairie360_api_lib).
 jsonwebtoken = { version = "11.0.0", default-features = false, features = ["rust_crypto"] }
 url = "2.5"
+# Reads access-matrix.yaml in tests/endpoints/access_matrix.rs (MAIR-288).
+yaml_serde = "0.10"
 
 
 [profile.dev]

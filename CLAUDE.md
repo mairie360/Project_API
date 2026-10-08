@@ -131,7 +131,12 @@ scheme, garbage, another secret, an expired token, `alg: none`, a payload swappe
 asymmetric algorithm, and `404` for an unknown or archived account; a new route is covered by documenting it.
 They assert the refusals (`401` without a valid JWT, `404` for a project the caller cannot see, `403` for a
 member without manager role, assignee limited to the status, task reachable only through its own project) and
-an end-to-end manager flow. **A new route or access rule gets its negative test here.** `cargo cov` / `cov_test`
+an end-to-end manager flow. **A new route or access rule gets its negative test here.**
+`access-matrix.yaml` (MAIR-288) is the access decision of every operation of `ApiDoc` (roles that
+pass, relations to the project: owner, member, assignee; personal fields of the answer):
+`tests/endpoints/access_matrix.rs` fails when an operation is missing from it or unknown, and calls
+each operation as each role and relation (an allowed caller never gets 401 / 403 / 404, the others
+get 403, or 404 for a project they do not see). **A new route goes into the matrix.** `cargo cov` / `cov_test`
 only exclude `main.rs` and `lib.rs`: `endpoints/` counts toward the 60 % line gate.
 
 ## Architecture
