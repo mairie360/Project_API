@@ -68,6 +68,15 @@ pub async fn create_user(db: &SmartDatabase, first_name: &str, role: Option<&str
     id as u64
 }
 
+/// Archives a user: its tokens stay well signed but no longer designate an active account.
+pub async fn archive_user(db: &SmartDatabase, user_id: u64) {
+    db.execute(fixture_sql(format!(
+        "UPDATE users SET is_archived = true WHERE id = {user_id}"
+    )))
+    .await
+    .unwrap();
+}
+
 /// Crée un groupe contenant `members` et renvoie son identifiant.
 pub async fn create_group(db: &SmartDatabase, owner_id: u64, members: &[u64]) -> u64 {
     let id: i32 = db

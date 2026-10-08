@@ -2884,6 +2884,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "futures-util",
+ "jsonwebtoken",
  "mairie360_api_lib",
  "once_cell",
  "percent-encoding",
