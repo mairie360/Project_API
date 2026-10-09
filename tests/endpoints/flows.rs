@@ -205,3 +205,95 @@ async fn a_task_is_read_alone_by_whoever_sees_its_project() {
     );
     assert_eq!(status(&app, get(&elsewhere, s.manager)).await, 404);
 }
+
+/// A completed task is archived (MAIR-502): it leaves the active tasks of the project detail and of
+/// the task list, is counted in `tasks_archived` and listed by `…/archived-tasks/`; reopened, it
+/// comes back.
+#[actix_web::test]
+#[serial]
+async fn a_completed_task_moves_to_the_archived_tasks_and_back_when_reopened() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let s = scenario(&ctx, &app).await;
+    let p = s.project();
+    let ids = |page: &serde_json::Value| -> Vec<u64> {
+        page["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|task| task["id"].as_u64().unwrap())
+            .collect()
+    };
+
+    let before = json(&app, get(&p, s.member)).await;
+    assert_eq!(ids(&before), vec![s.task_id]);
+    assert_eq!(before["tasks_archived"], 0);
+
+    // The assignee completes their task.
+    let done = patch(
+        &s.task(),
+        s.assignee,
+        serde_json::json!({ "status": "Completed" }),
+    );
+    assert_eq!(status(&app, done).await, 204);
+
+    let detail = json(&app, get(&p, s.member)).await;
+    assert!(ids(&detail).is_empty(), "{detail}");
+    assert_eq!(
+        (
+            detail["tasks_total"].clone(),
+            detail["tasks_archived"].clone()
+        ),
+        (0.into(), 1.into())
+    );
+    let active = json(&app, get(&format!("{p}tasks/"), s.member)).await;
+    assert_eq!(active["total"], 0);
+    let archived = json(&app, get(&format!("{p}archived-tasks/"), s.member)).await;
+    assert_eq!(ids(&archived), vec![s.task_id]);
+    assert_eq!(archived["total"], 1);
+    assert!(archived["tasks"][0]["archived_at"].is_string());
+    // Still readable alone, with its archive date.
+    let task = json(&app, get(&s.task(), s.member)).await;
+    assert!(task["archived_at"].is_string());
+
+    let reopened = patch(
+        &s.task(),
+        s.manager,
+        serde_json::json!({ "status": "InProgress" }),
+    );
+    assert_eq!(status(&app, reopened).await, 204);
+    let after = json(&app, get(&p, s.member)).await;
+    assert_eq!(ids(&after), vec![s.task_id]);
+    assert_eq!(after["tasks_archived"], 0);
+    assert!(after["tasks"][0]["archived_at"].is_null());
+    let none = json(&app, get(&format!("{p}archived-tasks/"), s.member)).await;
+    assert_eq!(none["total"], 0);
+
+    // The follow-up can be read from the latest comment; any other order is refused.
+    let latest = json(
+        &app,
+        get(
+            &format!("{}collaboration?comments_order=latest&limit=1", s.task()),
+            s.manager,
+        ),
+    )
+    .await;
+    assert!(latest["comments"].is_array());
+    assert_eq!(
+        status(
+            &app,
+            get(
+                &format!("{}collaboration?comments_order=newest", s.task()),
+                s.manager
+            )
+        )
+        .await,
+        400
+    );
+
+    // Like the active list, the archived one needs the project to be visible.
+    assert_eq!(
+        status(&app, get(&format!("{p}archived-tasks/"), s.outsider)).await,
+        404
+    );
+}

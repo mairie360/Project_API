@@ -41,9 +41,67 @@ macro_rules! comment_json_sql {
 
 /// One page of the comments (oldest first) and of the history (newest first) of a task. No row if the
 /// task is not in the project. Read with `fetch_all::<TaskCollaborationRow, _>`.
+// One list of the follow-up: its total and the rows of the page only, numbered in their order. Only
+// the rows of the page are turned into JSON (MAIR-502: every row of a 1 000-comment feed used to be).
+// `$order` orders the feed (`$page_order`: the same, on `page_rows`), `$columns` are the columns of a
+// row of the page, read from `page_rows`.
+macro_rules! feed_page_sql {
+    ($table:literal, $order:literal, $page_order:literal, $columns:expr) => {
+        concat!(
+            "jsonb_build_object('total', (SELECT count(*) FROM ",
+            $table,
+            " WHERE task_id = task.id), 'items', COALESCE((SELECT jsonb_agg(to_jsonb(r) - 'rn' ORDER BY r.rn) \
+                FROM (SELECT ",
+            $columns,
+            ", row_number() OVER (ORDER BY ",
+            $page_order,
+            ") AS rn FROM (SELECT * FROM ",
+            $table,
+            " WHERE task_id = task.id ORDER BY ",
+            $order,
+            " LIMIT $3 OFFSET $4) page_rows LEFT JOIN users u ON u.id = page_rows.author_ref) r), '[]'::jsonb))"
+        )
+    };
+}
+
+macro_rules! comment_columns_sql {
+    () => {
+        concat!(
+            "jsonb_build_object( \
+                'id', 'comment-' || page_rows.id, \
+                'message', page_rows.message, \
+                'author', CASE WHEN page_rows.author_id IS NULL \
+                    THEN jsonb_build_object('id', 'system', 'name', 'System') \
+                    ELSE jsonb_build_object('id', 'user-' || page_rows.author_id, \
+                        'name', COALESCE(NULLIF(concat_ws(' ', u.first_name, u.last_name), ''), \
+                                         'User ' || page_rows.author_id)) END, \
+                'createdAt', ",
+            iso_utc_sql!("page_rows.created_at"),
+            ") AS value"
+        )
+    };
+}
+
+macro_rules! history_columns_sql {
+    () => {
+        concat!(
+            "page_rows.id, page_rows.action, page_rows.label, page_rows.changes, \
+             page_rows.old_status::text AS old_status, page_rows.new_status::text AS new_status, \
+             page_rows.changed_by AS author_id, \
+             NULLIF(concat_ws(' ', u.first_name, u.last_name), '') AS author_name, ",
+            iso_utc_sql!("page_rows.changed_at"),
+            " AS created_at"
+        )
+    };
+}
+
+/// One page of the comments (oldest first, or the most recent first with `latest_comments`) and one
+/// page of the history (newest first) of a task, with their totals. Read with `fetch_all::<TaskCollaborationRow, _>`;
+/// no row when the task is not in the project.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetTaskCollaborationQueryView {
     params: Vec<QueryParam>,
+    latest_comments: bool,
 }
 
 impl GetTaskCollaborationQueryView {
@@ -55,34 +113,58 @@ impl GetTaskCollaborationQueryView {
                 QueryParam::I64(i64::from(limit)),
                 QueryParam::I64(i64::from(offset)),
             ],
+            latest_comments: false,
         }
+    }
+
+    /// Pages the comments from the most recent one (MAIR-502), like the history.
+    #[must_use]
+    pub fn latest_comments_first(mut self) -> Self {
+        self.latest_comments = true;
+        self
     }
 }
 
 impl ApiRequestDto for GetTaskCollaborationQueryView {
     fn query_sql(&self) -> &'static str {
-        concat!(
-            "SELECT jsonb_build_object( \
-                'comments', (",
-            crate::paged_rows_sql!("$3", "$4"),
-            " FROM (SELECT ",
-            comment_json_sql!(),
-            " AS value, row_number() OVER (ORDER BY c.created_at, c.id) AS rn \
-                    FROM task_comments c LEFT JOIN users u ON u.id = c.author_id \
-                    WHERE c.task_id = task.id) t), \
-                'history', (",
-            crate::paged_rows_sql!("$3", "$4"),
-            " FROM (SELECT h.id, h.action, h.label, h.changes, \
-                           h.old_status::text AS old_status, h.new_status::text AS new_status, \
-                           h.changed_by AS author_id, \
-                           NULLIF(concat_ws(' ', u.first_name, u.last_name), '') AS author_name, ",
-            iso_utc_sql!("h.changed_at"),
-            " AS created_at, \
-                           row_number() OVER (ORDER BY h.changed_at DESC, h.id DESC) AS rn \
-                    FROM task_history h LEFT JOIN users u ON u.id = h.changed_by \
-                    WHERE h.task_id = task.id) t) \
-             ) FROM tasks task WHERE task.id = $1 AND task.project_id = $2"
-        )
+        // `author_ref` names the author column of each table for the join with `users`.
+        if self.latest_comments {
+            concat!(
+                "SELECT jsonb_build_object('comments', ",
+                feed_page_sql!(
+                    "(SELECT c.*, c.author_id AS author_ref FROM task_comments c) comments",
+                    "created_at DESC, id DESC",
+                    "page_rows.created_at DESC, page_rows.id DESC",
+                    comment_columns_sql!()
+                ),
+                ", 'history', ",
+                feed_page_sql!(
+                    "(SELECT h.*, h.changed_by AS author_ref FROM task_history h) history",
+                    "changed_at DESC, id DESC",
+                    "page_rows.changed_at DESC, page_rows.id DESC",
+                    history_columns_sql!()
+                ),
+                ") FROM tasks task WHERE task.id = $1 AND task.project_id = $2"
+            )
+        } else {
+            concat!(
+                "SELECT jsonb_build_object('comments', ",
+                feed_page_sql!(
+                    "(SELECT c.*, c.author_id AS author_ref FROM task_comments c) comments",
+                    "created_at, id",
+                    "page_rows.created_at, page_rows.id",
+                    comment_columns_sql!()
+                ),
+                ", 'history', ",
+                feed_page_sql!(
+                    "(SELECT h.*, h.changed_by AS author_ref FROM task_history h) history",
+                    "changed_at DESC, id DESC",
+                    "page_rows.changed_at DESC, page_rows.id DESC",
+                    history_columns_sql!()
+                ),
+                ") FROM tasks task WHERE task.id = $1 AND task.project_id = $2"
+            )
+        }
     }
 
     fn query_params(&self) -> &[QueryParam] {
@@ -90,7 +172,6 @@ impl ApiRequestDto for GetTaskCollaborationQueryView {
     }
 }
 
-/// Comment row of [`GetTaskCollaborationQueryView`], already in its public shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommentRow {
     pub value: TaskComment,

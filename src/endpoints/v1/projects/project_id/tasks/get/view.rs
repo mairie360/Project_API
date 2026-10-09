@@ -26,6 +26,10 @@ pub struct TaskView {
     /// Échéance, ou `null` si la tâche n'en a pas.
     #[schema(value_type = Option<String>, format = DateTime, example = "2026-10-15T00:00:00Z")]
     pub due_date: Option<DateTime<Utc>>,
+    /// When the task was archived (MAIR-502: a task is archived as soon as it is `Completed`, and
+    /// back when it is reopened), or `null` while it is active.
+    #[schema(value_type = Option<String>, format = DateTime, example = json!(null))]
+    pub archived_at: Option<DateTime<Utc>>,
     /// Identifiant Core API de l'agent assigné, ou `null` si la tâche n'est assignée à personne.
     #[schema(example = 42)]
     pub assigned_to: Option<u64>,
@@ -42,6 +46,7 @@ impl From<Task> for TaskView {
             status: task.status().to_string().into(),
             priority: task.priority().to_string().into(),
             due_date: task.due_date(),
+            archived_at: task.archived_at(),
             assigned_to: task.assigned_to().map(id_from_sql),
             fields: task.fields(),
         }

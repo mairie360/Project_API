@@ -93,6 +93,7 @@ async fn trigger_get_task(
                 "status": "InProgress",
                 "priority": "High",
                 "due_date": "2026-10-15T00:00:00Z",
+                "archived_at": null,
                 "assigned_to": 42,
                 "fields": []
             })
