@@ -17,6 +17,7 @@ cov = ["llvm-cov", "--workspace", "--ignore-filename-regex", "main\\.rs|lib\\.rs
 
 # Version of the ghcr.io/mairie360/database and liquibase-migrations images the tests start
 # (mairie360_api_lib::test_setup), kept equal to the compose files: the latest release of
-# Devops/Database. An exported TEST_DB_VERSION still wins.
+# Devops/Database, or its dev tag while a schema change this API needs is not released yet
+# (dev-99f6127: tasks.archived_at, MAIR-502). An exported TEST_DB_VERSION still wins.
 [env]
-TEST_DB_VERSION = "3.0.0"
+TEST_DB_VERSION = "dev-99f6127"
