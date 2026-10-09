@@ -269,6 +269,28 @@ async fn a_completed_task_moves_to_the_archived_tasks_and_back_when_reopened() {
     let none = json(&app, get(&format!("{p}archived-tasks/"), s.member)).await;
     assert_eq!(none["total"], 0);
 
+    // The follow-up can be read from the latest comment; any other order is refused.
+    let latest = json(
+        &app,
+        get(
+            &format!("{}collaboration?comments_order=latest&limit=1", s.task()),
+            s.manager,
+        ),
+    )
+    .await;
+    assert!(latest["comments"].is_array());
+    assert_eq!(
+        status(
+            &app,
+            get(
+                &format!("{}collaboration?comments_order=newest", s.task()),
+                s.manager
+            )
+        )
+        .await,
+        400
+    );
+
     // Like the active list, the archived one needs the project to be visible.
     assert_eq!(
         status(&app, get(&format!("{p}archived-tasks/"), s.outsider)).await,
