@@ -58,11 +58,13 @@ fn delete_project_view_accessors() {
 fn get_projects_view_accessors() {
     let view = GetProjectsQueryView::new(9, 50, 100);
     assert_eq!(view.user_id(), 9);
-    assert_eq!(view.query_params().len(), 3);
-    assert_eq!(view.query_params()[1].as_i64(), 50);
-    assert_eq!(view.query_params()[2].as_i64(), 100);
+    assert_eq!(view.query_params().len(), 8);
+    assert_eq!(view.query_params()[6].as_i64(), 50);
+    assert_eq!(view.query_params()[7].as_i64(), 100);
     assert!(view.query_sql().contains("project_members"));
-    assert!(view.query_sql().contains("'total', count(*)"));
+    assert!(view
+        .query_sql()
+        .contains("'total', (SELECT count(*) FROM filtered)"));
 }
 
 #[test]
