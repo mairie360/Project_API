@@ -34,6 +34,10 @@ impl ApiRequestDto for RemoveUserFromProjectQueryView {
     fn query_params(&self) -> &[QueryParam] {
         &self.params
     }
+
+    fn invalidated_read_caches(&self) -> &'static [&'static str] {
+        crate::database::project::PROJECTS_READ_CACHES
+    }
 }
 
 /// Unassigns the tasks of the project that are assigned to a removed member, signed by the caller
@@ -67,5 +71,9 @@ impl ApiRequestDto for UnassignMemberTasksQueryView {
 
     fn query_params(&self) -> &[QueryParam] {
         &self.params
+    }
+
+    fn invalidated_read_caches(&self) -> &'static [&'static str] {
+        crate::database::project::PROJECTS_READ_CACHES
     }
 }

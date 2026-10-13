@@ -62,6 +62,9 @@ const HOT_ARCHIVED_TASKS = 1800;
 const HOT_MEMBERS = 300;
 const HOT_FEED = 1000;
 const PAGE = 100;
+// Dashboard window of `GET /tasks/` (MAIR-524): init-perf.sql spreads the due dates of an agent's
+// tasks from 10 days ago to 50 days ahead, so a 30-day window always holds some.
+const DUE_WINDOW_DAYS = 30;
 
 // Load profile (MAIR-474), K6_PROFILE:
 // - `ci` (default): what the CI runner holds with the same strict thresholds. The runner
@@ -251,6 +254,23 @@ const readHandlers = {
           r.status === 200 && r.json('comments_total') >= HOT_FEED && r.json('history_total') >= HOT_FEED,
       },
     ),
+  // The dashboard's pending tasks of an agent across every project, in one call (MAIR-524): half as
+  // the agent themself, half as the Admin, both with `assigned_to` + `due_before`, the read of
+  // `idx_tasks_assignee_due`.
+  'GET /api/v1/tasks/': ({ request }) => {
+    const agent = randomAgent();
+    const dueBefore = new Date(Date.now() + DUE_WINDOW_DAYS * 24 * 3600 * 1000).toISOString();
+    const query = { assigned_to: agent, due_before: dueBefore, limit: 20 };
+    const res = randomInt(2) === 0 ? request({ query, headers: bearer(agent) }) : request({ query });
+    check(res, {
+      'list my tasks 200': (r) => r.status === 200,
+      'list my tasks reads the seed': (r) => r.status === 200 && r.json('total') >= 1 && r.json('tasks').length > 0,
+      'list my tasks keeps the filters': (r) =>
+        r.status === 200 && r.json('tasks').every((task) =>
+          task.assigned_to === agent && task.archived_at === null && task.due_date !== null
+          && Date.parse(task.due_date) <= Date.parse(dueBefore) && task.project_name),
+    });
+  },
   'GET /api/v1/projects/{project_id}/users/': ({ request }) =>
     check(
       request({

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use mairie360_api_lib::database::db_interface::id_from_sql;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::database::project::get_projects::view::{
@@ -44,8 +44,9 @@ fn codes(value: Option<&str>, table: &[(&str, &'static str)]) -> Vec<&'static st
 }
 
 /// Page and filters of `GET /api/v1/projects/` (MAIR-474). Every filter is optional and they combine
-/// (AND); `summary` and `total` count the projects that match them all.
-#[derive(Debug, Default, Clone, Deserialize, IntoParams)]
+/// (AND); `summary` and `total` count the projects that match them all. Serialized as the key of
+/// its read cache entry (MAIR-524), so every parameter, the page included, selects its own entry.
+#[derive(Debug, Default, Clone, Deserialize, Serialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct GetProjectsQuery {
     /// Maximum number of projects returned, from 1 to 500. Defaults to 100. `0` is raised to 1 and a
