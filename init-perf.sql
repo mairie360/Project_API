@@ -7,7 +7,10 @@
 --   Responsable owning a group of 20 agents: load-test.js signs their tokens to read as a
 --   non-admin, the expensive branch of `project_visible_to_user_sql!`;
 -- - 5 000 projects owned by the agents, 5 members each, 10 tasks each (50 000 tasks, their
---   `task_created` history written by the database trigger);
+--   `task_created` history written by the database trigger), each assigned to a member: an
+--   agent has 20 to 30 tasks over 2 or 3 projects. Four tasks out of five have a due date spread
+--   from 10 days ago to 50 days ahead (MAIR-524: `GET /tasks/?assigned_to=…&due_before=…`, the
+--   dashboard's pending tasks), the fifth none;
 -- - project 12 (init-test.sql) becomes the hot project: 300 members, 2 000 tasks (1 800 completed, hence archived), and task 87
 --   gets 1 000 comments and 1 000 status changes, so its pages are read deep.
 --
@@ -61,11 +64,14 @@ SELECT 1000 + p, 100001 + (p + k) % 2000
 FROM generate_series(0, 4999) AS p CROSS JOIN generate_series(1, 5) AS k
 ON CONFLICT DO NOTHING;
 
-INSERT INTO tasks (project_id, title, status, priority, assigned_to, updated_by)
+INSERT INTO tasks (project_id, title, status, priority, assigned_to, updated_by, due_date)
 SELECT 1000 + p, 'Perf task ' || t,
        (ARRAY['todo', 'in_progress', 'completed'])[1 + t % 3]::task_status,
        (ARRAY['low', 'medium', 'high'])[1 + t % 3]::task_priority,
-       100001 + (p + 1) % 2000, 100001 + p % 2000
+       100001 + (p + 1) % 2000, 100001 + p % 2000,
+       CASE WHEN t % 5 <> 0
+            THEN date_trunc('day', now() AT TIME ZONE 'UTC') + ((7 * t + p) % 60 - 10) * interval '1 day'
+       END
 FROM generate_series(0, 4999) AS p CROSS JOIN generate_series(1, 10) AS t
 WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE project_id = 1000);
 
@@ -76,10 +82,11 @@ ON CONFLICT DO NOTHING;
 
 -- MAIR-502: like a long-lived project, most of them are done, hence archived by the database
 -- (tasks.archived_at): 200 active tasks (t % 10 = 0), 1 800 archived.
-INSERT INTO tasks (project_id, title, status, priority, assigned_to, updated_by)
+INSERT INTO tasks (project_id, title, status, priority, assigned_to, updated_by, due_date)
 SELECT 12, 'Perf hot task ' || t,
        (CASE WHEN t % 10 = 0 THEN 'todo' ELSE 'completed' END)::task_status,
-       'medium', 100001 + t % 300, 1
+       'medium', 100001 + t % 300, 1,
+       date_trunc('day', now() AT TIME ZONE 'UTC') + (t % 45 - 5) * interval '1 day'
 FROM generate_series(1, 2000) AS t
 WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE project_id = 12 AND title = 'Perf hot task 1');
 

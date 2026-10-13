@@ -7,6 +7,7 @@ use crate::endpoints::db_error::log_db_error;
 use crate::endpoints::validation::ValidatedQuery;
 
 use crate::database::project::get_projects::view::{GetProjectsQueryView, ProjectsPage};
+use crate::database::project::PROJECTS_READ_CACHE;
 use crate::endpoints::v1::projects::get::view::{GetProjectsQuery, GetProjectsResultView};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,10 +49,17 @@ async fn trigger_get_projects(
 ) -> Result<GetProjectsResultView, GetProjectsError> {
     let page = query.page();
     let view = GetProjectsQueryView::filtered(user_id, &query.filters(), page.limit, page.offset);
-    let result: ProjectsPage = state.get_smart_db().fetch_one(&view).await.map_err(|e| {
-        log_db_error("projects/get", &e);
-        GetProjectsError::DatabaseError
-    })?;
+    // The page depends on who asks (visibility), hence one entry per caller (MAIR-524).
+    let key = PROJECTS_READ_CACHE.for_user(user_id, &query);
+    let db = state.get_smart_db();
+    let result: ProjectsPage = db
+        .cached(&key, async || {
+            db.fetch_one::<ProjectsPage, _>(&view).await.map_err(|e| {
+                log_db_error("projects/get", &e);
+                GetProjectsError::DatabaseError
+            })
+        })
+        .await?;
 
     Ok(result.into())
 }
@@ -69,7 +77,12 @@ async fn trigger_get_projects(
                    optional and combine. `limit` (default 100, at most 500) and `offset` (default 0) \
                    select the page; `total` and `summary` (counts per status and per priority) cover \
                    every matching project, whatever the page. The list is empty if no visible \
-                   project matches.",
+                   project matches.\n\n\
+                   The page is cached in Redis for 30 seconds per caller and query string \
+                   (MAIR-524). Every write through this API on a project, a task or a membership \
+                   invalidates it, so the next read reflects it. A change of the caller's roles or \
+                   groups in Core API (which decides which projects a Responsable sees) cannot \
+                   invalidate it and shows within those 30 seconds.",
     params(
         GetProjectsQuery
     ),

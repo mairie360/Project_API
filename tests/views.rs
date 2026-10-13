@@ -482,3 +482,136 @@ fn patch_task_body_with_only_a_status_is_detected() {
     assert!(!clearing_assignee.only_changes_status());
     assert_eq!(clearing_assignee.assigned_to, Some(None));
 }
+
+// ---------------------------------------------------------------------------
+// read cache of the projects list (MAIR-524)
+// ---------------------------------------------------------------------------
+
+/// Every write that changes what `GET /projects/` shows (a project, its tasks, which are
+/// aggregated in the list, its members) invalidates its read cache; reads and comments do not.
+#[test]
+fn writes_shown_by_the_projects_list_invalidate_its_read_cache() {
+    use project_api::database::project::update::view::UpdateProjectQueryView;
+    use project_api::database::project::PROJECTS_READ_CACHE;
+    use project_api::database::tasks::collaboration::view::AddTaskCommentQueryView;
+    use project_api::database::tasks::get_visible_tasks::view::{
+        GetVisibleTasksQueryView, TaskFilters,
+    };
+    use project_api::database::users::remove_user_from_project::view::UnassignMemberTasksQueryView;
+
+    let projects: &[&str] = &[PROJECTS_READ_CACHE.namespace()];
+    assert_eq!(projects, ["projects"]);
+    assert_eq!(PROJECTS_READ_CACHE.ttl(), 30);
+    fn caches<Q: ApiRequestDto>(view: Q) -> &'static [&'static str] {
+        view.invalidated_read_caches()
+    }
+    let writes: Vec<(&str, &[&str])> = vec![
+        (
+            "create project",
+            caches(CreateProjectQueryView::new("Titre", None, 1)),
+        ),
+        (
+            "update project",
+            caches(UpdateProjectQueryView::new(1, Some("Titre"), None, None)),
+        ),
+        (
+            "close project",
+            caches(UpdateProjectStatusQueryView::new(
+                1,
+                ProjectStatus::Completed,
+            )),
+        ),
+        ("delete project", caches(DeleteProjectQueryView::new(1))),
+        (
+            "create task",
+            caches(CreateTaskQueryView::new(
+                1,
+                1,
+                "Tâche",
+                "",
+                TaskStatus::Todo,
+                TaskPriority::Medium,
+                None,
+                None,
+                &[],
+            )),
+        ),
+        (
+            "patch task",
+            caches(PatchTaskQueryView::new(1, 2, 3, TaskChanges::default())),
+        ),
+        ("delete task", caches(DeleteTaskQueryView::new(1))),
+        ("add member", caches(AddUserToProjectQueryView::new(1, 2))),
+        (
+            "remove member",
+            caches(RemoveUserFromProjectQueryView::new(1, 2)),
+        ),
+        (
+            "unassign member",
+            caches(UnassignMemberTasksQueryView::new(1, 2, 3)),
+        ),
+    ];
+    for (name, invalidated) in &writes {
+        assert_eq!(*invalidated, projects, "{name}");
+    }
+
+    let untouched: Vec<(&str, &[&str])> = vec![
+        ("list projects", caches(GetProjectsQueryView::new(1, 10, 0))),
+        (
+            "list tasks",
+            caches(GetVisibleTasksQueryView::new(
+                1,
+                &TaskFilters::default(),
+                10,
+                0,
+            )),
+        ),
+        (
+            "comment",
+            caches(AddTaskCommentQueryView::new(1, 2, 3, "Vu")),
+        ),
+    ];
+    for (name, invalidated) in &untouched {
+        assert!(invalidated.is_empty(), "{name}");
+    }
+}
+
+/// The cross-project task list runs one statement per variant: the assignee is a parameter only
+/// when filtered on, and archived tasks are only read when `completed` is asked for.
+#[test]
+fn visible_tasks_view_picks_its_statement_from_the_filters() {
+    use project_api::database::tasks::get_visible_tasks::view::{
+        GetVisibleTasksQueryView, TaskFilters,
+    };
+
+    let all = GetVisibleTasksQueryView::new(4, &TaskFilters::default(), 20, 40);
+    assert_eq!(all.user_id(), 4);
+    assert_eq!(all.query_params().len(), 6);
+    assert!(all.query_sql().contains("t.archived_at IS NULL"));
+    assert!(!all.query_sql().contains("$7"));
+
+    let mine = GetVisibleTasksQueryView::new(
+        4,
+        &TaskFilters {
+            assigned_to: Some(42),
+            ..TaskFilters::default()
+        },
+        20,
+        0,
+    );
+    assert_eq!(mine.query_params().len(), 7);
+    assert!(mine
+        .query_sql()
+        .contains("t.assigned_to = $7 AND t.archived_at IS NULL"));
+
+    let completed = GetVisibleTasksQueryView::new(
+        4,
+        &TaskFilters {
+            statuses: vec!["completed"],
+            ..TaskFilters::default()
+        },
+        20,
+        0,
+    );
+    assert!(!completed.query_sql().contains("t.archived_at IS NULL"));
+}
