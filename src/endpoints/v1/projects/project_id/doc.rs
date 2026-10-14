@@ -5,6 +5,7 @@ use crate::endpoints::v1::projects::project_id::get::endpoint::__path_get_projec
 use crate::endpoints::v1::projects::project_id::get::view::GetProjectResultView;
 use crate::endpoints::v1::projects::project_id::patch::endpoint::__path_update_project;
 use crate::endpoints::v1::projects::project_id::patch::view::UpdateProjectView;
+use crate::endpoints::v1::projects::project_id::statuses::doc::StatusesDoc;
 use crate::endpoints::v1::projects::project_id::tasks::doc::TasksDoc;
 use crate::endpoints::v1::projects::project_id::users::doc::UsersDoc;
 use utoipa::OpenApi;
@@ -15,6 +16,7 @@ use utoipa::OpenApi;
         (path = "/", api = Doc),
         (path = "/tasks", api = TasksDoc),
         (path = "/archived-tasks", api = ArchivedTasksDoc),
+        (path = "/statuses", api = StatusesDoc),
         (path = "/users", api = UsersDoc),
     )
 )]

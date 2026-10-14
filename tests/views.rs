@@ -280,6 +280,7 @@ fn patch_task_view_accessors() {
             title: Some("nouveau titre"),
             description: Some(""),
             status: Some(TaskStatus::Completed),
+            status_id: Some(31),
             priority: Some(TaskPriority::Medium),
             due_date: Some(due),
             assigned_to: Some(Some(7)),
@@ -288,7 +289,7 @@ fn patch_task_view_accessors() {
     );
     assert_eq!(view.task_id(), 99);
     assert_eq!(view.project_id(), 4);
-    assert_eq!(view.query_params().len(), 12);
+    assert_eq!(view.query_params().len(), 13);
     assert!(view.query_params()[6].as_bool());
     assert_eq!(view.query_params()[7].as_option_i32(), Some(7));
     // An empty description is a change (it clears the description), not an absence.
@@ -298,6 +299,8 @@ fn patch_task_view_accessors() {
     assert_eq!(view.query_params()[11].as_i32(), 3);
     assert!(view.query_sql().contains("UPDATE tasks SET"));
     assert!(view.query_sql().contains("updated_by = $12"));
+    // MAIR-566: the status among the project's statuses.
+    assert_eq!(view.query_params()[12].as_option_i32(), Some(31));
 }
 
 #[test]

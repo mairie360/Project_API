@@ -7,6 +7,7 @@ pub mod access;
 pub mod flows;
 pub mod read_cache;
 pub mod service;
+pub mod statuses;
 pub mod tasks;
 pub mod telemetry;
 pub mod token_refusals;

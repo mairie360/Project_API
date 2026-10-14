@@ -97,6 +97,14 @@ pub struct TaskListItemView {
     pub description: String,
     /// Current status. `Error` flags a stored value the API does not interpret.
     pub status: TaskStatus,
+    /// Id of the task's status among its project's statuses (`GET /api/v1/projects/{project_id}/statuses/`,
+    /// MAIR-566); `status` is its category.
+    #[schema(example = 31)]
+    pub status_id: Option<u64>,
+    /// Name of the task's status in its project (e.g. `À valider`), `null` only for a task read
+    /// while its status is being deleted.
+    #[schema(example = "En cours")]
+    pub status_name: Option<String>,
     /// Priority. `Error` flags a stored value the API does not interpret.
     pub priority: TaskPriority,
     /// Due date, or `null` if the task has none (listed last).
@@ -127,6 +135,8 @@ impl From<VisibleTaskRow> for TaskListItemView {
             title: task.title().to_string(),
             description: task.description().to_string(),
             status: task.status().to_string().into(),
+            status_id: task.status_id().map(id_from_sql),
+            status_name: task.status_name().map(str::to_string),
             priority: task.priority().to_string().into(),
             due_date: task.due_date(),
             archived_at: task.archived_at(),

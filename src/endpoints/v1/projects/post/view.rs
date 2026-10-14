@@ -31,7 +31,12 @@ pub struct CreateProjectView {
     /// is refused (`400`).
     #[serde(default)]
     priority: Option<TaskPriority>,
-    // template_id: Option<u64>, ToDo
+    /// Template the project is created from (`GET /api/v1/project-templates/`, MAIR-566): its
+    /// task statuses and custom fields are copied into the project. Absent or `null` for the
+    /// default template.
+    #[serde(default)]
+    #[schema(example = 2)]
+    template_id: Option<u64>,
 }
 
 impl CreateProjectView {
@@ -42,6 +47,7 @@ impl CreateProjectView {
             group_id,
             status: None,
             priority: None,
+            template_id: None,
         }
     }
 
@@ -51,6 +57,17 @@ impl CreateProjectView {
 
     pub fn priority(&self) -> Option<&TaskPriority> {
         self.priority.as_ref()
+    }
+
+    pub fn template_id(&self) -> Option<u64> {
+        self.template_id
+    }
+
+    /// Creates the project from this template.
+    #[must_use]
+    pub fn with_template_id(mut self, template_id: u64) -> Self {
+        self.template_id = Some(template_id);
+        self
     }
 
     pub fn name(&self) -> &str {

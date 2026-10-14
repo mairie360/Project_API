@@ -4,6 +4,7 @@ pub mod delete;
 pub mod doc;
 pub mod get;
 pub mod patch;
+pub mod statuses;
 pub mod tasks;
 pub mod users;
 
@@ -36,6 +37,7 @@ pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
             .service(delete::endpoint::delete_project)
             .configure(tasks::config)
             .configure(archived_tasks::config)
+            .configure(statuses::config)
             .configure(users::config),
     );
 }

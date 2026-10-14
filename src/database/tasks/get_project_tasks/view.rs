@@ -49,6 +49,8 @@ impl ApiRequestDto for GetProjectTasksQueryView {
                 crate::paged_rows_sql!("$2", "$3"),
                 " FROM ( \
                     SELECT id, title, description, status, priority, created_at, assigned_to, \
+                           status_id, (SELECT name FROM project_task_statuses ps \
+                                       WHERE ps.id = tasks.status_id) AS status_name, \
                            due_date AT TIME ZONE 'UTC' AS due_date, \
                            archived_at AT TIME ZONE 'UTC' AS archived_at, \
                            COALESCE(custom_fields, '{}'::jsonb) AS custom_fields, \
@@ -61,6 +63,8 @@ impl ApiRequestDto for GetProjectTasksQueryView {
                 crate::paged_rows_sql!("$2", "$3"),
                 " FROM ( \
                     SELECT id, title, description, status, priority, created_at, assigned_to, \
+                           status_id, (SELECT name FROM project_task_statuses ps \
+                                       WHERE ps.id = tasks.status_id) AS status_name, \
                            due_date AT TIME ZONE 'UTC' AS due_date, \
                            archived_at AT TIME ZONE 'UTC' AS archived_at, \
                            COALESCE(custom_fields, '{}'::jsonb) AS custom_fields, \
@@ -145,6 +149,11 @@ pub struct Task {
     #[serde(default)]
     description: String,
     status: String,
+    /// Status of the task within its project's statuses (MAIR-566), and its name.
+    #[serde(default)]
+    status_id: Option<i32>,
+    #[serde(default)]
+    status_name: Option<String>,
     priority: String,
     #[serde(default)]
     created_at: Option<String>,
@@ -173,6 +182,16 @@ impl Task {
 
     pub fn status(&self) -> &str {
         &self.status
+    }
+
+    /// Id of the task's status within its project (MAIR-566).
+    pub fn status_id(&self) -> Option<i32> {
+        self.status_id
+    }
+
+    /// Name of the task's status within its project (MAIR-566).
+    pub fn status_name(&self) -> Option<&str> {
+        self.status_name.as_deref()
     }
 
     pub fn priority(&self) -> &str {
