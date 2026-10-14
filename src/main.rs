@@ -12,13 +12,12 @@ use actix_web::{middleware, web, App, HttpServer};
 use project_api::database::pg_url::build_pg_url;
 use project_api::endpoints::swagger::{api_docs_enabled, ApiDoc, API_DOCS_ENABLED};
 use project_api::endpoints::{config, health};
-use project_api::telemetry;
 
 use mairie360_api_lib::env_manager::{get_critical_env_var, get_env_var};
+use mairie360_api_lib::logging::telemetry::{init_telemetry, TracingLogger};
 use mairie360_api_lib::security::JwtMiddleware;
 use mairie360_api_lib::state::AppState;
 
-use tracing_actix_web::TracingLogger;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -26,9 +25,10 @@ use utoipa_swagger_ui::SwaggerUi;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Logs on stdout (`RUST_LOG`, default `info`; database errors are logged at `error`), plus
-    // the trace export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (MAIR-503); flushed on drop.
-    let _telemetry = telemetry::init();
+    // Logs on stdout in the format shared by every API (`RUST_LOG`, default `info`;
+    // `LOG_FORMAT=json` for JSON lines), plus the trace export when `OTEL_EXPORTER_OTLP_ENDPOINT`
+    // is set (MAIR-503); flushed on drop.
+    let _telemetry = init_telemetry("project-api");
     let redis_url = get_critical_env_var("REDIS_URL");
     let db_user = get_critical_env_var("DB_USER");
     let db_password = get_critical_env_var("DB_PASSWORD");

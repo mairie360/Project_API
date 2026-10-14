@@ -1,23 +1,18 @@
-//! OpenTelemetry tracing (MAIR-503): each request yields a root span carrying the route and the
-//! status, continues an incoming `traceparent`, carries the SQL it ran as span events, and leaves
-//! without the client address nor the query string.
-
-use std::io::Write;
-use std::sync::{Arc, Mutex};
+//! OpenTelemetry tracing (MAIR-503, `mairie360_api_lib::logging::telemetry`): each request of
+//! this API yields a root span carrying the route and the status, continues an incoming
+//! `traceparent`, carries the SQL it ran as span events, and leaves without the query string.
+//! The redaction of the logs and spans themselves is tested in the lib.
 
 use actix_web::test::TestRequest;
-use actix_web::{middleware, App, HttpResponse};
-use opentelemetry::global;
-use opentelemetry::Value;
-use opentelemetry_sdk::propagation::TraceContextPropagator;
-use opentelemetry_sdk::trace::{
+use actix_web::App;
+use mairie360_api_lib::logging::telemetry::opentelemetry::{global, Value};
+use mairie360_api_lib::logging::telemetry::opentelemetry_sdk::propagation::TraceContextPropagator;
+use mairie360_api_lib::logging::telemetry::opentelemetry_sdk::trace::{
     InMemorySpanExporter, SdkTracerProvider, SimpleSpanProcessor, SpanData,
 };
-use project_api::telemetry::{log_layer, trace_layer, tracer_provider};
+use mairie360_api_lib::logging::telemetry::{trace_layer, tracer_provider, TracingLogger};
 use serial_test::serial;
 use tracing::subscriber::DefaultGuard;
-use tracing_actix_web::TracingLogger;
-use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
 
 use super::{get, TestContext};
@@ -47,7 +42,7 @@ macro_rules! init_traced_app {
 fn in_memory_tracing() -> (InMemorySpanExporter, SdkTracerProvider, DefaultGuard) {
     global::set_text_map_propagator(TraceContextPropagator::new());
     let exporter = InMemorySpanExporter::default();
-    let provider = tracer_provider(SimpleSpanProcessor::new(exporter.clone()));
+    let provider = tracer_provider(SimpleSpanProcessor::new(exporter.clone()), "project-api");
     let guard = tracing::subscriber::set_default(
         tracing_subscriber::registry().with(trace_layer(&provider)),
     );
@@ -139,89 +134,4 @@ async fn a_refused_request_still_gets_its_span() {
 
     let span = request_span(&exporter, &provider);
     assert_eq!(attribute(&span, "http.status_code"), Some(&Value::I64(401)));
-}
-
-/// Collects the stdout logs of [`log_layer`].
-#[derive(Clone, Default)]
-struct Captured(Arc<Mutex<Vec<u8>>>);
-
-impl Write for Captured {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<'writer> MakeWriter<'writer> for Captured {
-    type Writer = Self;
-
-    fn make_writer(&'writer self) -> Self::Writer {
-        self.clone()
-    }
-}
-
-#[actix_web::get("/api/v1/projects/")]
-async fn logging_handler() -> HttpResponse {
-    tracing::error!("the handler logs an error");
-    HttpResponse::Ok().finish()
-}
-
-/// No database: the logs and spans of a request carrying personal data in its query string and
-/// client address, mounted like `main.rs` (`Logger`, then `TracingLogger`).
-#[actix_web::test]
-#[serial]
-async fn neither_logs_nor_spans_carry_the_query_string_or_the_client_address() {
-    global::set_text_map_propagator(TraceContextPropagator::new());
-    let exporter = InMemorySpanExporter::default();
-    let provider = tracer_provider(SimpleSpanProcessor::new(exporter.clone()));
-    let logs = Captured::default();
-    let _guard = tracing::subscriber::set_default(
-        tracing_subscriber::registry()
-            .with(log_layer(logs.clone()))
-            .with(trace_layer(&provider)),
-    );
-    let app = actix_web::test::init_service(
-        App::new()
-            .wrap(middleware::Logger::default())
-            .wrap(TracingLogger::default())
-            .service(logging_handler),
-    )
-    .await;
-
-    let request = TestRequest::get()
-        .uri("/api/v1/projects/?search=Dupont")
-        .insert_header(("x-forwarded-for", "203.0.113.7"))
-        .to_request();
-    let response = actix_web::test::call_service(&app, request).await;
-    drop(response);
-    provider.force_flush().expect("flush the spans");
-
-    let logs = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
-    let event = logs
-        .lines()
-        .find(|line| line.contains("the handler logs an error"))
-        .unwrap_or_else(|| panic!("the handler's event must be logged: {logs}"));
-    assert!(
-        !event.contains("Dupont"),
-        "query string in the logs: {event}"
-    );
-    assert!(
-        !event.contains("203.0.113.7"),
-        "client address in the logs: {event}"
-    );
-
-    let spans = format!("{:?}", exporter.get_finished_spans().unwrap());
-    assert!(spans.contains("the handler logs an error"), "{spans}");
-    assert!(
-        !spans.contains("Dupont"),
-        "query string in the spans: {spans}"
-    );
-    assert!(
-        !spans.contains("203.0.113.7"),
-        "client address in the spans: {spans}"
-    );
 }
