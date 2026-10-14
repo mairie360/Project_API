@@ -16,6 +16,11 @@ x-common-env: &common-env
   DB_HOST: postgres
   DB_PASSWORD: password
   DB_PORT: 5432
+  # Logs: coloured text by default, `LOG_FORMAT: json` for one JSON object per line (MAIR-503).
+  # LOG_FORMAT: json
+  # OpenTelemetry traces (MAIR-503), off unless an OTLP/HTTP endpoint is set, e.g. a local
+  # collector listening on the host: OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4318
+  # OTEL_SERVICE_NAME: project-api
 
 x-depends-on: &depends-on
   postgres:

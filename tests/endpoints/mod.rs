@@ -8,6 +8,7 @@ pub mod flows;
 pub mod read_cache;
 pub mod service;
 pub mod tasks;
+pub mod telemetry;
 pub mod token_refusals;
 
 use std::sync::Once;
