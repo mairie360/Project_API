@@ -229,6 +229,59 @@ async fn mair_558_a_project_keeps_the_status_and_the_priority_it_was_given() {
     assert_eq!(status(&app, refused).await, 400);
 }
 
+/// A date picker sends the due date alone (`2026-11-05`): task creation and update accept it as
+/// midnight UTC of that day, instead of answering `400` (MAIR-559).
+#[actix_web::test]
+#[serial]
+async fn mair_559_a_task_due_date_may_be_a_date_alone() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let s = scenario(&ctx, &app).await;
+    let tasks = format!("/api/v1/projects/{}/tasks/", s.project_id);
+
+    let created = post(
+        &tasks,
+        s.manager,
+        json!({ "name": "Préparer la salle", "fields": [], "due_date": "2026-11-05" }),
+    );
+    let task_id = json(&app, created).await["task_id"].as_u64().unwrap();
+    let task = format!("{tasks}{task_id}/");
+    let read = json(&app, get(&task, s.manager)).await;
+    assert_eq!(read["due_date"], "2026-11-05T00:00:00Z");
+
+    let moved = patch(&task, s.manager, json!({ "due_date": "2026-12-01" }));
+    assert_eq!(status(&app, moved).await, 204);
+    let read = json(&app, get(&task, s.manager)).await;
+    assert_eq!(read["due_date"], "2026-12-01T00:00:00Z");
+
+    // A date-time is still accepted, and `null` leaves the due date unchanged.
+    let precise = patch(
+        &task,
+        s.manager,
+        json!({ "due_date": "2026-12-02T09:30:00+01:00" }),
+    );
+    assert_eq!(status(&app, precise).await, 204);
+    let kept = patch(
+        &task,
+        s.manager,
+        json!({ "due_date": null, "name": "Salle" }),
+    );
+    assert_eq!(status(&app, kept).await, 204);
+    let read = json(&app, get(&task, s.manager)).await;
+    assert_eq!(read["due_date"], "2026-12-02T08:30:00Z");
+
+    for due_date in ["05/11/2026", "2026-02-30", ""] {
+        let refused = post(
+            &tasks,
+            s.manager,
+            json!({ "name": "X", "fields": [], "due_date": due_date }),
+        );
+        assert_eq!(status(&app, refused).await, 400, "{due_date}");
+        let refused = patch(&task, s.manager, json!({ "due_date": due_date }));
+        assert_eq!(status(&app, refused).await, 400, "{due_date}");
+    }
+}
+
 /// Invalid filters of the list are refused with a `400` naming the parameter, before any query.
 #[actix_web::test]
 #[serial]

@@ -14,7 +14,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use actix_web::{dev::Payload, web, FromRequest, HttpRequest};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer};
 
 /// `projects.title` and `tasks.title` are `VARCHAR(255)`; also the cap of custom field and history
 /// labels (stored in JSONB).
@@ -160,6 +162,45 @@ where
     value.map_or(Ok(()), check)
 }
 
+/// Parses a task due date: an RFC 3339 date-time (`2026-11-05T09:00:00+01:00`), or a date alone
+/// (`2026-11-05`, what a date picker sends), read as midnight UTC of that day (MAIR-559).
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] naming `field` when the value is neither.
+pub fn parse_due_date(field: &str, value: &str) -> Result<DateTime<Utc>, ValidationError> {
+    if let Ok(date_time) = DateTime::parse_from_rfc3339(value) {
+        return Ok(date_time.with_timezone(&Utc));
+    }
+    NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .ok()
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .map(|midnight| midnight.and_utc())
+        .ok_or_else(|| {
+            ValidationError::new(
+                field,
+                "must be a date (`YYYY-MM-DD`) or an RFC 3339 date-time",
+            )
+        })
+}
+
+/// `deserialize_with` of an optional `due_date` body field, through [`parse_due_date`]: absent or
+/// `null` give `None`. Use it with `#[serde(default)]`.
+///
+/// # Errors
+///
+/// Fails the deserialization (hence a `400`) when the value is not a string or not a due date.
+pub fn deserialize_optional_due_date<'de, D>(
+    deserializer: D,
+) -> Result<Option<DateTime<Utc>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)?
+        .map(|value| parse_due_date("due_date", &value).map_err(serde::de::Error::custom))
+        .transpose()
+}
+
 fn bad_request(error: &ValidationError) -> actix_web::Error {
     actix_web::error::ErrorBadRequest(error.to_string())
 }
@@ -274,5 +315,35 @@ mod tests {
     fn optional_skips_absent_values() {
         assert!(check_optional(None, |v| check_label("name", v, MAX_TITLE_LENGTH)).is_ok());
         assert!(check_optional(Some(" "), |v| check_label("name", v, MAX_TITLE_LENGTH)).is_err());
+    }
+
+    #[test]
+    fn mair_559_due_date_accepts_a_date_alone() {
+        let midnight = parse_due_date("due_date", "2026-11-05").unwrap();
+        assert_eq!(midnight.to_rfc3339(), "2026-11-05T00:00:00+00:00");
+        let offset = parse_due_date("due_date", "2026-11-05T09:30:00+01:00").unwrap();
+        assert_eq!(offset.to_rfc3339(), "2026-11-05T08:30:00+00:00");
+        for invalid in ["", "05/11/2026", "2026-13-01", "2026-02-30", "demain"] {
+            let error = parse_due_date("due_date", invalid).unwrap_err();
+            assert!(error.to_string().contains("`due_date`"), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn mair_559_due_date_field_absent_null_or_date() {
+        #[derive(Deserialize)]
+        struct Body {
+            #[serde(default, deserialize_with = "deserialize_optional_due_date")]
+            due_date: Option<DateTime<Utc>>,
+        }
+        let read = |json: &str| serde_json::from_str::<Body>(json).map(|body| body.due_date);
+        assert_eq!(read("{}").unwrap(), None);
+        assert_eq!(read(r#"{"due_date":null}"#).unwrap(), None);
+        assert_eq!(
+            read(r#"{"due_date":"2026-11-05"}"#).unwrap(),
+            Some(parse_due_date("due_date", "2026-11-05T00:00:00Z").unwrap())
+        );
+        assert!(read(r#"{"due_date":"05/11/2026"}"#).is_err());
+        assert!(read(r#"{"due_date":20261105}"#).is_err());
     }
 }
