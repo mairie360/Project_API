@@ -187,7 +187,7 @@ const readHandlers = {
     const sum = (counts) => Object.values(counts || {}).reduce((total, n) => total + n, 0);
     check(res, {
       'list projects 200': (r) => r.status === 200,
-      // The Admin sees the whole seed (every seeded project has a high task), a seeded agent or
+      // The Admin sees the whole seed (one seeded project in three is high), a seeded agent or
       // Responsable at least their own projects.
       'list projects reads the seed': (r) =>
         r.status === 200 && r.json('total') >= (caller === 0 && !filtered ? SEEDED_PROJECTS : 1) && r.json('projects').length > 0,

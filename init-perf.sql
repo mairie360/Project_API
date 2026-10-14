@@ -51,10 +51,13 @@ CROSS JOIN LATERAL (
 ) m
 ON CONFLICT DO NOTHING;
 
--- Project 1000 + p is owned by agent 100001 + p % 2000, created over the last 500 days.
-INSERT INTO projects (id, title, description, owner_id, created_at)
+-- Project 1000 + p is owned by agent 100001 + p % 2000, created over the last 500 days. Its
+-- priority is its own (MAIR-558): one project in three is high, project 0 first, so every
+-- `search=perf project <n>` of the filtered list (n < 50) matches a high project.
+INSERT INTO projects (id, title, description, owner_id, created_at, priority)
 SELECT 1000 + p, 'Perf project ' || p, 'Performance seed',
-       100001 + p % 2000, now() - (p % 500) * interval '1 day' - p * interval '1 second'
+       100001 + p % 2000, now() - (p % 500) * interval '1 day' - p * interval '1 second',
+       (ARRAY['high', 'medium', 'low'])[1 + p % 3]::task_priority
 FROM generate_series(0, 4999) AS p
 ON CONFLICT (id) DO NOTHING;
 

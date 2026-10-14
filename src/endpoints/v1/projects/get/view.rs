@@ -6,6 +6,8 @@ use utoipa::{IntoParams, ToSchema};
 use crate::database::project::get_projects::view::{
     PriorityCounts, ProjectFilters, ProjectView, ProjectsPage, StatusCounts,
 };
+use crate::database::project::update_status::view::ProjectStatus as DbProjectStatus;
+use crate::database::tasks::create_task::view::TaskPriority as DbTaskPriority;
 use crate::endpoints::pagination::{Page, PageParams};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
 use crate::endpoints::v1::projects::project_id::users::get::view::User;
@@ -14,8 +16,10 @@ use crate::endpoints::validation::{
 };
 
 /// Values of `status`, and the status group each one keeps.
-const STATUS_FILTERS: [(&str, &str); 4] = [
+const STATUS_FILTERS: [(&str, &str); 6] = [
+    ("Todo", "todo"),
     ("Active", "active"),
+    ("Review", "review"),
     ("Suspended", "suspended"),
     ("Completed", "completed"),
     ("Error", "other"),
@@ -60,13 +64,13 @@ pub struct GetProjectsQuery {
     /// 255 characters, no control character).
     #[param(example = "marché")]
     search: Option<String>,
-    /// Keeps the projects with one of these statuses: a comma-separated list of `Active`,
-    /// `Suspended`, `Completed` and `Error` (a stored status the API does not interpret).
+    /// Keeps the projects with one of these statuses: a comma-separated list of `Todo`, `Active`,
+    /// `Review`, `Suspended`, `Completed` and `Error` (a stored status the API does not interpret).
     #[param(example = "Active,Suspended")]
     status: Option<String>,
-    /// Keeps the projects whose priority (the highest priority of their tasks, `Medium` without
-    /// task) is one of these: a comma-separated list of `Low`, `Medium` and `High` (an `Urgent`
-    /// task is stored `High`).
+    /// Keeps the projects whose priority (chosen at creation or by a PATCH, `Medium` by default) is
+    /// one of these: a comma-separated list of `Low`, `Medium` and `High` (an `Urgent` priority is
+    /// stored `High`).
     #[param(example = "High,Medium")]
     priority: Option<String>,
     /// Keeps the projects whose `due_date` (earliest due date of their tasks) is at or before this
@@ -110,21 +114,50 @@ impl Validate for GetProjectsQuery {
     }
 }
 
-/// Statut d'un projet : `Active` (en cours), `Suspended` (suspendu) ou `Completed` (terminé).
-/// `Error` n'est jamais assignable : il signale à la lecture une valeur en base inconnue.
-#[derive(Debug, serde::Serialize, serde::Deserialize, ToSchema)]
+/// Status of a project, in the order of the Kanban columns. `Error` is never assignable: it only
+/// flags, on read, a stored value the API does not know.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, ToSchema)]
 pub enum ProjectStatus {
-    /// Projet en cours.
+    /// Not started yet ("To do" column).
+    Todo,
+    /// In progress. The status of a project created without one.
     Active,
+    /// Work done, being reviewed.
+    Review,
+    /// On hold.
     Suspended,
+    /// Closed, e.g. by `POST …/{project_id}/close/`.
     Completed,
+    /// Unknown stored value. Refused in a request body (`400`).
     Error,
+}
+
+impl ProjectStatus {
+    /// The stored status, `None` for `Error`, which cannot be written.
+    pub fn stored(self) -> Option<DbProjectStatus> {
+        match self {
+            ProjectStatus::Error => None,
+            status => Some(DbProjectStatus::from(status.to_string())),
+        }
+    }
+}
+
+/// The stored priority of a project or a task: the database has no urgent priority, so `Urgent` is
+/// stored `High`. `None` for `Error`, which cannot be written.
+pub fn stored_priority(priority: &TaskPriority) -> Option<DbTaskPriority> {
+    match priority {
+        TaskPriority::Error => None,
+        TaskPriority::Urgent => Some(DbTaskPriority::High),
+        priority => Some(DbTaskPriority::from(priority.to_string())),
+    }
 }
 
 impl From<String> for ProjectStatus {
     fn from(value: String) -> Self {
         match value.as_str() {
+            "todo" => ProjectStatus::Todo,
             "active" => ProjectStatus::Active,
+            "review" => ProjectStatus::Review,
             "suspended" => ProjectStatus::Suspended,
             "completed" => ProjectStatus::Completed,
             _ => ProjectStatus::Error,
@@ -135,7 +168,9 @@ impl From<String> for ProjectStatus {
 impl std::fmt::Display for ProjectStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
+            ProjectStatus::Todo => "todo",
             ProjectStatus::Active => "active",
+            ProjectStatus::Review => "review",
             ProjectStatus::Suspended => "suspended",
             ProjectStatus::Completed => "completed",
             ProjectStatus::Error => "error",
@@ -144,7 +179,7 @@ impl std::fmt::Display for ProjectStatus {
     }
 }
 
-/// Projet, tel que listé ou consulté.
+/// Project, as read by `GET /api/v1/projects/{project_id}/`.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct ProjetView {
     /// Identifiant du projet, à réutiliser dans `/api/v1/projects/{project_id}/`.
@@ -156,9 +191,11 @@ pub struct ProjetView {
     /// Description du projet. Chaîne vide s'il n'en a pas — jamais `null`.
     #[schema(example = "Travaux de voirie 2026")]
     pub description: String,
-    /// Statut courant. `Error` signale une valeur en base que l'API ne sait pas interpréter ;
-    /// ce n'est pas un statut assignable.
+    /// Current status. `Error` flags a stored value the API does not know; it cannot be assigned.
     pub status: ProjectStatus,
+    /// Priority chosen at the creation of the project or by a PATCH; `Medium` when none was
+    /// given. Never `Urgent`: an `Urgent` priority is stored `High` (MAIR-558).
+    pub priority: TaskPriority,
 }
 
 impl From<ProjectView> for ProjetView {
@@ -168,6 +205,7 @@ impl From<ProjectView> for ProjetView {
             name: value.title().to_string(),
             description: value.description().unwrap_or_default().to_string(),
             status: value.status().to_string().into(),
+            priority: value.priority().to_string().into(),
         }
     }
 }
@@ -192,8 +230,8 @@ pub struct ProjectListItemView {
     /// Number of its tasks whose status is `Completed`.
     #[schema(example = 4)]
     pub tasks_completed: u64,
-    /// Highest priority of its tasks; `Medium` (the default priority of a task) when it has none.
-    /// Never `Urgent`: an `Urgent` task is stored `High`.
+    /// Priority chosen at the creation of the project or by a PATCH; `Medium` when none was
+    /// given. Never `Urgent`: an `Urgent` priority is stored `High` (MAIR-558).
     pub priority: TaskPriority,
     /// Earliest due date of its tasks, or `null` when none of them has one.
     #[schema(value_type = Option<String>, format = DateTime, example = "2026-10-15T00:00:00Z")]
@@ -237,8 +275,12 @@ impl From<ProjectView> for ProjectListItemView {
 /// Number of matching projects per status.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct ProjectStatusCountsView {
+    #[schema(example = 2)]
+    pub todo: u64,
     #[schema(example = 3)]
     pub active: u64,
+    #[schema(example = 1)]
+    pub review: u64,
     #[schema(example = 1)]
     pub suspended: u64,
     #[schema(example = 2)]
@@ -251,7 +293,9 @@ pub struct ProjectStatusCountsView {
 impl From<StatusCounts> for ProjectStatusCountsView {
     fn from(value: StatusCounts) -> Self {
         Self {
+            todo: count(value.todo),
             active: count(value.active),
+            review: count(value.review),
             suspended: count(value.suspended),
             completed: count(value.completed),
             other: count(value.other),
@@ -259,7 +303,7 @@ impl From<StatusCounts> for ProjectStatusCountsView {
     }
 }
 
-/// Number of matching projects per priority (the highest priority of their tasks).
+/// Number of matching projects per priority.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct ProjectPriorityCountsView {
     #[schema(example = 1)]

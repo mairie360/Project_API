@@ -46,6 +46,9 @@ fn in_memory_tracing() -> (InMemorySpanExporter, SdkTracerProvider, DefaultGuard
     let guard = tracing::subscriber::set_default(
         tracing_subscriber::registry().with(trace_layer(&provider)),
     );
+    // A callsite first hit by another test, before this subscriber existed, keeps the interest
+    // computed then (e.g. `sqlx::query` disabled): recompute it with this subscriber installed.
+    tracing::callsite::rebuild_interest_cache();
     (exporter, provider, guard)
 }
 

@@ -3,9 +3,10 @@ use mairie360_api_lib::database::db_interface::{
 };
 
 use crate::database::project::update_status::view::ProjectStatus;
+use crate::database::tasks::create_task::view::TaskPriority;
 
-/// Met à jour le titre, la description et/ou le statut d'un projet (un champ absent est conservé).
-/// Renvoie `true` si le projet existe.
+/// Updates the title, the description, the status and/or the priority of a project (a missing
+/// field is kept). Returns `true` if the project exists.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UpdateProjectQueryView {
     params: Vec<QueryParam>,
@@ -25,8 +26,16 @@ impl UpdateProjectQueryView {
                 QueryParam::Bool(description.is_some()),
                 QueryParam::Text(description.unwrap_or_default().to_string()),
                 QueryParam::Text(status.map(|s| s.to_string()).unwrap_or_default()),
+                QueryParam::Text(String::new()),
             ],
         }
+    }
+
+    /// Also sets the priority (MAIR-558).
+    #[must_use]
+    pub fn with_priority(mut self, priority: TaskPriority) -> Self {
+        self.params[5] = QueryParam::Text(priority.to_string());
+        self
     }
 
     pub fn project_id(&self) -> u64 {
@@ -40,7 +49,8 @@ impl ApiRequestDto for UpdateProjectQueryView {
             UPDATE projects SET \
                 title = COALESCE(NULLIF($2, ''), title), \
                 description = CASE WHEN $3 THEN NULLIF($4, '') ELSE description END, \
-                status = COALESCE(NULLIF($5, '')::project_status, status) \
+                status = COALESCE(NULLIF($5, '')::project_status, status), \
+                priority = COALESCE(NULLIF($6, '')::task_priority, priority) \
             WHERE id = $1 RETURNING id \
          ) \
          SELECT EXISTS (SELECT 1 FROM updated)"
