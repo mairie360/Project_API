@@ -67,7 +67,7 @@ validation rules (length, control characters); the body names the first invalid 
     ),
     tags(
         (name = "Projects", description = "Cycle de vie des projets : création, consultation, modification, clôture et suppression."),
-        (name = "Tasks", description = "Tâches d'un projet, leurs champs personnalisés, leurs commentaires et leur historique."),
+        (name = "Tasks", description = "Tasks of a project, their custom fields, comments and history, and the tasks visible to the caller across every project (`GET /api/v1/tasks/`)."),
         (name = "Users", description = "Membres d'un projet : consultation, rattachement et retrait."),
         (name = "probes", description = "Unauthenticated liveness (`/health`) and readiness (`/ready`) probes, used by Docker and Kubernetes.")
     ),
@@ -79,9 +79,9 @@ validation rules (length, control characters); the body names the first invalid 
 )]
 pub struct ApiDoc;
 
-/// Sans ce modifier, les 16 opérations qui déclarent `security(("jwt" = []))` référencent un
-/// schéma absent du contrat : Swagger UI n'offre pas de bouton « Authorize » et les clients
-/// générés pointent dans le vide.
+/// Without this modifier, the 17 operations declaring `security(("jwt" = []))` would reference a
+/// scheme missing from the contract: Swagger UI would offer no "Authorize" button and the
+/// generated clients would point to nothing.
 struct SecurityAddon;
 
 impl Modify for SecurityAddon {

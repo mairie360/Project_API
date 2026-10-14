@@ -2,6 +2,7 @@ pub mod collaboration;
 pub mod comments;
 pub mod delete;
 pub mod doc;
+pub mod get;
 pub mod patch;
 
 /// Paramètres de chemin des routes d'une tâche.
@@ -38,6 +39,7 @@ impl TaskPathParams {
 pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
     cfg.service(
         actix_web::web::scope("/{task_id}")
+            .service(get::endpoint::get_task)
             .service(delete::endpoint::delete_task)
             .service(patch::endpoint::patch_task)
             .service(collaboration::endpoint::get_task_collaboration)

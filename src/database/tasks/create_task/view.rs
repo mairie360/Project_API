@@ -152,4 +152,8 @@ impl ApiRequestDto for CreateTaskQueryView {
     fn query_params(&self) -> &[QueryParam] {
         &self.params
     }
+
+    fn invalidated_read_caches(&self) -> &'static [&'static str] {
+        crate::database::project::PROJECTS_READ_CACHES
+    }
 }

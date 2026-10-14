@@ -133,6 +133,21 @@ pub fn check_json(field: &str, value: &serde_json::Value) -> Result<(), Validati
     }
 }
 
+/// A comma-separated list whose every item is one of `allowed` (case-sensitive, no blank item).
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] naming `field` and listing the allowed values otherwise.
+pub fn check_list(field: &str, value: &str, allowed: &[&str]) -> Result<(), ValidationError> {
+    if value.split(',').all(|item| allowed.contains(&item)) {
+        return Ok(());
+    }
+    Err(ValidationError::new(
+        field,
+        &format!("must be a comma-separated list of {}", allowed.join(", ")),
+    ))
+}
+
 /// Runs `check` on `value` when it is present.
 ///
 /// # Errors
@@ -213,6 +228,17 @@ mod tests {
         assert!(check_label("name", "Place\0du marché", MAX_TITLE_LENGTH).is_err());
         // Angle brackets are ordinary text (MAIR-426).
         assert!(check_label("name", "Budget > 10 000 € -> <3", MAX_TITLE_LENGTH).is_ok());
+    }
+
+    #[test]
+    fn list_accepts_only_allowed_items() {
+        let allowed = ["Low", "High"];
+        assert!(check_list("priority", "Low", &allowed).is_ok());
+        assert!(check_list("priority", "Low,High", &allowed).is_ok());
+        assert!(check_list("priority", "", &allowed).is_err());
+        assert!(check_list("priority", "Low,", &allowed).is_err());
+        assert!(check_list("priority", "low", &allowed).is_err());
+        assert!(check_list("priority", "Low, High", &allowed).is_err());
     }
 
     #[test]

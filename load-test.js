@@ -7,7 +7,7 @@
 // `request()` (raw `http.*` calls are not counted).
 //
 // High load on a volume seed (MAIR-474): the performance stack also runs init-perf.sql (5 000
-// projects, 50 000 tasks, 2 100 accounts in 100 teams, a hot project 12 with 2 000 tasks and a
+// projects, 50 000 tasks, 2 100 accounts in 100 teams, a hot project 12 with 2 000 tasks (200 active, 1 800 archived) and a
 // task 87 with 1 000 comments and 1 000 history entries). Three scenarios:
 // - `reads`: the GET operations, ramping up to the read VUs of the profile (PROFILES). Each call picks a caller (the Admin, a
 //   seeded Responsable or a seeded agent, tokens signed here with the stack's JWT_SECRET) and a
@@ -56,10 +56,15 @@ const MANAGERS = { first: 103001, count: 100 };
 const HOT_MANAGERS = 15;
 const HOT_PROJECT_ID = 12;
 const HOT_TASK_ID = 87;
-const HOT_TASKS = 2000;
+// Hot project 12 (init-perf.sql): 200 active tasks, 1 800 completed hence archived (MAIR-502).
+const HOT_TASKS = 200;
+const HOT_ARCHIVED_TASKS = 1800;
 const HOT_MEMBERS = 300;
 const HOT_FEED = 1000;
 const PAGE = 100;
+// Dashboard window of `GET /tasks/` (MAIR-524): init-perf.sql spreads the due dates of an agent's
+// tasks from 10 days ago to 50 days ahead, so a 30-day window always holds some.
+const DUE_WINDOW_DAYS = 30;
 
 // Load profile (MAIR-474), K6_PROFILE:
 // - `ci` (default): what the CI runner holds with the same strict thresholds. The runner
@@ -165,19 +170,31 @@ const spec = loadSpec();
 const readHandlers = {
   'GET /health': ({ request }) => check(request(), { 'health 200': (r) => r.status === 200 }),
   'GET /ready': ({ request }) => check(request(), { 'ready 200': (r) => r.status === 200 }),
-  // A third of the calls each as the Admin (any page of the 5 000 projects), a Responsable (their
-  // team's projects) and an agent (their own).
+  // A third of the calls each as the Admin (any page of the 5 000 projects, or the projects page of the
+  // BFF: high priority, active, a search), a Responsable (their team's projects) and an agent (their own).
+  // Every answer carries the task aggregates and a summary over every matching project (MAIR-474).
   'GET /api/v1/projects/': ({ request }) => {
     const caller = randomInt(3);
+    const filtered = caller === 0 && randomInt(2) === 0;
     const res =
       caller === 0
-        ? request({ query: { limit: PAGE, offset: randomOffset(SEEDED_PROJECTS) } })
+        ? request({
+          query: filtered
+            ? { limit: 10, priority: 'High', status: 'Active', search: `perf project ${randomInt(50)}` }
+            : { limit: PAGE, offset: randomOffset(SEEDED_PROJECTS) },
+        })
         : request({ headers: bearer(caller === 1 ? randomManager() : randomAgent()) });
+    const sum = (counts) => Object.values(counts || {}).reduce((total, n) => total + n, 0);
     check(res, {
       'list projects 200': (r) => r.status === 200,
-      // The Admin sees the whole seed, a seeded agent or Responsable at least their own projects.
+      // The Admin sees the whole seed (every seeded project has a high task), a seeded agent or
+      // Responsable at least their own projects.
       'list projects reads the seed': (r) =>
-        r.status === 200 && r.json('total') >= (caller === 0 ? SEEDED_PROJECTS : 1) && r.json('projects').length > 0,
+        r.status === 200 && r.json('total') >= (caller === 0 && !filtered ? SEEDED_PROJECTS : 1) && r.json('projects').length > 0,
+      'list projects summarizes every match': (r) =>
+        r.status === 200 && sum(r.json('summary.by_status')) === r.json('total')
+        && sum(r.json('summary.by_priority')) === r.json('total')
+        && r.json('projects').every((project) => project.tasks_total >= project.tasks_completed),
     });
   },
   // The k6 fixture as Admin, or the hot project as a Responsable who sees it through their team.
@@ -191,6 +208,20 @@ const readHandlers = {
       'get project reads its tasks and members': (r) => r.status === 200 && r.json('tasks_total') >= 1,
     });
   },
+  'GET /api/v1/projects/{project_id}/archived-tasks/': ({ request }) =>
+    check(
+      request({
+        path: { project_id: HOT_PROJECT_ID },
+        query: { limit: PAGE, offset: randomOffset(HOT_ARCHIVED_TASKS) },
+        headers: bearer(randomHotManager()),
+      }),
+      {
+        'list archived tasks 200': (r) => r.status === 200,
+        'list archived tasks reads the hot project': (r) =>
+          r.status === 200 && r.json('total') >= HOT_ARCHIVED_TASKS && r.json('tasks').length > 0
+          && r.json('tasks').every((task) => task.archived_at),
+      },
+    ),
   'GET /api/v1/projects/{project_id}/tasks/': ({ request }) =>
     check(
       request({
@@ -204,6 +235,12 @@ const readHandlers = {
           r.status === 200 && r.json('total') >= HOT_TASKS && r.json('tasks').length > 0,
       },
     ),
+  // One task of the hot project, as a Responsable who sees it through their team (MAIR-474).
+  'GET /api/v1/projects/{project_id}/tasks/{task_id}/': ({ request }) =>
+    check(request({ path: { project_id: HOT_PROJECT_ID, task_id: HOT_TASK_ID }, headers: bearer(randomHotManager()) }), {
+      'get task 200': (r) => r.status === 200,
+      'get task reads the hot task': (r) => r.status === 200 && r.json('id') === HOT_TASK_ID,
+    }),
   'GET /api/v1/projects/{project_id}/tasks/{task_id}/collaboration': ({ request }) =>
     check(
       request({
@@ -217,6 +254,23 @@ const readHandlers = {
           r.status === 200 && r.json('comments_total') >= HOT_FEED && r.json('history_total') >= HOT_FEED,
       },
     ),
+  // The dashboard's pending tasks of an agent across every project, in one call (MAIR-524): half as
+  // the agent themself, half as the Admin, both with `assigned_to` + `due_before`, the read of
+  // `idx_tasks_assignee_due`.
+  'GET /api/v1/tasks/': ({ request }) => {
+    const agent = randomAgent();
+    const dueBefore = new Date(Date.now() + DUE_WINDOW_DAYS * 24 * 3600 * 1000).toISOString();
+    const query = { assigned_to: agent, due_before: dueBefore, limit: 20 };
+    const res = randomInt(2) === 0 ? request({ query, headers: bearer(agent) }) : request({ query });
+    check(res, {
+      'list my tasks 200': (r) => r.status === 200,
+      'list my tasks reads the seed': (r) => r.status === 200 && r.json('total') >= 1 && r.json('tasks').length > 0,
+      'list my tasks keeps the filters': (r) =>
+        r.status === 200 && r.json('tasks').every((task) =>
+          task.assigned_to === agent && task.archived_at === null && task.due_date !== null
+          && Date.parse(task.due_date) <= Date.parse(dueBefore) && task.project_name),
+    });
+  },
   'GET /api/v1/projects/{project_id}/users/': ({ request }) =>
     check(
       request({

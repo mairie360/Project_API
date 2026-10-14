@@ -152,3 +152,43 @@ async fn test_collaboration_of_a_task_from_another_project_is_not_found() {
         0
     );
 }
+
+/// MAIR-502: `latest_comments_first` pages the comments from the most recent one, so page 1 holds
+/// the latest comments, like the history; the totals do not change.
+#[tokio::test]
+async fn test_comments_can_be_paged_from_the_most_recent_one() {
+    let (_container, host) = get_shared_db().await;
+    let db = get_smart_db(host.to_string()).await;
+    let author = create_user(&db, "Lina", None).await;
+    let (project_id, task_id) = create_task(&db, author).await;
+    for message in ["un", "deux", "trois"] {
+        comment(&db, project_id, task_id, author, message).await;
+    }
+    let page = |offset| {
+        GetTaskCollaborationQueryView::new(project_id, task_id, 2, offset).latest_comments_first()
+    };
+    let read = |rows: Vec<TaskCollaborationRow>| -> TaskCollaborationView {
+        rows.into_iter().next().expect("task found").into()
+    };
+
+    let first = read(db.fetch_all(&page(0)).await.unwrap());
+    assert_eq!(first.comments_total, 3);
+    assert_eq!(
+        first
+            .comments
+            .iter()
+            .map(|c| c.message.as_str())
+            .collect::<Vec<_>>(),
+        vec!["trois", "deux"]
+    );
+    let second = read(db.fetch_all(&page(2)).await.unwrap());
+    assert_eq!(
+        second
+            .comments
+            .iter()
+            .map(|c| c.message.as_str())
+            .collect::<Vec<_>>(),
+        vec!["un"]
+    );
+    assert_eq!(second.history_total, 1);
+}

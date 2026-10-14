@@ -5,7 +5,9 @@ use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority, TaskStatus,
 };
-use project_api::database::tasks::get_project_tasks::view::{GetProjectTasksQueryView, Task};
+use project_api::database::tasks::get_project_tasks::view::{
+    CountArchivedTasksQueryView, GetProjectTasksQueryView, Task,
+};
 
 #[tokio::test]
 async fn test_get_tasks_success() {
@@ -78,13 +80,26 @@ async fn test_get_tasks_success() {
         "Expected result to be Ok, got: {:?}",
         result
     );
+    // The 6 completed tasks are archived (MAIR-502): the active list holds the other 2, the
+    // archived list the 6, each with its archive date.
     let tasks = result.unwrap();
-    assert_eq!(
-        tasks.len(),
-        8,
-        "Expected tasks to have length 8, got: {}",
-        tasks.len()
-    );
+    assert_eq!(tasks.len(), 2, "active tasks: {tasks:?}");
+    assert!(tasks.iter().all(|task| task.archived_at().is_none()));
+
+    let archived: PagedRows<Task> = db
+        .fetch_one(&GetProjectTasksQueryView::archived(project_id, 100, 0))
+        .await
+        .unwrap();
+    assert_eq!(archived.total, 6);
+    assert!(archived
+        .items
+        .iter()
+        .all(|task| task.status() == "completed" && task.archived_at().is_some()));
+    let count: i64 = db
+        .fetch_scalar(&CountArchivedTasksQueryView::new(project_id))
+        .await
+        .unwrap();
+    assert_eq!(count, 6);
 }
 
 #[tokio::test]

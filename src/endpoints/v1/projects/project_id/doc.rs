@@ -1,3 +1,4 @@
+use crate::endpoints::v1::projects::project_id::archived_tasks::doc::ArchivedTasksDoc;
 use crate::endpoints::v1::projects::project_id::close::endpoint::__path_close_project;
 use crate::endpoints::v1::projects::project_id::delete::endpoint::__path_delete_project;
 use crate::endpoints::v1::projects::project_id::get::endpoint::__path_get_project;
@@ -13,6 +14,7 @@ use utoipa::OpenApi;
     nest(
         (path = "/", api = Doc),
         (path = "/tasks", api = TasksDoc),
+        (path = "/archived-tasks", api = ArchivedTasksDoc),
         (path = "/users", api = UsersDoc),
     )
 )]
