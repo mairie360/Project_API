@@ -2,8 +2,8 @@ use chrono::{DateTime, Utc};
 use utoipa::ToSchema;
 
 use crate::endpoints::validation::{
-    check_description, check_json, check_label, check_optional, Validate, ValidationError,
-    MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
+    check_description, check_json, check_label, check_optional, deserialize_optional_due_date,
+    Validate, ValidationError, MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
 };
 use crate::{
     database::tasks::get_project_tasks::view::DynamicTaskField,
@@ -22,8 +22,10 @@ pub struct CreateTaskView {
         example = "Réunion publique à organiser avant le 15 octobre"
     )]
     description: Option<String>,
-    /// Échéance. Facultative.
-    #[schema(value_type = Option<String>, format = DateTime, example = "2026-10-15T00:00:00Z")]
+    /// Due date, optional: an RFC 3339 date-time, or a date alone (`YYYY-MM-DD`) stored as
+    /// midnight UTC of that day. Read back as an RFC 3339 date-time.
+    #[serde(default, deserialize_with = "deserialize_optional_due_date")]
+    #[schema(value_type = Option<String>, example = "2026-10-15")]
     due_date: Option<DateTime<Utc>>,
     /// Statut initial. Absent, la base applique sa valeur par défaut.
     status: Option<TaskStatus>,

@@ -1,6 +1,6 @@
 use crate::endpoints::validation::{
-    check_description, check_json, check_label, check_optional, Validate, ValidationError,
-    MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
+    check_description, check_json, check_label, check_optional, deserialize_optional_due_date,
+    Validate, ValidationError, MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
 };
 use crate::{
     database::tasks::get_project_tasks::view::DynamicTaskField,
@@ -37,8 +37,11 @@ pub struct PatchTaskView {
     pub status: Option<TaskStatus>,
     /// Nouvelle priorité. Interdite à l'agent assigné non gestionnaire.
     pub priority: Option<TaskPriority>,
-    /// Nouvelle échéance. Interdite à l'agent assigné non gestionnaire.
-    #[schema(value_type = Option<String>, format = DateTime, example = "2026-10-15T00:00:00Z")]
+    /// New due date: an RFC 3339 date-time, or a date alone (`YYYY-MM-DD`) stored as midnight UTC
+    /// of that day. Absent or `null` to leave it unchanged. Forbidden to an assigned agent who does
+    /// not manage the project.
+    #[serde(default, deserialize_with = "deserialize_optional_due_date")]
+    #[schema(value_type = Option<String>, example = "2026-10-15")]
     pub due_date: Option<DateTime<Utc>>,
     /// Absent : assignation conservée ; `null` : assignation retirée.
     #[serde(default, deserialize_with = "deserialize_present")]
