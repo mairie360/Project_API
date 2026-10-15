@@ -237,8 +237,9 @@ pub struct TaskHistoryEntry {
     /// `status_changed`.
     #[schema(example = "status_changed")]
     pub action: String,
-    /// Human-readable label, generated from `action` and `changes`.
-    #[schema(example = "Status changed: todo → in_progress")]
+    /// Human-readable label, generated from `action` and `changes`; a status change names the
+    /// project statuses (MAIR-566).
+    #[schema(example = "Status changed: À faire → En cours")]
     pub label: String,
     /// Author of the change, or `System`.
     pub author: CollaborationAuthor,
@@ -246,7 +247,8 @@ pub struct TaskHistoryEntry {
     #[serde(rename = "createdAt")]
     #[schema(format = DateTime, example = "2026-09-15T10:04:00.000Z")]
     pub created_at: String,
-    /// Changed fields as `{"<field>": {"from": …, "to": …}}`. Keys are `status`, `title`, `description`,
+    /// Changed fields as `{"<field>": {"from": …, "to": …}}`. Keys are `status` (the category),
+    /// `status_id` and `status_name` (the project statuses, MAIR-566), `title`, `description`,
     /// `priority`, `due_date`, `assigned_to` and `fields`. Absent on `task_created`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<Object>, example = json!({ "status": { "from": "todo", "to": "in_progress" } }))]
@@ -270,11 +272,25 @@ impl From<TaskHistoryRow> for TaskHistoryEntry {
             .clone()
             .unwrap_or_else(|| match row.action.as_str() {
                 "task_created" => "Task created".to_string(),
-                "status_changed" => format!(
-                    "Status changed: {} → {}",
-                    row.old_status.as_deref().unwrap_or("unknown"),
-                    row.new_status.as_deref().unwrap_or("unknown")
-                ),
+                // The project status names since MAIR-566, the categories in older entries.
+                "status_changed" => {
+                    let name = |end: &str| {
+                        row.changes
+                            .as_ref()
+                            .and_then(|changes| changes.pointer(&format!("/status_name/{end}")))
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_string)
+                    };
+                    format!(
+                        "Status changed: {} → {}",
+                        name("from")
+                            .or_else(|| row.old_status.clone())
+                            .unwrap_or_else(|| "unknown".to_string()),
+                        name("to")
+                            .or_else(|| row.new_status.clone())
+                            .unwrap_or_else(|| "unknown".to_string())
+                    )
+                }
                 _ => {
                     let changed: Vec<&str> = TRACKED_FIELDS
                         .into_iter()

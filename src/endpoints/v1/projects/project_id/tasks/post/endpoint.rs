@@ -9,6 +9,7 @@ use crate::endpoints::db_error::{classify_db_error, DbFailure};
 
 use crate::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority as DbTaskPriority, TaskStatus, ASSIGNEE_NOT_IN_PROJECT,
+    STATUS_NOT_IN_PROJECT,
 };
 use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority as ApiTaskPriority;
@@ -26,6 +27,7 @@ pub enum CreateTaskError {
     BadRequest,
     UnknownAssignee,
     AssigneeNotInProject,
+    StatusNotInProject,
 }
 
 impl std::fmt::Display for CreateTaskError {
@@ -39,6 +41,9 @@ impl std::fmt::Display for CreateTaskError {
             CreateTaskError::UnknownAssignee => write!(f, "`assigned_to` does not match any user."),
             CreateTaskError::AssigneeNotInProject => {
                 write!(f, "`assigned_to` is not a member of the project.")
+            }
+            CreateTaskError::StatusNotInProject => {
+                write!(f, "`status_id` is not a status of the project.")
             }
             CreateTaskError::BadRequest => {
                 write!(f, "Bad request.")
@@ -55,6 +60,7 @@ impl ResponseError for CreateTaskError {
             CreateTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             CreateTaskError::UnknownAssignee => StatusCode::BAD_REQUEST,
             CreateTaskError::AssigneeNotInProject => StatusCode::BAD_REQUEST,
+            CreateTaskError::StatusNotInProject => StatusCode::BAD_REQUEST,
             CreateTaskError::BadRequest => StatusCode::BAD_REQUEST,
         }
     }
@@ -100,7 +106,8 @@ async fn trigger_create_task(
         *view.due_date(),
         *view.assigned_to(),
         view.fields(),
-    );
+    )
+    .with_status_id(view.status_id());
     let result: i32 = tx.fetch_scalar::<i32, _>(&query_view).await.map_err(|e| {
         match classify_db_error("projects/project_id/tasks/post", &e) {
             DbFailure::InvalidReference => CreateTaskError::UnknownAssignee,
@@ -108,6 +115,9 @@ async fn trigger_create_task(
         }
     })?;
 
+    if result == STATUS_NOT_IN_PROJECT {
+        return Err(CreateTaskError::StatusNotInProject);
+    }
     if result == ASSIGNEE_NOT_IN_PROJECT {
         return Err(CreateTaskError::AssigneeNotInProject);
     }
@@ -129,6 +139,9 @@ async fn trigger_create_task(
     description = "Adds a task to the project. Reserved to the project managers: an agent merely \
                    assigned to other tasks cannot create one.\n\n\
                    `status` and `priority` are optional and take their default value when absent. \
+                   `status_id` picks one of the project's statuses (`GET …/statuses/`, MAIR-566) \
+                   and sets the category; without it the task takes the first status of the \
+                   `status` category. \
                    `description` is optional (empty string when absent). `fields` carries the \
                    custom fields of the project and must be present, even as an empty array.\n\n\
                    `assigned_to` must be the owner or a member of the project (add them with \
@@ -149,7 +162,7 @@ async fn trigger_create_task(
         ),
         (
             status = 400,
-            description = "A URL segment is not an integer, malformed JSON body, `assigned_to` that does not match any user or is neither the owner nor a member of the project, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of control characters other than line breaks and tabs; `due_date` a date (`YYYY-MM-DD`) or an RFC 3339 date-time.",
+            description = "A URL segment is not an integer, malformed JSON body, `status_id` that is not a status of the project, `assigned_to` that does not match any user or is neither the owner nor a member of the project, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of control characters other than line breaks and tabs; `due_date` a date (`YYYY-MM-DD`) or an RFC 3339 date-time.",
             body = String,
             content_type = "text/plain",
             example = json!("`assigned_to` is not a member of the project.")

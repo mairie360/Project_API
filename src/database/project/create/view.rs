@@ -21,6 +21,7 @@ impl CreateProjectQueryView {
                 QueryParam::I32(id_to_sql(owner_id)),
                 QueryParam::Text(String::new()),
                 QueryParam::Text(String::new()),
+                QueryParam::OptionI32(None),
             ],
         }
     }
@@ -39,6 +40,14 @@ impl CreateProjectQueryView {
         self
     }
 
+    /// Creates the project from this template (MAIR-566): the database copies its statuses and
+    /// custom fields. Without it, the default template. An unknown id is a foreign key violation.
+    #[must_use]
+    pub fn with_template(mut self, template_id: Option<u64>) -> Self {
+        self.params[5] = QueryParam::OptionI32(template_id.map(id_to_sql));
+        self
+    }
+
     pub fn title(&self) -> &str {
         self.params[0].as_text()
     }
@@ -54,10 +63,10 @@ impl CreateProjectQueryView {
 
 impl ApiRequestDto for CreateProjectQueryView {
     fn query_sql(&self) -> &'static str {
-        "INSERT INTO projects (title, description, owner_id, status, priority) \
+        "INSERT INTO projects (title, description, owner_id, status, priority, template_id) \
          VALUES ($1, NULLIF($2, ''), $3, \
                  COALESCE(NULLIF($4, '')::project_status, 'active'), \
-                 COALESCE(NULLIF($5, '')::task_priority, 'medium')) \
+                 COALESCE(NULLIF($5, '')::task_priority, 'medium'), $6) \
          RETURNING id"
     }
 

@@ -4,7 +4,7 @@ use mairie360_api_lib::database::db_interface::id_from_sql;
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
-use crate::endpoints::db_error::log_db_error;
+use crate::endpoints::db_error::{classify_db_error, DbFailure};
 
 use crate::database::project::create::view::CreateProjectQueryView;
 use crate::endpoints::v1::projects::access::{require_manager_role, AccessDenied};
@@ -17,6 +17,7 @@ pub enum CreateProjectError {
     Forbidden,
     BadRequest,
     NotFound,
+    UnknownTemplate,
     DatabaseError,
 }
 
@@ -26,6 +27,9 @@ impl std::fmt::Display for CreateProjectError {
             CreateProjectError::Forbidden => write!(f, "Forbidden."),
             CreateProjectError::BadRequest => write!(f, "Bad request."),
             CreateProjectError::NotFound => write!(f, "Not found."),
+            CreateProjectError::UnknownTemplate => {
+                write!(f, "`template_id` does not match any project template.")
+            }
             CreateProjectError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
@@ -39,6 +43,7 @@ impl ResponseError for CreateProjectError {
             CreateProjectError::Forbidden => StatusCode::FORBIDDEN,
             CreateProjectError::BadRequest => StatusCode::BAD_REQUEST,
             CreateProjectError::NotFound => StatusCode::NOT_FOUND,
+            CreateProjectError::UnknownTemplate => StatusCode::BAD_REQUEST,
             CreateProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -61,14 +66,14 @@ async fn trigger_create_project(
         query_view = query_view
             .with_priority(stored_priority(priority).ok_or(CreateProjectError::BadRequest)?);
     }
-    let view = query_view;
+    let view = query_view.with_template(view.template_id());
     let result: i32 = state
         .get_smart_db()
         .fetch_scalar::<i32, _>(&view)
         .await
-        .map_err(|e| {
-            log_db_error("projects/post", &e);
-            CreateProjectError::DatabaseError
+        .map_err(|e| match classify_db_error("projects/post", &e) {
+            DbFailure::InvalidReference => CreateProjectError::UnknownTemplate,
+            _ => CreateProjectError::DatabaseError,
         })?;
 
     Ok(result)
@@ -86,6 +91,9 @@ async fn trigger_create_project(
                    `Todo` / `High` is read back `Todo` / `High`. Without them the project is \
                    `Active` / `Medium`. `Urgent` is stored `High`; `Error` is refused in `400` for \
                    both.\n\n\
+                   `template_id` (`GET /api/v1/project-templates/`, MAIR-566) gives the project a \
+                   copy of the template's task statuses and custom fields; without it, the default \
+                   template's. Editing the template later never changes the project.\n\n\
                    The response only holds the new id; read the whole project back with \
                    `GET /api/v1/projects/{project_id}/`.",
     responses(
@@ -97,7 +105,7 @@ async fn trigger_create_project(
         ),
         (
             status = 400,
-            description = "Malformed JSON body, missing `name`, `status` or `priority` not one of the enum values, `Error` as `status` or `priority`, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs. The body names the first invalid field, except for `Error` (`Bad request.`).",
+            description = "Malformed JSON body, missing `name`, `status` or `priority` not one of the enum values, `Error` as `status` or `priority`, `template_id` that matches no project template, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs. The body names the first invalid field, except for `Error` (`Bad request.`).",
             body = String,
             content_type = "text/plain",
             example = json!("Invalid `name`: must not contain control characters")

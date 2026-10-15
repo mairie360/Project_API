@@ -36,10 +36,14 @@ fn create_project_view_accessors() {
     assert_eq!(view.title(), "Titre");
     assert_eq!(view.description(), "Desc");
     assert_eq!(view.owner_id(), 42);
-    // Status and priority (MAIR-558), empty for the table defaults.
-    assert_eq!(view.query_params().len(), 5);
+    // Status and priority (MAIR-558), empty for the table defaults; no template (MAIR-566), the
+    // default one.
+    assert_eq!(view.query_params().len(), 6);
     assert_eq!(view.query_params()[3].as_text(), "");
     assert_eq!(view.query_params()[4].as_text(), "");
+    assert_eq!(view.query_params()[5].as_option_i32(), None);
+    let view = view.with_template(Some(4));
+    assert_eq!(view.query_params()[5].as_option_i32(), Some(4));
     assert!(view.query_sql().contains("INSERT INTO projects"));
 
     let view = view
@@ -179,8 +183,10 @@ fn create_task_view_accessors() {
     );
     assert_eq!(view.project_id(), 3);
     assert_eq!(view.title(), "Ma tache");
-    assert_eq!(view.query_params().len(), 9);
+    // No status_id (MAIR-566): the first status of the category.
+    assert_eq!(view.query_params().len(), 10);
     assert_eq!(view.query_params()[7].as_text(), "Ma description");
+    assert_eq!(view.query_params()[9].as_option_i32(), None);
     assert_eq!(view.query_params()[8].as_i32(), 5);
     assert!(view.query_sql().contains("INSERT INTO tasks"));
     assert!(view.query_sql().contains("project_members"));
@@ -200,8 +206,10 @@ fn create_task_view_without_optionals() {
         &[],
     );
     assert_eq!(view.title(), "T");
-    assert_eq!(view.query_params().len(), 9);
+    assert_eq!(view.query_params().len(), 10);
     assert_eq!(view.query_params()[6].as_text(), r#"{"fields":[]}"#);
+    let view = view.with_status_id(Some(7));
+    assert_eq!(view.query_params()[9].as_option_i32(), Some(7));
 }
 
 #[test]
@@ -280,6 +288,7 @@ fn patch_task_view_accessors() {
             title: Some("nouveau titre"),
             description: Some(""),
             status: Some(TaskStatus::Completed),
+            status_id: Some(31),
             priority: Some(TaskPriority::Medium),
             due_date: Some(due),
             assigned_to: Some(Some(7)),
@@ -288,7 +297,7 @@ fn patch_task_view_accessors() {
     );
     assert_eq!(view.task_id(), 99);
     assert_eq!(view.project_id(), 4);
-    assert_eq!(view.query_params().len(), 12);
+    assert_eq!(view.query_params().len(), 13);
     assert!(view.query_params()[6].as_bool());
     assert_eq!(view.query_params()[7].as_option_i32(), Some(7));
     // An empty description is a change (it clears the description), not an absence.
@@ -298,6 +307,8 @@ fn patch_task_view_accessors() {
     assert_eq!(view.query_params()[11].as_i32(), 3);
     assert!(view.query_sql().contains("UPDATE tasks SET"));
     assert!(view.query_sql().contains("updated_by = $12"));
+    // MAIR-566: the status among the project's statuses.
+    assert_eq!(view.query_params()[12].as_option_i32(), Some(31));
 }
 
 #[test]

@@ -91,10 +91,16 @@ async fn test_comments_and_history_are_signed_and_read_back() {
         vec!["status_changed", "task_created"]
     );
     assert_eq!(view.history_total, 2);
-    assert_eq!(view.history[0].label, "Status changed: todo → in_progress");
+    // MAIR-566: the label names the project statuses, `changes` keeps the categories too.
+    assert_eq!(view.history[0].label, "Status changed: À faire → En cours");
+    let changes = view.history[0].changes.clone().expect("status changes");
     assert_eq!(
-        view.history[0].changes,
-        Some(serde_json::json!({ "status": { "from": "todo", "to": "in_progress" } }))
+        changes["status"],
+        serde_json::json!({ "from": "todo", "to": "in_progress" })
+    );
+    assert_eq!(
+        changes["status_name"],
+        serde_json::json!({ "from": "À faire", "to": "En cours" })
     );
     assert_eq!(view.history[1].label, "Task created");
     assert_eq!(view.history[1].author.id, format!("user-{author}"));

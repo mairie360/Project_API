@@ -201,6 +201,65 @@ where
         .transpose()
 }
 
+/// Cap of a task status or project template name (`VARCHAR(100)`, MAIR-566).
+pub const MAX_STATUS_NAME_LENGTH: usize = 100;
+/// Most statuses a template may define.
+pub const MAX_TEMPLATE_STATUSES: usize = 30;
+
+/// Checks a status colour: `#` followed by 6 hexadecimal digits (`#2563EB`).
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] naming `field` otherwise.
+pub fn check_color(field: &str, value: &str) -> Result<(), ValidationError> {
+    let digits = value.strip_prefix('#').unwrap_or_default();
+    if digits.len() == 6 && digits.chars().all(|c| c.is_ascii_hexdigit()) {
+        Ok(())
+    } else {
+        Err(ValidationError::new(
+            field,
+            "must be `#` followed by 6 hexadecimal digits",
+        ))
+    }
+}
+
+/// Checks the statuses of a template (MAIR-566): 1 to [`MAX_TEMPLATE_STATUSES`] statuses, names
+/// unique whatever the case, and every category in `required` covered.
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] naming `field`.
+pub fn check_status_list<C: PartialEq + fmt::Debug>(
+    field: &str,
+    statuses: &[(&str, C)],
+    required: &[C],
+) -> Result<(), ValidationError> {
+    if statuses.is_empty() || statuses.len() > MAX_TEMPLATE_STATUSES {
+        return Err(ValidationError::new(
+            field,
+            &format!("must hold 1 to {MAX_TEMPLATE_STATUSES} statuses"),
+        ));
+    }
+    let mut names = std::collections::HashSet::new();
+    for (name, _) in statuses {
+        if !names.insert(name.trim().to_lowercase()) {
+            return Err(ValidationError::new(
+                field,
+                "two statuses have the same name",
+            ));
+        }
+    }
+    for category in required {
+        if !statuses.iter().any(|(_, c)| c == category) {
+            return Err(ValidationError::new(
+                field,
+                &format!("must hold a status of each category, none is {category:?}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn bad_request(error: &ValidationError) -> actix_web::Error {
     actix_web::error::ErrorBadRequest(error.to_string())
 }
@@ -315,6 +374,30 @@ mod tests {
     fn optional_skips_absent_values() {
         assert!(check_optional(None, |v| check_label("name", v, MAX_TITLE_LENGTH)).is_ok());
         assert!(check_optional(Some(" "), |v| check_label("name", v, MAX_TITLE_LENGTH)).is_err());
+    }
+
+    #[test]
+    fn mair_566_status_colors_and_lists() {
+        assert!(check_color("color", "#2563EB").is_ok());
+        assert!(check_color("color", "#2563eb").is_ok());
+        for invalid in ["2563EB", "#2563E", "#2563EBA", "#GGGGGG", "", "blue"] {
+            assert!(check_color("color", invalid).is_err(), "{invalid}");
+        }
+        let all = [1, 2, 3];
+        assert!(check_status_list("statuses", &[("A", 1), ("B", 2), ("C", 3)], &all).is_ok());
+        assert!(check_status_list::<i32>("statuses", &[], &all).is_err());
+        let duplicate = check_status_list(
+            "statuses",
+            &[("À faire", 1), (" à faire ", 2), ("C", 3)],
+            &all,
+        );
+        assert!(duplicate.unwrap_err().to_string().contains("same name"));
+        let missing = check_status_list("statuses", &[("A", 1), ("B", 2)], &all);
+        assert!(missing.unwrap_err().to_string().contains("none is 3"));
+        let many: Vec<(&str, i32)> = (0..=MAX_TEMPLATE_STATUSES)
+            .map(|i| (["A", "B", "C"][i % 3], 1))
+            .collect();
+        assert!(check_status_list("statuses", &many, &[1]).is_err());
     }
 
     #[test]

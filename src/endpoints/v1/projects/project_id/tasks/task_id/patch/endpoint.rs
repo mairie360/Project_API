@@ -9,7 +9,9 @@ use crate::endpoints::db_error::{classify_db_error, DbFailure};
 use crate::database::tasks::create_task::view::{
     TaskPriority as DbTaskPriority, TaskStatus as DbTaskStatus,
 };
-use crate::database::tasks::patch_task::view::{PatchTaskQueryView, TaskChanges};
+use crate::database::tasks::patch_task::view::{
+    PatchTaskQueryView, TaskChanges, TASK_STATUS_NOT_IN_PROJECT, TASK_UPDATED,
+};
 use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::patch::view::PatchTaskView;
@@ -24,6 +26,7 @@ pub enum PatchTaskError {
     DatabaseError,
     UnknownAssignee,
     AssigneeNotInProject,
+    StatusNotInProject,
 }
 
 impl std::fmt::Display for PatchTaskError {
@@ -39,6 +42,9 @@ impl std::fmt::Display for PatchTaskError {
             PatchTaskError::AssigneeNotInProject => {
                 write!(f, "`assigned_to` is not a member of the project.")
             }
+            PatchTaskError::StatusNotInProject => {
+                write!(f, "`status_id` is not a status of the project.")
+            }
         }
     }
 }
@@ -52,6 +58,7 @@ impl ResponseError for PatchTaskError {
             PatchTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             PatchTaskError::UnknownAssignee => StatusCode::BAD_REQUEST,
             PatchTaskError::AssigneeNotInProject => StatusCode::BAD_REQUEST,
+            PatchTaskError::StatusNotInProject => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -86,7 +93,7 @@ async fn trigger_patch_task(
         return Err(PatchTaskError::BadRequest);
     }
 
-    let updated: bool = tx
+    let updated: i32 = tx
         .fetch_scalar(&PatchTaskQueryView::new(
             project_id,
             task_id,
@@ -95,6 +102,7 @@ async fn trigger_patch_task(
                 title: view.name.as_deref().map(str::trim),
                 description: view.description.as_deref(),
                 status,
+                status_id: view.status_id,
                 priority,
                 due_date: view.due_date,
                 assigned_to: view.assigned_to,
@@ -110,10 +118,11 @@ async fn trigger_patch_task(
         )?;
 
     match (updated, view.assigned_to) {
-        (true, _) => Ok(()),
+        (TASK_UPDATED, _) => Ok(()),
+        (TASK_STATUS_NOT_IN_PROJECT, _) => Err(PatchTaskError::StatusNotInProject),
         // The task exists (checked by `require_access`): the new assignee was refused.
-        (false, Some(Some(_))) => Err(PatchTaskError::AssigneeNotInProject),
-        (false, _) => Err(PatchTaskError::NotFound),
+        (_, Some(Some(_))) => Err(PatchTaskError::AssigneeNotInProject),
+        (_, _) => Err(PatchTaskError::NotFound),
     }
 }
 
@@ -123,8 +132,11 @@ async fn trigger_patch_task(
     summary = "Update a task",
     description = "Partially updates a task: an absent field is left unchanged.\n\n\
                    Two levels of rights apply. A **project manager** can change everything. An \
-                   **agent assigned to the task** can only change its status: if the body touches \
-                   anything else, the answer is `403`.\n\n\
+                   **agent assigned to the task** can only change its status (`status` and/or \
+                   `status_id`): if the body touches anything else, the answer is `403`.\n\n\
+                   `status_id` moves the task to one of its project's statuses (`GET …/statuses/`, \
+                   MAIR-566), whose category becomes its `status`; `status` alone moves it to the \
+                   first status of that category, unless it already is in it.\n\n\
                    `assigned_to` tells absence from `null`: omitting it keeps the assignee, \
                    sending `null` removes it. A new assignee must be the owner or a member of the \
                    project. `description` replaces the stored description (send `\"\"` to clear \
@@ -140,7 +152,7 @@ async fn trigger_patch_task(
         ),
         (
             status = 400,
-            description = "A URL segment is not an integer, malformed JSON body, `assigned_to` that does not match any user or is neither the owner nor a member of the project, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of control characters other than line breaks and tabs; `due_date` a date (`YYYY-MM-DD`) or an RFC 3339 date-time.",
+            description = "A URL segment is not an integer, malformed JSON body, `status_id` that is not a status of the project, `assigned_to` that does not match any user or is neither the owner nor a member of the project, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of control characters other than line breaks and tabs; `due_date` a date (`YYYY-MM-DD`) or an RFC 3339 date-time.",
             body = String,
             content_type = "text/plain",
             example = json!("`assigned_to` is not a member of the project.")

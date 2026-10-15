@@ -212,6 +212,19 @@ and `GET …/tasks/` only list the active tasks (`tasks_total` counts them, `tas
 `GET …/archived-tasks/` pages the archived ones (most recently archived first), and every task read carries
 `archived_at`. The project list aggregates (`tasks_total`, `tasks_completed`) still count every task.
 
+Task statuses are set per project (MAIR-566, Database `project_task_statuses`, `project_templates`): a project
+gets a copy of its template's statuses (`POST /projects/` `template_id`, the default template `Simple`
+without it), each status in one of the three categories `Todo` / `InProgress` / `Completed` that the task
+`status` still carries, so the archiving, the progress and `GET /tasks/` work whatever the names. Every task
+read carries `status_id` and `status_name`; `POST …/tasks/` and `PATCH …/tasks/{id}/` take `status_id` (a
+status of another project is a `400`: `status_outside_project_sql!` checks it in the write), and `status` alone
+still moves a task to the first status of that category (database trigger). `…/statuses/` lists them (viewers)
+and adds, renames, moves, recategorizes or deletes them (managers; `database::statuses`): a category keeps one
+status (`409`), a status holding tasks is deleted with `?move_to=` (`409` without). `/project-templates/` is read
+by anyone signed in and written by Admin and Responsable only (`TemplateManagerQueryView`); the default template
+cannot be deleted. Editing a template never changes an existing project. Integration tests need a Database
+image carrying MAIR-566 (`TEST_DB_VERSION`).
+
 List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`,
 `GET …/users/` — MAIR-425; the members embedded in `GET /projects/{id}/` are the first 100 + `users_total`)
 take `limit` (default 100, clamped to 1–500) / `offset` (`endpoints::pagination::PageParams`) and return a

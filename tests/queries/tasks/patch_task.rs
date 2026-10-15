@@ -13,7 +13,9 @@ use project_api::database::tasks::create_task::view::{
 use project_api::database::tasks::get_project_tasks::view::{
     DynamicTaskField, FieldType, GetProjectTasksQueryView, Task,
 };
-use project_api::database::tasks::patch_task::view::{PatchTaskQueryView, TaskChanges};
+use project_api::database::tasks::patch_task::view::{
+    PatchTaskQueryView, TaskChanges, TASK_UPDATED,
+};
 use project_api::database::users::add_user_to_project::view::AddUserToProjectQueryView;
 
 async fn create_task(db: &SmartDatabase) -> (u64, u64) {
@@ -50,9 +52,11 @@ async fn patch(
     by: u64,
     changes: TaskChanges<'_>,
 ) -> bool {
-    db.fetch_scalar(&PatchTaskQueryView::new(project_id, task_id, by, changes))
+    let code: i32 = db
+        .fetch_scalar(&PatchTaskQueryView::new(project_id, task_id, by, changes))
         .await
-        .unwrap()
+        .unwrap();
+    code == TASK_UPDATED
 }
 
 #[tokio::test]

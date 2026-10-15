@@ -33,8 +33,15 @@ pub struct PatchTaskView {
     /// Forbidden to an assigned agent who does not manage the project.
     #[schema(max_length = 5000, example = "Réunion publique avec les riverains")]
     pub description: Option<String>,
-    /// Nouveau statut. Seul champ qu'un agent assigné non gestionnaire a le droit de modifier.
+    /// New status category, the task taking the first status of it in its project unless it
+    /// already is in that category. With `status_id`, the only fields an assigned agent who does not
+    /// manage the project may change.
     pub status: Option<TaskStatus>,
+    /// New status among the project's statuses (`GET …/statuses/`, MAIR-566); the task takes its
+    /// category, whatever `status` says.
+    #[serde(default)]
+    #[schema(example = 31)]
+    pub status_id: Option<u64>,
     /// Nouvelle priorité. Interdite à l'agent assigné non gestionnaire.
     pub priority: Option<TaskPriority>,
     /// New due date: an RFC 3339 date-time, or a date alone (`YYYY-MM-DD`) stored as midnight UTC
@@ -53,9 +60,10 @@ pub struct PatchTaskView {
 }
 
 impl PatchTaskView {
-    /// Vrai si le corps ne modifie que le statut (seule modification permise à l'agent assigné).
+    /// `true` if the body only changes the status (`status` and/or `status_id`), the only change
+    /// an assigned agent may make.
     pub fn only_changes_status(&self) -> bool {
-        self.status.is_some()
+        (self.status.is_some() || self.status_id.is_some())
             && self.name.is_none()
             && self.description.is_none()
             && self.priority.is_none()

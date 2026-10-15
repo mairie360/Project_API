@@ -33,6 +33,9 @@ grille suivante :
 
 La création de projet est réservée aux rôles Admin, Maire et Responsable.
 
+Project templates (`/api/v1/project-templates/`, MAIR-566) are read by any signed-in user and \
+managed by the Admin and Responsable roles.
+
 Un projet invisible pour l'appelant est traité comme **inexistant** : la réponse est `404` et non \
 `403`, pour ne pas révéler son existence. Le `403` n'apparaît que sur un projet que l'appelant \
 peut voir mais pas modifier.
@@ -69,6 +72,8 @@ validation rules (length, control characters); the body names the first invalid 
         (name = "Projects", description = "Cycle de vie des projets : création, consultation, modification, clôture et suppression."),
         (name = "Tasks", description = "Tasks of a project, their custom fields, comments and history, and the tasks visible to the caller across every project (`GET /api/v1/tasks/`)."),
         (name = "Users", description = "Membres d'un projet : consultation, rattachement et retrait."),
+        (name = "Statuses", description = "Task statuses of a project (MAIR-566): its Kanban columns, each in one of the categories `Todo`, `InProgress`, `Completed`."),
+        (name = "Templates", description = "Project templates (MAIR-566): the statuses and custom fields copied into a project created from one. Managed by Admin and Responsable."),
         (name = "probes", description = "Unauthenticated liveness (`/health`) and readiness (`/ready`) probes, used by Docker and Kubernetes.")
     ),
     nest(
