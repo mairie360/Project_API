@@ -133,6 +133,7 @@ mod aggregates {
     use chrono::{TimeZone, Utc};
     use mairie360_api_lib::smart_db::SmartDatabase;
     use project_api::database::project::get_projects::view::{ProjectFilters, ProjectsPage};
+    use project_api::database::project::update_status::view::ProjectStatus as ProjectStatusCode;
     use project_api::database::tasks::create_task::view::{
         CreateTaskQueryView, TaskPriority, TaskStatus,
     };
@@ -162,21 +163,27 @@ mod aggregates {
         .unwrap();
     }
 
-    /// An owner with three projects: `busy` (3 tasks, 1 completed, high priority, due 5 and 20
-    /// November, 6 members), `idle` (no task, suspended) and `low` (one low task without due date).
+    /// An owner with three projects: `busy` (high priority, 3 tasks, 1 completed, due 5 and 20
+    /// November, 6 members), `idle` (default priority, no task, suspended) and `low` (low priority,
+    /// one low task without due date).
     async fn scenario(db: &SmartDatabase) -> (u64, String, [i32; 3]) {
         let owner = create_user(db, "Aggregator", None).await;
         let tag = unique_suffix();
         let mut ids = [0; 3];
-        for (i, name) in ["busy", "idle", "low"].iter().enumerate() {
-            ids[i] = db
-                .fetch_scalar::<i32, _>(&CreateProjectQueryView::new(
-                    &format!("{name} {tag}"),
-                    Some("Aggregated"),
-                    owner,
-                ))
-                .await
-                .unwrap();
+        for (i, (name, priority)) in [
+            ("busy", Some(TaskPriority::High)),
+            ("idle", None),
+            ("low", Some(TaskPriority::Low)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut view =
+                CreateProjectQueryView::new(&format!("{name} {tag}"), Some("Aggregated"), owner);
+            if let Some(priority) = priority {
+                view = view.with_priority(priority);
+            }
+            ids[i] = db.fetch_scalar::<i32, _>(&view).await.unwrap();
         }
         task(
             db,
@@ -269,7 +276,11 @@ mod aggregates {
 
         let idle = &result.items[1];
         assert_eq!((idle.tasks_total(), idle.tasks_completed()), (0, 0));
-        assert_eq!(idle.priority(), "medium", "the default priority of a task");
+        assert_eq!(
+            idle.priority(),
+            "medium",
+            "the default priority of a project"
+        );
         assert_eq!(idle.due_date(), None);
         assert!(idle.members().is_empty());
 
@@ -384,5 +395,83 @@ mod aggregates {
         .await;
         assert_eq!(none.total, 0);
         assert!(none.items.is_empty());
+    }
+
+    /// MAIR-558: the list reads the stored priority, not the highest priority of the tasks, and
+    /// filters and counts the `todo` and `review` statuses instead of folding them into `other`.
+    #[tokio::test]
+    async fn mair_558_the_list_filters_on_the_stored_status_and_priority() {
+        let (_container, host) = get_shared_db().await;
+        let db = get_smart_db(host.to_string()).await;
+        let owner = create_user(&db, "Kanban", None).await;
+        let tag = unique_suffix();
+        let todo = db
+            .fetch_scalar::<i32, _>(
+                &CreateProjectQueryView::new(&format!("todo {tag}"), None, owner)
+                    .with_status(ProjectStatusCode::Todo)
+                    .with_priority(TaskPriority::Low),
+            )
+            .await
+            .unwrap();
+        db.fetch_scalar::<i32, _>(
+            &CreateProjectQueryView::new(&format!("review {tag}"), None, owner)
+                .with_status(ProjectStatusCode::Review),
+        )
+        .await
+        .unwrap();
+        // A high task in a low project.
+        task(&db, todo, owner, TaskStatus::Todo, TaskPriority::High, None).await;
+
+        let all = page(&db, owner, ProjectFilters::default()).await;
+        assert_eq!(
+            (
+                all.by_status.todo,
+                all.by_status.review,
+                all.by_status.other
+            ),
+            (1, 1, 0)
+        );
+        let listed = all.items.iter().find(|p| p.id() == todo).unwrap();
+        assert_eq!(listed.priority(), "low", "the tasks do not change it");
+
+        let todo_only = page(
+            &db,
+            owner,
+            ProjectFilters {
+                statuses: vec!["todo"],
+                ..ProjectFilters::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            todo_only
+                .items
+                .iter()
+                .map(ProjectView::id)
+                .collect::<Vec<_>>(),
+            vec![todo]
+        );
+
+        let high = page(
+            &db,
+            owner,
+            ProjectFilters {
+                priorities: vec!["high"],
+                ..ProjectFilters::default()
+            },
+        )
+        .await;
+        assert_eq!(high.total, 0, "a high task does not make the project high");
+
+        let other = page(
+            &db,
+            owner,
+            ProjectFilters {
+                statuses: vec!["other"],
+                ..ProjectFilters::default()
+            },
+        )
+        .await;
+        assert_eq!(other.total, 0);
     }
 }

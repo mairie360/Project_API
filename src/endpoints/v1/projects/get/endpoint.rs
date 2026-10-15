@@ -108,7 +108,7 @@ async fn trigger_get_projects(
                 ],
                 "total": 2,
                 "summary": {
-                    "by_status": { "active": 1, "suspended": 0, "completed": 1, "other": 0 },
+                    "by_status": { "todo": 0, "active": 1, "review": 0, "suspended": 0, "completed": 1, "other": 0 },
                     "by_priority": { "low": 0, "medium": 1, "high": 1 }
                 }
             })

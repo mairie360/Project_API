@@ -134,8 +134,9 @@ async fn every_write_shown_by_the_list_invalidates_its_cache() {
     );
     assert_eq!(status(&app, urgent).await, 204);
     let after_patch = listed(&app, manager, &tag).await;
+    // The priority of the project is its own (MAIR-558): a task does not change it.
     assert_eq!(
-        after_patch["projects"][0]["priority"], "High",
+        after_patch["projects"][0]["priority"], "Medium",
         "after patch task"
     );
     assert_eq!(

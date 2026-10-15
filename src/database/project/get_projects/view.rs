@@ -11,10 +11,11 @@ use crate::database::users::get_project_users::view::ProjectMemberRow;
 pub struct ProjectFilters {
     /// Case-insensitive substring of the title or the description.
     pub search: Option<String>,
-    /// Status groups kept: `active`, `suspended`, `completed`, `other` (any other stored value).
+    /// Status groups kept: `todo`, `active`, `review`, `suspended`, `completed`, `other` (any other
+    /// stored value).
     pub statuses: Vec<&'static str>,
-    /// Priorities kept (`low`, `medium`, `high`): the highest priority of the project's tasks,
-    /// `medium` (the default priority of a task) when it has none. The database has no `urgent`.
+    /// Priorities kept (`low`, `medium`, `high`): the stored priority of the project (MAIR-558). The
+    /// database has no `urgent`.
     pub priorities: Vec<&'static str>,
     /// Keeps the projects whose earliest task due date is at or before this instant.
     pub due_before: Option<DateTime<Utc>>,
@@ -72,19 +73,19 @@ impl ApiRequestDto for GetProjectsQueryView {
                 SELECT p.id, p.title, p.description, p.status, p.created_at, \
                        COALESCE(a.tasks_total, 0) AS tasks_total, \
                        COALESCE(a.tasks_completed, 0) AS tasks_completed, \
-                       COALESCE(a.top_priority::text, 'medium') AS priority, \
+                       p.priority::text AS priority, \
                        a.next_due_date AS due_date \
                 FROM projects p \
                 LEFT JOIN LATERAL ( \
                     SELECT count(*) AS tasks_total, \
                            count(*) FILTER (WHERE t.status = 'completed') AS tasks_completed, \
-                           max(t.priority) AS top_priority, min(t.due_date) AS next_due_date \
+                           min(t.due_date) AS next_due_date \
                     FROM tasks t WHERE t.project_id = p.id) a ON true \
                 WHERE ",
             crate::project_visible_to_user_sql!(),
             " AND ($2 = '' OR strpos(lower(p.title), lower($2)) > 0 \
                      OR strpos(lower(COALESCE(p.description, '')), lower($2)) > 0) \
-                  AND ($3 = '' OR (CASE WHEN p.status::text IN ('active', 'suspended', 'completed') \
+                  AND ($3 = '' OR (CASE WHEN p.status::text IN ('todo', 'active', 'review', 'suspended', 'completed') \
                                    THEN p.status::text ELSE 'other' END) = ANY (string_to_array($3, ','))) \
              ), filtered AS MATERIALIZED ( \
                 SELECT * FROM matched m \
@@ -100,10 +101,13 @@ impl ApiRequestDto for GetProjectsQueryView {
              SELECT jsonb_build_object( \
                 'total', (SELECT count(*) FROM filtered), \
                 'by_status', (SELECT jsonb_build_object( \
+                    'todo', count(*) FILTER (WHERE status = 'todo'), \
                     'active', count(*) FILTER (WHERE status = 'active'), \
+                    'review', count(*) FILTER (WHERE status = 'review'), \
                     'suspended', count(*) FILTER (WHERE status = 'suspended'), \
                     'completed', count(*) FILTER (WHERE status = 'completed'), \
-                    'other', count(*) FILTER (WHERE status::text NOT IN ('active', 'suspended', 'completed'))) \
+                    'other', count(*) FILTER (WHERE status::text NOT IN \
+                        ('todo', 'active', 'review', 'suspended', 'completed'))) \
                     FROM filtered), \
                 'by_priority', (SELECT jsonb_build_object( \
                     'low', count(*) FILTER (WHERE priority = 'low'), \
@@ -137,14 +141,19 @@ impl ApiRequestDto for GetProjectsQueryView {
 /// Number of matching projects per status group.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StatusCounts {
+    // Defaulted: a page cached before MAIR-558 has no `todo` nor `review`.
+    #[serde(default)]
+    pub todo: i64,
     pub active: i64,
+    #[serde(default)]
+    pub review: i64,
     pub suspended: i64,
     pub completed: i64,
-    /// Any other stored status (`todo`, `review`), read as `Error` by the API.
+    /// Any other stored status, read as `Error` by the API.
     pub other: i64,
 }
 
-/// Number of matching projects per priority (the highest priority of their tasks).
+/// Number of matching projects per priority (their stored priority).
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PriorityCounts {
     pub low: i64,
@@ -228,7 +237,7 @@ impl ProjectView {
         self.tasks_completed
     }
 
-    /// Highest priority of its tasks, `medium` when it has none.
+    /// Priority of the project, chosen at its creation or by a PATCH (`medium` by default).
     pub fn priority(&self) -> &str {
         &self.priority
     }

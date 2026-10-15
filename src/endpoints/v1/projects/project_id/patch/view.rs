@@ -1,6 +1,7 @@
 use utoipa::ToSchema;
 
 use crate::endpoints::v1::projects::get::view::ProjectStatus;
+use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
 use crate::endpoints::validation::{
     check_description, check_label, check_optional, Validate, ValidationError,
     MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
@@ -19,8 +20,11 @@ pub struct UpdateProjectView {
     /// Nouvelle description. Absent ou `null` pour ne pas y toucher.
     #[schema(max_length = 5000, example = "Travaux de voirie 2026, phase 2")]
     pub description: Option<String>,
-    /// Nouveau statut. `Error` est refusé : ce n'est qu'une valeur de repli à la lecture.
+    /// New status. `Error` is refused: it is only a fallback on read.
     pub status: Option<ProjectStatus>,
+    /// New priority. Absent or `null` to keep it; `Urgent` is stored `High`, `Error` is refused.
+    #[serde(default)]
+    pub priority: Option<TaskPriority>,
 }
 
 impl Validate for UpdateProjectView {

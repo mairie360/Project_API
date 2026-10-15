@@ -36,8 +36,17 @@ fn create_project_view_accessors() {
     assert_eq!(view.title(), "Titre");
     assert_eq!(view.description(), "Desc");
     assert_eq!(view.owner_id(), 42);
-    assert_eq!(view.query_params().len(), 3);
+    // Status and priority (MAIR-558), empty for the table defaults.
+    assert_eq!(view.query_params().len(), 5);
+    assert_eq!(view.query_params()[3].as_text(), "");
+    assert_eq!(view.query_params()[4].as_text(), "");
     assert!(view.query_sql().contains("INSERT INTO projects"));
+
+    let view = view
+        .with_status(ProjectStatus::Todo)
+        .with_priority(TaskPriority::High);
+    assert_eq!(view.query_params()[3].as_text(), "todo");
+    assert_eq!(view.query_params()[4].as_text(), "high");
 }
 
 #[test]
@@ -118,11 +127,19 @@ fn project_status_from_string_all_branches() {
         ProjectStatus::from("whatever".to_string()),
         ProjectStatus::Active
     );
+    // MAIR-558: `todo` and `review` used to be read back as `active`.
+    assert_eq!(ProjectStatus::from("todo".to_string()), ProjectStatus::Todo);
+    assert_eq!(
+        ProjectStatus::from("review".to_string()),
+        ProjectStatus::Review
+    );
 }
 
 #[test]
 fn project_status_display_all_branches() {
+    assert_eq!(ProjectStatus::Todo.to_string(), "todo");
     assert_eq!(ProjectStatus::Active.to_string(), "active");
+    assert_eq!(ProjectStatus::Review.to_string(), "review");
     assert_eq!(ProjectStatus::Suspended.to_string(), "suspended");
     assert_eq!(ProjectStatus::Archived.to_string(), "archived");
     assert_eq!(ProjectStatus::Completed.to_string(), "completed");

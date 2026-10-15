@@ -43,6 +43,8 @@ async fn a_manager_runs_a_project_end_to_end() {
     assert_eq!(status(&app, task_change).await, 204);
     let tasks = json(&app, get(&format!("{p}tasks/"), s.manager)).await;
     assert_eq!(tasks["total"], 1);
+    let project_change = patch(&p, s.manager, json!({ "priority": "Urgent" }));
+    assert_eq!(status(&app, project_change).await, 204);
     // The list carries the aggregates of the tasks and filters on them (MAIR-474).
     let urgent = json(
         &app,
@@ -57,8 +59,11 @@ async fn a_manager_runs_a_project_end_to_end() {
         .unwrap()
         .iter()
         .find(|project| project["id"] == s.project_id)
-        .expect("the project of the urgent task is listed");
-    assert_eq!(listed["priority"], "High", "an Urgent task is stored High");
+        .expect("the urgent project is listed");
+    assert_eq!(
+        listed["priority"], "High",
+        "an Urgent priority is stored High"
+    );
     assert_eq!(listed["tasks_total"], 1);
     assert_eq!(listed["members_total"], 2);
     assert_eq!(
@@ -132,6 +137,98 @@ async fn removing_a_member_unassigns_their_tasks_in_the_same_write() {
     assert_eq!(status(&app, comment).await, 404);
 }
 
+/// MAIR-558: the status and the priority chosen at creation are stored and read back as given,
+/// instead of `Active` and the highest priority of the tasks; a PATCH of the priority is kept, and
+/// the list filters and counts both.
+#[actix_web::test]
+#[serial]
+async fn mair_558_a_project_keeps_the_status_and_the_priority_it_was_given() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let s = scenario(&ctx, &app).await;
+
+    let created = post(
+        "/api/v1/projects/",
+        s.manager,
+        json!({ "name": "Kermesse de l'école", "status": "Todo", "priority": "High" }),
+    );
+    let project_id = json(&app, created).await["project_id"].as_u64().unwrap();
+    let p = format!("/api/v1/projects/{project_id}/");
+    let project = json(&app, get(&p, s.manager)).await;
+    assert_eq!(project["project"]["status"], "Todo");
+    assert_eq!(project["project"]["priority"], "High");
+
+    // A low task does not lower the priority of the project.
+    let task = post(
+        &format!("{p}tasks/"),
+        s.manager,
+        json!({ "name": "Stands", "fields": [], "priority": "Low" }),
+    );
+    assert_eq!(status(&app, task).await, 200);
+    let todo = json(
+        &app,
+        get(
+            "/api/v1/projects/?status=Todo&priority=High&limit=500",
+            s.manager,
+        ),
+    )
+    .await;
+    let listed: Vec<_> = todo["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|project| project["id"].as_u64().unwrap())
+        .collect();
+    assert!(listed.contains(&project_id), "{todo}");
+    assert!(
+        !listed.contains(&s.project_id),
+        "an Active project is not Todo"
+    );
+    assert_eq!(todo["summary"]["by_status"]["todo"], todo["total"]);
+
+    let changed = patch(
+        &p,
+        s.manager,
+        json!({ "status": "Review", "priority": "Low" }),
+    );
+    assert_eq!(status(&app, changed).await, 204);
+    let project = json(&app, get(&p, s.manager)).await;
+    assert_eq!(project["project"]["status"], "Review");
+    assert_eq!(project["project"]["priority"], "Low");
+    // A PATCH without priority keeps it.
+    let renamed = patch(&p, s.manager, json!({ "name": "Kermesse 2027" }));
+    assert_eq!(status(&app, renamed).await, 204);
+    let project = json(&app, get(&p, s.manager)).await;
+    assert_eq!(project["project"]["priority"], "Low");
+
+    // Without status nor priority, a project is Active and Medium.
+    let plain = post(
+        "/api/v1/projects/",
+        s.manager,
+        json!({ "name": "Sans priorité" }),
+    );
+    let plain_id = json(&app, plain).await["project_id"].as_u64().unwrap();
+    let project = json(
+        &app,
+        get(&format!("/api/v1/projects/{plain_id}/"), s.manager),
+    )
+    .await;
+    assert_eq!(project["project"]["status"], "Active");
+    assert_eq!(project["project"]["priority"], "Medium");
+
+    // `Error` is a read fallback, never written.
+    for body in [
+        json!({ "name": "X", "status": "Error" }),
+        json!({ "name": "X", "priority": "Error" }),
+        json!({ "name": "X", "priority": "Highest" }),
+    ] {
+        let refused = post("/api/v1/projects/", s.manager, body.clone());
+        assert_eq!(status(&app, refused).await, 400, "{body}");
+    }
+    let refused = patch(&p, s.manager, json!({ "priority": "Error" }));
+    assert_eq!(status(&app, refused).await, 400);
+}
+
 /// Invalid filters of the list are refused with a `400` naming the parameter, before any query.
 #[actix_web::test]
 #[serial]
@@ -159,7 +256,7 @@ async fn the_projects_list_refuses_invalid_filters() {
         400
     );
     for query in [
-        "status=Active,Suspended,Completed,Error",
+        "status=Todo,Active,Review,Suspended,Completed,Error",
         "priority=Low,Medium,High",
         "search=march%C3%A9&due_before=2026-12-31T23:59:59Z&due_after=2026-01-01T00:00:00%2B02:00",
     ] {
