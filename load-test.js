@@ -62,6 +62,10 @@ const HOT_ARCHIVED_TASKS = 1800;
 const HOT_MEMBERS = 300;
 const HOT_FEED = 1000;
 const PAGE = 100;
+// Task statuses (MAIR-566): every seeded project gets a copy of the default template `Simple`
+// (seeded by the Database, one status per category), so the hot project has three statuses
+// holding its 2 000 tasks.
+const CATEGORIES = ['Todo', 'InProgress', 'Completed'];
 // Dashboard window of `GET /tasks/` (MAIR-524): init-perf.sql spreads the due dates of an agent's
 // tasks from 10 days ago to 50 days ahead, so a 30-day window always holds some.
 const DUE_WINDOW_DAYS = 30;
@@ -159,6 +163,32 @@ function createTask(projectId, name) {
 
 function deleteTask(projectId, taskId) {
   fixture('DELETE', `/api/v1/projects/${projectId}/tasks/${taskId}/`);
+}
+
+/** A name no other VU or iteration uses: template and status names are unique (409 otherwise). */
+function uniqueName(prefix) {
+  return `${prefix} ${__VU}-${__ITER}-${Date.now()}`;
+}
+
+/** The three statuses of a template, one per category (MAIR-566). */
+function templateStatuses(prefix) {
+  return CATEGORIES.map((category, index) => ({ name: `${prefix} ${index}`, category }));
+}
+
+function createTemplate(name) {
+  return fixture('POST', '/api/v1/project-templates/', {
+    name,
+    description: 'k6 fixture',
+    statuses: templateStatuses('k6'),
+  }).json('template_id');
+}
+
+function deleteTemplate(templateId) {
+  fixture('DELETE', `/api/v1/project-templates/${templateId}/`);
+}
+
+function createStatus(projectId, name) {
+  return fixture('POST', `/api/v1/projects/${projectId}/statuses/`, { name, category: 'InProgress' }).json('status_id');
 }
 
 function addMember(projectId, userId) {
@@ -271,6 +301,38 @@ const readHandlers = {
           && Date.parse(task.due_date) <= Date.parse(dueBefore) && task.project_name),
     });
   },
+  // Project templates (MAIR-566), read by anyone signed in: the Admin, a Responsable or an agent.
+  'GET /api/v1/project-templates/': ({ request }) => {
+    const caller = randomInt(3);
+    const res = caller === 0 ? request() : request({ headers: bearer(caller === 1 ? randomManager() : randomAgent()) });
+    check(res, {
+      'list templates 200': (r) => r.status === 200,
+      'list templates reads the default one first': (r) =>
+        r.status === 200 && r.json('templates').length > 0 && r.json('templates.0.is_default') === true
+        && CATEGORIES.every((category) => r.json('templates.0.statuses').some((status) => status.category === category)),
+    });
+  },
+  'GET /api/v1/project-templates/{template_id}/': ({ request, data }) => {
+    const caller = randomInt(3);
+    const call = { path: { template_id: data.defaultTemplateId } };
+    const res = caller === 0 ? request(call) : request(Object.assign(call, { headers: bearer(caller === 1 ? randomManager() : randomAgent()) }));
+    check(res, {
+      'get template 200': (r) => r.status === 200,
+      'get template reads the default one': (r) =>
+        r.status === 200 && r.json('id') === data.defaultTemplateId && r.json('is_default') === true
+        && r.json('statuses').length >= CATEGORIES.length,
+    });
+  },
+  // The statuses of the hot project (copied from `Simple` by the Database), as a Responsable who
+  // sees it through their team: every one of its tasks, archived included, is in one of them.
+  'GET /api/v1/projects/{project_id}/statuses/': ({ request }) =>
+    check(request({ path: { project_id: HOT_PROJECT_ID }, headers: bearer(randomHotManager()) }), {
+      'list statuses 200': (r) => r.status === 200,
+      'list statuses reads the hot project': (r) =>
+        r.status === 200
+        && CATEGORIES.every((category) => r.json('statuses').some((status) => status.category === category))
+        && r.json('statuses').reduce((total, status) => total + status.task_count, 0) >= HOT_TASKS + HOT_ARCHIVED_TASKS,
+    }),
   'GET /api/v1/projects/{project_id}/users/': ({ request }) =>
     check(
       request({
@@ -352,6 +414,62 @@ const writeHandlers = {
     });
   },
 
+  // Project templates (MAIR-566), as the Admin: create → patch → delete, each on a template of its
+  // own with a unique name (two templates cannot share one).
+  'POST /api/v1/project-templates/': ({ request }) => {
+    const res = request({
+      body: { name: uniqueName('k6 create template'), description: 'Load test', statuses: templateStatuses('k6') },
+    });
+    check(res, { 'create template 200': (r) => r.status === 200 });
+    if (res.status === 200) deleteTemplate(res.json('template_id'));
+  },
+  'PATCH /api/v1/project-templates/{template_id}/': ({ request }) => {
+    const templateId = createTemplate(uniqueName('k6 patch template'));
+    check(
+      request({
+        path: { template_id: templateId },
+        body: { name: uniqueName('k6 patched template'), statuses: templateStatuses('k6 patched') },
+      }),
+      { 'patch template 204': (r) => r.status === 204 },
+    );
+    deleteTemplate(templateId);
+  },
+  'DELETE /api/v1/project-templates/{template_id}/': ({ request }) => {
+    const templateId = createTemplate(uniqueName('k6 delete template'));
+    check(request({ path: { template_id: templateId } }), {
+      'delete template 204': (r) => r.status === 204,
+    });
+  },
+
+  // Task statuses (MAIR-566), on a project of their own (it starts with the three statuses of
+  // `Simple`): add → patch → delete a fourth one, which holds no task and is not the last of its
+  // category, so it can go without `move_to`.
+  'POST /api/v1/projects/{project_id}/statuses/': ({ request }) => {
+    const projectId = createProject('k6 add status');
+    check(
+      request({ path: { project_id: projectId }, body: { name: 'À valider', category: 'InProgress', color: '#D97706', position: 2 } }),
+      { 'add status 200': (r) => r.status === 200 },
+    );
+    deleteProject(projectId);
+  },
+  'PATCH /api/v1/projects/{project_id}/statuses/{status_id}/': ({ request }) => {
+    const projectId = createProject('k6 patch status');
+    const statusId = createStatus(projectId, 'À valider');
+    check(
+      request({ path: { project_id: projectId, status_id: statusId }, body: { name: 'En validation', color: '#7C3AED', position: 0 } }),
+      { 'patch status 204': (r) => r.status === 204 },
+    );
+    deleteProject(projectId);
+  },
+  'DELETE /api/v1/projects/{project_id}/statuses/{status_id}/': ({ request }) => {
+    const projectId = createProject('k6 delete status');
+    const statusId = createStatus(projectId, 'À valider');
+    check(request({ path: { project_id: projectId, status_id: statusId } }), {
+      'delete status 204': (r) => r.status === 204,
+    });
+    deleteProject(projectId);
+  },
+
   // Members, on a project of their own: two VUs adding the same user to a shared project would
   // answer 409.
   'POST /api/v1/projects/{project_id}/users/': ({ request }) => {
@@ -428,8 +546,15 @@ export const options = {
   },
 };
 
-/** Read fixtures: a project with a member, a task (its creation is logged) and a comment. */
+/**
+ * Read fixtures: a project with a member, a task (its creation is logged) and a comment, and the
+ * id of the default template (`Simple`, seeded by the Database, MAIR-566).
+ */
 export function setup() {
+  const defaultTemplate = fixture('GET', '/api/v1/project-templates/')
+    .json('templates')
+    .find((template) => template.is_default);
+  if (!defaultTemplate) fail('no default project template: the Database image lacks MAIR-566');
   const projectId = createProject('k6 read fixture');
   addMember(projectId, MEMBER_ID);
   const taskId = createTask(projectId, 'k6 read task');
@@ -437,7 +562,7 @@ export function setup() {
   const writeProjectId = createProject('k6 write sandbox');
   // Tasks are assigned to MEMBER_ID, who must belong to the project (MAIR-393).
   addMember(writeProjectId, MEMBER_ID);
-  return { projectId, taskId, writeProjectId };
+  return { projectId, taskId, writeProjectId, defaultTemplateId: defaultTemplate.id };
 }
 
 export function teardown(data) {
