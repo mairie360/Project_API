@@ -98,13 +98,15 @@ SELECT 87, 100001 + c % 300, 'Perf comment ' || c, now() - c * interval '1 minut
 FROM generate_series(1, 1000) AS c
 WHERE NOT EXISTS (SELECT 1 FROM task_comments WHERE task_id = 87 AND message = 'Perf comment 1');
 
--- 1 000 status changes of task 87, logged by fn_log_task_change like real writes.
+-- 1 000 status changes of task 87, logged by fn_log_task_change like real writes. Only the three
+-- categories still in use: since MAIR-566 the database reads `review` as `in_progress`, so a cycle
+-- through it would skip one change in four and leave the feed under the 1 000 k6 reads.
 DO $$
 BEGIN
     IF (SELECT count(*) FROM task_history WHERE task_id = 87) < 1000 THEN
         FOR i IN 1..1000 LOOP
             UPDATE tasks
-            SET status = (ARRAY['todo', 'in_progress', 'review', 'completed'])[1 + i % 4]::task_status,
+            SET status = (ARRAY['todo', 'in_progress', 'completed'])[1 + i % 3]::task_status,
                 updated_by = 42
             WHERE id = 87;
         END LOOP;
