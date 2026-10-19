@@ -4,7 +4,6 @@
 use chrono::{DateTime, TimeZone, Utc};
 use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
 use mairie360_api_lib::smart_db::SmartDatabase;
-use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use project_api::database::paged::PagedRows;
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::project::get_projects::view::GetProjectsQueryView;
@@ -17,7 +16,7 @@ use project_api::database::tasks::get_visible_tasks::view::{
 use project_api::database::users::add_user_to_project::view::AddUserToProjectQueryView;
 
 use crate::common::fixtures::{create_group, create_user, fixture, set_task_status};
-use crate::common::get_smart_db;
+use crate::common::{fixtures_db, get_smart_db};
 
 async fn project(db: &SmartDatabase, title: &str, owner: u64) -> u64 {
     db.fetch_scalar::<i32, _>(&CreateProjectQueryView::new(title, None, owner))
@@ -75,10 +74,9 @@ fn day(day: u32) -> DateTime<Utc> {
 /// each with its project; the filters on status and due date combine with the assignee.
 #[tokio::test]
 async fn test_visible_tasks_span_projects_by_due_date() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let owner = create_user(&db, "Owner", Some("Responsable")).await;
-    let agent = create_user(&db, "Agent", None).await;
+    let db = get_smart_db().await;
+    let owner = create_user("Owner", Some("Responsable")).await;
+    let agent = create_user("Agent", None).await;
     let market = project(&db, "Place du marché", owner).await;
     let registry = project(&db, "État civil", owner).await;
     for project_id in [market, registry] {
@@ -120,7 +118,7 @@ async fn test_visible_tasks_span_projects_by_due_date() {
     assert_eq!(ids(&due), vec![soon]);
 
     // A status filter.
-    set_task_status(&db, late, "in_progress").await;
+    set_task_status(late, "in_progress").await;
     let in_progress = list(
         &db,
         agent,
@@ -147,13 +145,12 @@ async fn test_visible_tasks_span_projects_by_due_date() {
 /// `completed`, listed with `archived_at` when `completed` is asked for.
 #[tokio::test]
 async fn test_visible_tasks_leave_archived_tasks_out_unless_completed_is_asked() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let owner = create_user(&db, "Owner", None).await;
+    let db = get_smart_db().await;
+    let owner = create_user("Owner", None).await;
     let project_id = project(&db, "Archives", owner).await;
     let active = task(&db, project_id, "Active", Some(day(3)), Some(owner)).await;
     let done = task(&db, project_id, "Done", Some(day(2)), Some(owner)).await;
-    set_task_status(&db, done, "completed").await;
+    set_task_status(done, "completed").await;
 
     assert_eq!(ids(&list(&db, owner, assigned(owner)).await), vec![active]);
     let not_completed = TaskFilters {
@@ -185,16 +182,15 @@ async fn test_visible_tasks_leave_archived_tasks_out_unless_completed_is_asked()
 /// Admin and Maire see them; a Responsable sees those of their team's projects.
 #[tokio::test]
 async fn test_visible_tasks_follow_project_visibility() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let owner = create_user(&db, "Owner", None).await;
-    let teammate = create_user(&db, "Teammate", None).await;
-    let responsable = create_user(&db, "Responsable", Some("Responsable")).await;
-    let foreign_responsable = create_user(&db, "Foreign", Some("Responsable")).await;
-    let outsider = create_user(&db, "Outsider", None).await;
-    let admin = create_user(&db, "Admin", Some("Admin")).await;
-    let maire = create_user(&db, "Maire", Some("Maire")).await;
-    create_group(&db, owner, &[owner, responsable]).await;
+    let db = get_smart_db().await;
+    let owner = create_user("Owner", None).await;
+    let teammate = create_user("Teammate", None).await;
+    let responsable = create_user("Responsable", Some("Responsable")).await;
+    let foreign_responsable = create_user("Foreign", Some("Responsable")).await;
+    let outsider = create_user("Outsider", None).await;
+    let admin = create_user("Admin", Some("Admin")).await;
+    let maire = create_user("Maire", Some("Maire")).await;
+    create_group(owner, &[owner, responsable]).await;
     let project_id = project(&db, "Confidentiel", owner).await;
     let secret = task(&db, project_id, "Secret", Some(day(4)), Some(owner)).await;
 
@@ -220,9 +216,8 @@ async fn test_visible_tasks_follow_project_visibility() {
 /// `total` counts every match while the page holds `limit` tasks from `offset`, in order.
 #[tokio::test]
 async fn test_visible_tasks_are_paged_with_a_total() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let owner = create_user(&db, "Owner", None).await;
+    let db = get_smart_db().await;
+    let owner = create_user("Owner", None).await;
     let project_id = project(&db, "Pagination", owner).await;
     let mut created = Vec::new();
     for n in 1..=5 {
@@ -278,8 +273,11 @@ async fn plan<Q: ApiRequestDto>(db: &SmartDatabase, view: &Q) -> serde_json::Val
         sql: Box::leak(format!("EXPLAIN (FORMAT JSON) {}", view.query_sql()).into_boxed_str()),
         params: view.query_params().to_vec(),
     };
-    // Fresh statistics, so the planner sees the tasks the tests just wrote.
-    db.execute(fixture("ANALYZE tasks".to_string()))
+    // Fresh statistics, so the planner sees the tasks the tests just wrote. ANALYZE needs the
+    // table owner: it is set-up, so it runs as the superuser (MAIR-556).
+    fixtures_db()
+        .await
+        .execute(fixture("ANALYZE tasks".to_string()))
         .await
         .unwrap();
     let mut tx = db.begin().await.unwrap();
@@ -335,13 +333,12 @@ fn assert_tasks_read_through_an_index(plan: &serde_json::Value, what: &str) {
 /// `idx_tasks_project_id` for the list aggregates), never by a sequential scan.
 #[tokio::test]
 async fn test_task_reads_use_an_index_on_tasks() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let owner = create_user(&db, "Owner", None).await;
+    let db = get_smart_db().await;
+    let owner = create_user("Owner", None).await;
     let project_id = project(&db, "Plan", owner).await;
     task(&db, project_id, "Indexée", Some(day(7)), Some(owner)).await;
 
-    let admin = create_user(&db, "Admin", Some("Admin")).await;
+    let admin = create_user("Admin", Some("Admin")).await;
     let dashboard = GetVisibleTasksQueryView::new(
         admin,
         &TaskFilters {

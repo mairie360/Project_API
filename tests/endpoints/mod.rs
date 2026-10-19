@@ -20,11 +20,11 @@ use actix_web::web;
 use mairie360_api_lib::jwt_manager::generate_jwt;
 use mairie360_api_lib::smart_db::SmartDatabase;
 use mairie360_api_lib::state::AppState;
-use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use mairie360_api_lib::test_setup::redis_setup::start_redis_container;
 use serde_json::Value;
 
 use crate::common::fixtures::create_user;
+use crate::common::project_db_url;
 
 /// Signs a JWT for `user_id` with the test secret.
 pub fn jwt_for(user_id: u64) -> String {
@@ -41,7 +41,8 @@ fn set_jwt_env() {
     });
 }
 
-/// The app state handed to the test app; its `SmartDatabase` also seeds the fixtures.
+/// The app state handed to the test app. It connects as `project_api`, like in staging
+/// (MAIR-556); the fixtures go through the superuser (`common::fixtures`).
 pub struct TestContext {
     pub state: web::Data<AppState>,
     /// The Redis container of [`TestContext::with_redis`], stopped when the context is dropped.
@@ -51,11 +52,11 @@ pub struct TestContext {
 impl TestContext {
     pub async fn new() -> Self {
         set_jwt_env();
-        let (_container, pg_url) = get_shared_db().await;
         // Redis is not needed: the test JWTs carry no session id, so the revocation list is never
         // read, and without Redis the read caches (MAIR-524) are bypassed (every read hits
         // Postgres). `with_redis` is the context of the cache tests.
-        let state = AppState::new("redis://127.0.0.1:6379".to_string(), pg_url.to_string()).await;
+        let state =
+            AppState::new("redis://127.0.0.1:6379".to_string(), project_db_url().await).await;
         Self {
             state: web::Data::new(state),
             _redis: None,
@@ -66,9 +67,8 @@ impl TestContext {
     /// read cache tests (MAIR-524).
     pub async fn with_redis() -> Self {
         set_jwt_env();
-        let (_container, pg_url) = get_shared_db().await;
         let (redis, config) = start_redis_container().await;
-        let state = AppState::new(config.url.clone(), pg_url.to_string()).await;
+        let state = AppState::new(config.url.clone(), project_db_url().await).await;
         Self {
             state: web::Data::new(state),
             _redis: Some(Box::new(redis)),
@@ -80,7 +80,7 @@ impl TestContext {
     }
 
     pub async fn user(&self, name: &str, role: Option<&str>) -> u64 {
-        create_user(self.db(), name, role).await
+        create_user(name, role).await
     }
 }
 

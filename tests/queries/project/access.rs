@@ -1,6 +1,5 @@
 use crate::common::fixtures::create_user;
 use crate::common::get_smart_db;
-use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use project_api::database::project::access::view::{ProjectAccess, ProjectAccessQueryView};
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::tasks::create_task::view::{
@@ -10,12 +9,11 @@ use project_api::database::users::add_user_to_project::view::AddUserToProjectQue
 
 #[tokio::test]
 async fn test_project_access_distinguishes_managers_assignees_and_outsiders() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let owner = create_user(&db, "Owner", Some("User")).await;
-    let assignee = create_user(&db, "Assignee", Some("User")).await;
-    let outsider = create_user(&db, "Outsider", Some("Responsable")).await;
-    let maire = create_user(&db, "Maire", Some("Maire")).await;
+    let db = get_smart_db().await;
+    let owner = create_user("Owner", Some("User")).await;
+    let assignee = create_user("Assignee", Some("User")).await;
+    let outsider = create_user("Outsider", Some("Responsable")).await;
+    let maire = create_user("Maire", Some("Maire")).await;
     let project_id = db
         .fetch_scalar::<i32, _>(&CreateProjectQueryView::new("Droits", None, owner))
         .await
@@ -109,9 +107,8 @@ async fn test_project_lock_serializes_writes_on_a_project() {
     use crate::common::fixtures::fixture;
     use project_api::database::project::access::view::LockProjectQueryView;
 
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let owner = create_user(&db, "Owner", Some("Responsable")).await;
+    let db = get_smart_db().await;
+    let owner = create_user("Owner", Some("Responsable")).await;
     let project_id = db
         .fetch_scalar::<i32, _>(&CreateProjectQueryView::new("Verrou", None, owner))
         .await

@@ -1,11 +1,9 @@
 use crate::common::get_smart_db;
-use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use project_api::database::project::create::view::CreateProjectQueryView;
 
 #[tokio::test]
 async fn test_create_project_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
 
     let view = CreateProjectQueryView::new("Test Project", Some("Test Description"), 1);
 
@@ -26,8 +24,7 @@ async fn test_create_project_success() {
 
 #[tokio::test]
 async fn test_create_project_none_description_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
 
     let view = CreateProjectQueryView::new("Test Project", None, 1);
 
@@ -48,8 +45,7 @@ async fn test_create_project_none_description_success() {
 
 #[tokio::test]
 async fn test_create_project_unknown_owner() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
 
     let view = CreateProjectQueryView::new("Test Project", Some("Test Description"), 999);
 
