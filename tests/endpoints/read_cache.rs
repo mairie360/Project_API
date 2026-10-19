@@ -8,6 +8,7 @@ use serial_test::serial;
 
 use super::{delete, get, json, patch, post, status, TestApp, TestContext};
 use crate::common::fixtures::{fixture, unique_suffix};
+use crate::common::fixtures_db;
 use crate::init_app;
 
 /// The projects of `user` whose name holds `tag`, read through the API.
@@ -16,8 +17,9 @@ async fn listed<B: MessageBody>(app: &impl TestApp<B>, user: u64, tag: &str) -> 
 }
 
 /// Renames the project behind the API's back: no invalidation, only a read from Postgres sees it.
-async fn rename_in_database(ctx: &TestContext, project_id: u64, title: &str) {
-    ctx.db()
+async fn rename_in_database(project_id: u64, title: &str) {
+    fixtures_db()
+        .await
         .execute(fixture(format!(
             "UPDATE projects SET title = '{title}' WHERE id = {project_id}"
         )))
@@ -49,7 +51,7 @@ async fn the_projects_list_is_served_from_the_cache_until_a_write() {
     let first = listed(&app, manager, &tag).await;
     assert_eq!(first["projects"][0]["name"], format!("Marché {tag}"));
 
-    rename_in_database(&ctx, project_id, &format!("Halles {tag}")).await;
+    rename_in_database(project_id, &format!("Halles {tag}")).await;
     let cached = listed(&app, manager, &tag).await;
     assert_eq!(cached, first, "second read served from the cache");
     // Another query string is another entry, read from Postgres.

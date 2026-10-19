@@ -1,14 +1,12 @@
 use crate::common::fixtures::create_user;
 use crate::common::get_smart_db;
-use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use project_api::database::paged::PagedRows;
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::project::get_projects::view::{GetProjectsQueryView, ProjectView};
 
 #[tokio::test]
 async fn test_get_project_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
 
     let view = CreateProjectQueryView::new("Test Project", Some("Test Description"), 1);
     let result = db.fetch_scalar::<i32, _>(&view).await;
@@ -39,8 +37,7 @@ async fn test_get_project_success() {
 
 #[tokio::test]
 async fn test_get_project_none_description_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
 
     let view = CreateProjectQueryView::new("Test Project", None, 1);
     let result = db.fetch_scalar::<i32, _>(&view).await;
@@ -71,8 +68,7 @@ async fn test_get_project_none_description_success() {
 
 #[tokio::test]
 async fn test_get_project_unknown_user() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
 
     let view = GetProjectsQueryView::new(999_999, 100, 0);
     let result = db
@@ -95,9 +91,8 @@ async fn test_get_project_unknown_user() {
 
 #[tokio::test]
 async fn test_get_projects_is_paginated_with_an_exact_total() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let owner = create_user(&db, "Pager", None).await;
+    let db = get_smart_db().await;
+    let owner = create_user("Pager", None).await;
     let mut ids = Vec::new();
     for title in ["A", "B", "C"] {
         ids.push(
@@ -130,6 +125,7 @@ async fn test_get_projects_is_paginated_with_an_exact_total() {
 mod aggregates {
     use super::*;
     use crate::common::fixtures::{fixture, unique_suffix};
+    use crate::common::fixtures_db;
     use chrono::{TimeZone, Utc};
     use mairie360_api_lib::smart_db::SmartDatabase;
     use project_api::database::project::get_projects::view::{ProjectFilters, ProjectsPage};
@@ -167,7 +163,7 @@ mod aggregates {
     /// November, 6 members), `idle` (default priority, no task, suspended) and `low` (low priority,
     /// one low task without due date).
     async fn scenario(db: &SmartDatabase) -> (u64, String, [i32; 3]) {
-        let owner = create_user(db, "Aggregator", None).await;
+        let owner = create_user("Aggregator", None).await;
         let tag = unique_suffix();
         let mut ids = [0; 3];
         for (i, (name, priority)) in [
@@ -214,7 +210,7 @@ mod aggregates {
         .await;
         task(db, ids[2], owner, TaskStatus::Todo, TaskPriority::Low, None).await;
         for name in ["Zoé", "Anne", "Bruno", "Chloé", "David", "Emma"] {
-            let member = create_user(db, name, None).await;
+            let member = create_user(name, None).await;
             db.execute(AddUserToProjectQueryView::new(
                 u64::try_from(ids[0]).unwrap(),
                 member,
@@ -222,12 +218,14 @@ mod aggregates {
             .await
             .unwrap();
         }
-        db.execute(fixture(format!(
-            "UPDATE projects SET status = 'suspended' WHERE id = {}",
-            ids[1]
-        )))
-        .await
-        .unwrap();
+        fixtures_db()
+            .await
+            .execute(fixture(format!(
+                "UPDATE projects SET status = 'suspended' WHERE id = {}",
+                ids[1]
+            )))
+            .await
+            .unwrap();
         (owner, tag, ids)
     }
 
@@ -239,8 +237,7 @@ mod aggregates {
 
     #[tokio::test]
     async fn every_project_carries_the_aggregates_of_its_tasks_and_its_first_members() {
-        let (_container, host) = get_shared_db().await;
-        let db = get_smart_db(host.to_string()).await;
+        let db = get_smart_db().await;
         let (owner, _, ids) = scenario(&db).await;
 
         let result = page(&db, owner, ProjectFilters::default()).await;
@@ -298,8 +295,7 @@ mod aggregates {
 
     #[tokio::test]
     async fn the_filters_combine_and_the_summary_counts_the_matching_projects() {
-        let (_container, host) = get_shared_db().await;
-        let db = get_smart_db(host.to_string()).await;
+        let db = get_smart_db().await;
         let (owner, tag, ids) = scenario(&db).await;
         let ids_of =
             |page: &ProjectsPage| page.items.iter().map(ProjectView::id).collect::<Vec<_>>();
@@ -401,9 +397,8 @@ mod aggregates {
     /// filters and counts the `todo` and `review` statuses instead of folding them into `other`.
     #[tokio::test]
     async fn mair_558_the_list_filters_on_the_stored_status_and_priority() {
-        let (_container, host) = get_shared_db().await;
-        let db = get_smart_db(host.to_string()).await;
-        let owner = create_user(&db, "Kanban", None).await;
+        let db = get_smart_db().await;
+        let owner = create_user("Kanban", None).await;
         let tag = unique_suffix();
         let todo = db
             .fetch_scalar::<i32, _>(

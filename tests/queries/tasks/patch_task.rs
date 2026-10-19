@@ -1,7 +1,6 @@
 use crate::common::fixtures::create_user;
 use crate::common::get_smart_db;
 use mairie360_api_lib::smart_db::SmartDatabase;
-use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use project_api::database::paged::PagedRows;
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::tasks::collaboration::view::{
@@ -61,8 +60,7 @@ async fn patch(
 
 #[tokio::test]
 async fn test_patch_task_updates_only_provided_fields() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let (project_id, task_id) = create_task(&db).await;
     let due = chrono::DateTime::parse_from_rfc3339("2026-11-02T08:30:00Z")
         .unwrap()
@@ -95,8 +93,7 @@ async fn test_patch_task_updates_only_provided_fields() {
 
 #[tokio::test]
 async fn test_patch_task_persists_description_and_fields() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let (project_id, task_id) = create_task(&db).await;
     let fields = [DynamicTaskField {
         label: "Date de la réunion".to_string(),
@@ -143,9 +140,8 @@ async fn test_patch_task_persists_description_and_fields() {
 
 #[tokio::test]
 async fn test_patch_task_is_logged_and_signed_by_the_caller() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let editor = create_user(&db, "Hugo", None).await;
+    let db = get_smart_db().await;
+    let editor = create_user("Hugo", None).await;
     let (project_id, task_id) = create_task(&db).await;
 
     assert!(
@@ -193,11 +189,10 @@ async fn test_patch_task_is_logged_and_signed_by_the_caller() {
 
 #[tokio::test]
 async fn test_patch_task_assignee_must_belong_to_the_project() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let (project_id, task_id) = create_task(&db).await;
-    let outsider = create_user(&db, "Outsider", None).await;
-    let member = create_user(&db, "Member", None).await;
+    let outsider = create_user("Outsider", None).await;
+    let member = create_user("Member", None).await;
     db.execute(AddUserToProjectQueryView::new(project_id, member))
         .await
         .unwrap();
@@ -253,8 +248,7 @@ async fn test_patch_task_assignee_must_belong_to_the_project() {
 
 #[tokio::test]
 async fn test_patch_task_of_another_project_is_not_found() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let (project_id, task_id) = create_task(&db).await;
     let rename = || TaskChanges {
         title: Some("Updated Task"),
