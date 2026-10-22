@@ -139,6 +139,25 @@ compose file passes them with `--env-var`: `jwt_admin` (user 1), `jwt_agent` (us
 HS256 token that must be refused (MAIR-680). From a host shell, fill those variables yourself. The scenario creates
 its own project and deletes it at the end, so it is replayable against a persistent database.
 
+Split of the tests (MAIR-262): `cargo test` (unit and handler tests) validates the code, newman validates that the
+running image works. The collection holds, for **every operation of the spec**, its success case and one case per
+documented `400` / `401` / `403` / `404` / `409`, chained in business journeys (templates → project, from a template
+too → members → statuses → tasks, comments, archive → cleanup), each case checking the status and what the front
+relies on. The `429` / `500` cannot be produced on purpose on a healthy stack and stay in the handler tests. Three
+collection-level scripts, identical in every API collection, back it:
+
+- the collection pre-request loads `/api-docs/openapi.json` once (the stack sets `API_DOCS_ENABLED=true`), and the
+  collection test checks every answer against it: documented operation, documented status, content type, and the
+  JSON body against the response schema (`$ref`s inlined);
+- `Every secured operation refuses a missing JWT` replays every `jwt`-secured operation of the spec without a token
+  and expects a documented `401 text/plain`;
+- `OpenAPI coverage`, the last request, fails when an operation has no success case or a documented status above
+  was never answered, and when an entry of the collection variable `openapi_coverage_exceptions` (`"METHOD /path
+  STATUS": "reason"`, `2xx` for the success) is no longer needed. There is none in this API.
+
+A new endpoint therefore fails the integration stack until the collection tests it. The `404` of `GET /api/v1/tasks/`
+(account of the token unknown) uses a token forged for user `2147483647` (`jwt_ghost`).
+
 `tests/routing_test.rs` needs no Docker: it mounts `endpoints::config` under `/api` in an actix test app and checks that every `/api/v1` operation published by `ApiDoc` (the contract `@mairie360/project-api-openapi` is generated from) hits a real route and has no empty segment. It catches a `scope(...)` that drifts from the `doc.rs` nesting or a `#[utoipa::path]` without the right `path` (utoipa appends it to the nest path, so `#[delete("/")]` needs `path = ""`, `#[patch("/close")]` needs `path = "close"`).
 
 Integration tests (`tests/queries/`) require a **running Docker daemon and network access to ghcr.io**: the lib's `test_setup::queries_setup::get_shared_db()` starts a `ghcr.io/mairie360/database` Postgres container (published on a random host port, image tag from `TEST_DB_VERSION` in `.cargo/config.toml`), runs Liquibase migrations against it, truncates + seeds it once per test run, and hands back its **superuser** URL, used by the fixtures only (`tests/common::fixtures_db()`, behind every helper of `tests/common/fixtures.rs`). Everything that runs Project_API's code connects as the `project_api` role, like in staging (MAIR-556): `tests/common::get_smart_db()` (query views) and `TestContext` (`AppState::new(…, project_db_url().await)`, endpoints), both through `get_shared_db_as("project_api")`. A query outside the grants of Database's `api_grants.sql` then fails the test with `permission denied` (SQLSTATE `42501`): add the grant there, never connect the code under test as the superuser. `tests/queries/db_role.rs` checks both sides. The compose stacks connect `project` as `project_api` too (`-Dproject_api_password` passed to Liquibase); postgres, liquibase and the seeder keep the superuser. Real Redis is not needed — no query view sets a `cache_key`, and a failed read-cache invalidation is only logged. Tests drive the query views through `execute` / `fetch_*` and hit real SQL — there is no compile-time query checking.

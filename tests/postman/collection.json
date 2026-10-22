@@ -20,7 +20,145 @@
           "const exp = Math.floor(Date.now() / 1000) + 3600;",
           "const payload = b64url(cryptoJs.enc.Utf8.parse(JSON.stringify({ sub: String(pm.environment.get('admin_user_id')), role: 'admin', exp })));",
           "const secret = cryptoJs.lib.WordArray.random(32);",
-          "pm.environment.set('jwt_hs256', `${header}.${payload}.${b64url(cryptoJs.HmacSHA256(`${header}.${payload}`, secret))}`);"
+          "pm.environment.set('jwt_hs256', `${header}.${payload}.${b64url(cryptoJs.HmacSHA256(`${header}.${payload}`, secret))}`);",
+          "// jwt_ghost (user 2147483647, who does not exist: the cross-project task list answers 404 to its",
+          "// token) is signed by integration_test.sh too.",
+          "if (!pm.environment.get('template_name')) {",
+          "    pm.environment.set('template_name', `Travaux de voirie (newman ${Date.now()})`);",
+          "}",
+          "",
+          "// OpenAPI contract (MAIR-262), identical in every API collection: the spec served by the API",
+          "// under test is loaded once per run, every response is then checked against it (collection test",
+          "// script) and the last request fails when an operation or a documented status was never tested.",
+          "if (!pm.collectionVariables.get('openapi_spec')) {",
+          "    pm.sendRequest(`${pm.environment.get('baseUrl')}/api-docs/openapi.json`, (err, res) => {",
+          "        if (err || res.code !== 200) {",
+          "            throw new Error(`OpenAPI spec unavailable (${err || res.code}): the stack must set SWAGGER_ENABLED=true`);",
+          "        }",
+          "        pm.collectionVariables.set('openapi_spec', res.text());",
+          "        pm.collectionVariables.set('openapi_covered', '[]');",
+          "    });",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// OpenAPI contract (MAIR-262), identical in every API collection: the answer of every request",
+          "// must be documented by the spec of the API under test (operation, status, content type, body",
+          "// schema), and the (operation, status) pair is recorded for the coverage check of the last request.",
+          "const openapi = {",
+          "    spec: () => JSON.parse(pm.collectionVariables.get('openapi_spec')),",
+          "    // The operation of `method path`, literal segments winning over path parameters",
+          "    // (`/formations/catalog/` before `/formations/{formation_id}/`).",
+          "    find: (spec, method, path) => {",
+          "        const candidates = Object.keys(spec.paths)",
+          "            .filter((template) => spec.paths[template][method])",
+          "            .filter((template) => new RegExp(`^${template.replace(/[.*+?^$()|[\\]\\\\]/g, '\\\\$&').replace(/\\{[^}]+\\}/g, '[^/]+')}$`).test(path))",
+          "            .sort((a, b) => (a.match(/\\{/g) || []).length - (b.match(/\\{/g) || []).length);",
+          "        return candidates.length ? { template: candidates[0], operation: spec.paths[candidates[0]][method] } : null;",
+          "    },",
+          "    // JSON schema keywords the validator understands; `$ref`s are inlined, the rest (`format`,",
+          "    // `example`, `description`...) is dropped so unknown formats such as `int64` never fail.",
+          "    clean: (spec, schema, depth = 0) => {",
+          "        if (!schema || typeof schema !== 'object' || depth > 32) return {};",
+          "        if (schema.$ref) {",
+          "            return openapi.clean(spec, schema.$ref.split('/').slice(1).reduce((node, key) => node[key], spec), depth + 1);",
+          "        }",
+          "        const out = {};",
+          "        ['type', 'required', 'enum', 'const', 'minimum', 'maximum', 'minLength', 'maxLength', 'pattern', 'minItems', 'maxItems']",
+          "            .filter((key) => key in schema).forEach((key) => { out[key] = schema[key]; });",
+          "        if (schema.properties) {",
+          "            out.properties = {};",
+          "            Object.keys(schema.properties).forEach((key) => { out.properties[key] = openapi.clean(spec, schema.properties[key], depth + 1); });",
+          "        }",
+          "        if (schema.items) out.items = openapi.clean(spec, schema.items, depth + 1);",
+          "        if (typeof schema.additionalProperties === 'object') out.additionalProperties = openapi.clean(spec, schema.additionalProperties, depth + 1);",
+          "        ['oneOf', 'anyOf', 'allOf'].filter((key) => schema[key]).forEach((key) => { out[key] = schema[key].map((s) => openapi.clean(spec, s, depth + 1)); });",
+          "        return out;",
+          "    },",
+          "    record: (key) => {",
+          "        const covered = JSON.parse(pm.collectionVariables.get('openapi_covered') || '[]');",
+          "        if (!covered.includes(key)) covered.push(key);",
+          "        pm.collectionVariables.set('openapi_covered', JSON.stringify(covered));",
+          "    },",
+          "    // Checks one answer against the spec and records the (operation, status) pair.",
+          "    check: (spec, method, path, code, contentType, text) => {",
+          "        const found = openapi.find(spec, method, path);",
+          "        pm.test(`Contract: ${method.toUpperCase()} ${path} is a documented operation`, () => {",
+          "            pm.expect(found, 'operation in the OpenAPI spec').to.be.an('object');",
+          "        });",
+          "        if (!found) return;",
+          "        const response = found.operation.responses[String(code)];",
+          "        pm.test(`Contract: ${code} is documented for ${method.toUpperCase()} ${found.template}`, () => {",
+          "            pm.expect(Object.keys(found.operation.responses)).to.include(String(code));",
+          "        });",
+          "        if (!response) return;",
+          "        openapi.record(`${method.toUpperCase()} ${found.template} ${code}`);",
+          "        const media = Object.keys(response.content || {});",
+          "        if (!media.length) return;",
+          "        pm.test(`Contract: ${code} answers ${media.join(' or ')}`, () => {",
+          "            pm.expect(media.some((type) => (contentType || '').startsWith(type)), `content-type ${contentType}`).to.be.true;",
+          "        });",
+          "        const json = response.content['application/json'];",
+          "        if (json && json.schema && (contentType || '').startsWith('application/json')) {",
+          "            pm.test(`Contract: ${code} body matches the schema of ${method.toUpperCase()} ${found.template}`, () => {",
+          "                const schema = openapi.clean(spec, json.schema);",
+          "                const errors = [];",
+          "                const validate = (value, s, at) => {",
+          "                    const matches = (o) => { const before = errors.length; validate(value, o, at); const ok = errors.length === before; errors.length = before; return ok; };",
+          "                    if (s.oneOf && s.oneOf.filter(matches).length !== 1) errors.push(`${at}: does not match exactly one oneOf`);",
+          "                    if (s.anyOf && !s.anyOf.some(matches)) errors.push(`${at}: matches no anyOf`);",
+          "                    if (s.allOf) s.allOf.forEach((o) => validate(value, o, at));",
+          "                    const types = s.type === undefined ? null : [].concat(s.type);",
+          "                    const typeOf = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value;",
+          "                    if (types && !types.includes(typeOf) && !(typeOf === 'integer' && types.includes('number'))) { errors.push(`${at}: ${typeOf} instead of ${types.join('|')}`); return; }",
+          "                    if (s.enum && !s.enum.some((e) => JSON.stringify(e) === JSON.stringify(value))) errors.push(`${at}: ${JSON.stringify(value)} not in ${JSON.stringify(s.enum)}`);",
+          "                    if (s.const !== undefined && JSON.stringify(s.const) !== JSON.stringify(value)) errors.push(`${at}: not ${JSON.stringify(s.const)}`);",
+          "                    if (typeof value === 'number') {",
+          "                        if (s.minimum !== undefined && value < s.minimum) errors.push(`${at}: ${value} < ${s.minimum}`);",
+          "                        if (s.maximum !== undefined && value > s.maximum) errors.push(`${at}: ${value} > ${s.maximum}`);",
+          "                    }",
+          "                    if (typeof value === 'string') {",
+          "                        if (s.minLength !== undefined && value.length < s.minLength) errors.push(`${at}: shorter than ${s.minLength}`);",
+          "                        if (s.maxLength !== undefined && value.length > s.maxLength) errors.push(`${at}: longer than ${s.maxLength}`);",
+          "                        if (s.pattern && !new RegExp(s.pattern, 'u').test(value)) errors.push(`${at}: does not match ${s.pattern}`);",
+          "                    }",
+          "                    if (Array.isArray(value)) {",
+          "                        if (s.minItems !== undefined && value.length < s.minItems) errors.push(`${at}: fewer than ${s.minItems} items`);",
+          "                        if (s.maxItems !== undefined && value.length > s.maxItems) errors.push(`${at}: more than ${s.maxItems} items`);",
+          "                        if (s.items) value.forEach((v, i) => validate(v, s.items, `${at}[${i}]`));",
+          "                    }",
+          "                    if (typeOf === 'object') {",
+          "                        (s.required || []).filter((key) => !(key in value)).forEach((key) => errors.push(`${at}.${key}: required`));",
+          "                        Object.keys(value).forEach((key) => {",
+          "                            if (s.properties && s.properties[key]) validate(value[key], s.properties[key], `${at}.${key}`);",
+          "                            else if (s.additionalProperties) validate(value[key], s.additionalProperties, `${at}.${key}`);",
+          "                        });",
+          "                    }",
+          "                };",
+          "                validate(JSON.parse(text), schema, '$');",
+          "                pm.expect(errors, errors.join('\\n')).to.be.empty;",
+          "            });",
+          "        }",
+          "    },",
+          "};",
+          "// A request may opt out with `pm.variables.set('openapi_contract', 'skip')` in its pre-request",
+          "// script, saying why (API_template checks its JWT gate on an undocumented scope).",
+          "if (pm.collectionVariables.get('openapi_spec') && !pm.request.url.getPath().startsWith('/api-docs')",
+          "    && pm.variables.get('openapi_contract') !== 'skip') {",
+          "    openapi.check(",
+          "        openapi.spec(),",
+          "        pm.request.method.toLowerCase(),",
+          "        pm.variables.replaceIn(pm.request.url.getPath()),",
+          "        pm.response.code,",
+          "        pm.response.headers.get('Content-Type'),",
+          "        pm.response.text(),",
+          "    );",
+          "}"
         ]
       }
     }
@@ -131,6 +269,74 @@
             }
           ],
           "response": []
+        }
+      ]
+    },
+    {
+      "name": "Every secured operation refuses a missing JWT",
+      "item": [
+        {
+          "name": "Every secured operation refuses a missing JWT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Every operation declaring `security((\"jwt\" = []))` answers 401 text/plain without a token",
+                  "// (MAIR-262): a new secured endpoint is covered as soon as it is documented. Path parameters take",
+                  "// the spec's example, or 1; the guard answers before the handler reads the path or the body.",
+                  "const spec = JSON.parse(pm.collectionVariables.get('openapi_spec'));",
+                  "const covered = JSON.parse(pm.collectionVariables.get('openapi_covered') || '[]');",
+                  "const operations = [];",
+                  "Object.keys(spec.paths).forEach((template) => {",
+                  "    Object.keys(spec.paths[template]).filter((method) => ['get', 'post', 'put', 'patch', 'delete'].includes(method)).forEach((method) => {",
+                  "        const operation = spec.paths[template][method];",
+                  "        if (!(operation.security || spec.security || []).some((requirement) => 'jwt' in requirement)) return;",
+                  "        const params = {};",
+                  "        (operation.parameters || []).filter((p) => p.in === 'path').forEach((p) => { params[p.name] = p.example !== undefined ? p.example : 1; });",
+                  "        const path = template.replace(/\\{([^}]+)\\}/g, (_, name) => encodeURIComponent(params[name] !== undefined ? params[name] : 1));",
+                  "        operations.push({ method: method.toUpperCase(), template, path, documented: Object.keys(operation.responses) });",
+                  "    });",
+                  "});",
+                  "let pending = operations.length;",
+                  "if (pending === 0) console.log('The spec declares no jwt-secured operation.');",
+                  "operations.forEach((op) => {",
+                  "    pm.sendRequest({",
+                  "        url: `${pm.environment.get('baseUrl')}${op.path}`,",
+                  "        method: op.method,",
+                  "        header: { 'Content-Type': 'application/json' },",
+                  "        body: ['POST', 'PUT', 'PATCH'].includes(op.method) ? { mode: 'raw', raw: '{}' } : undefined,",
+                  "    }, (err, res) => {",
+                  "        pm.test(`${op.method} ${op.template} without JWT answers a documented 401 text/plain`, () => {",
+                  "            pm.expect(err).to.not.be.ok;",
+                  "            pm.expect(res.code).to.eql(401);",
+                  "            pm.expect(op.documented).to.include('401');",
+                  "            pm.expect(res.headers.get('Content-Type') || '').to.match(/^text\\/plain/);",
+                  "        });",
+                  "        if (!err && res.code === 401) covered.push(`${op.method} ${op.template} 401`);",
+                  "        pending -= 1;",
+                  "        if (pending === 0) pm.collectionVariables.set('openapi_covered', JSON.stringify([...new Set(covered)]));",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Replays every jwt-secured operation of the served spec without a token and expects 401."
+          }
         }
       ]
     },
@@ -334,6 +540,777 @@
             }
           ],
           "response": []
+        }
+      ]
+    },
+    {
+      "name": "Templates",
+      "item": [
+        {
+          "name": "List the project templates",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"The default template is listed\", function () {",
+                  "    const template = pm.response.json().templates.find((t) => t.is_default);",
+                  "    pm.expect(template).to.be.an('object');",
+                  "    pm.environment.set('default_template_id', String(template.id));",
+                  "    pm.environment.set('default_template_name', template.name);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create a template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.environment.set(\"template_id\", String((pm.response.json().id ?? pm.response.json().template_id ?? pm.response.json().template.id)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{template_name}}\",\n  \"description\": \"Étude, chantier, réception.\",\n  \"statuses\": [\n    {\n      \"name\": \"Étude\",\n      \"category\": \"Todo\",\n      \"color\": \"#64748B\",\n      \"position\": 0\n    },\n    {\n      \"name\": \"Chantier\",\n      \"category\": \"InProgress\",\n      \"color\": \"#2563EB\",\n      \"position\": 1\n    },\n    {\n      \"name\": \"Réception\",\n      \"category\": \"Completed\",\n      \"color\": \"#16A34A\",\n      \"position\": 2\n    }\n  ],\n  \"custom_fields\": []\n}"
+            }
+          }
+        },
+        {
+          "name": "Creating a template with a taken name answers 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{template_name}}\",\n  \"statuses\": [\n    {\n      \"name\": \"Étude\",\n      \"category\": \"Todo\",\n      \"color\": \"#64748B\",\n      \"position\": 0\n    },\n    {\n      \"name\": \"Chantier\",\n      \"category\": \"InProgress\",\n      \"color\": \"#2563EB\",\n      \"position\": 1\n    },\n    {\n      \"name\": \"Réception\",\n      \"category\": \"Completed\",\n      \"color\": \"#16A34A\",\n      \"position\": 2\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Creating a template with an unknown status category is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{template_name}} bis\",\n  \"statuses\": [\n    {\n      \"name\": \"Fini\",\n      \"category\": \"Done\",\n      \"color\": \"#16A34A\",\n      \"position\": 0\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "An agent cannot create a template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{template_name}} agent\",\n  \"statuses\": [\n    {\n      \"name\": \"Étude\",\n      \"category\": \"Todo\",\n      \"color\": \"#64748B\",\n      \"position\": 0\n    },\n    {\n      \"name\": \"Chantier\",\n      \"category\": \"InProgress\",\n      \"color\": \"#2563EB\",\n      \"position\": 1\n    },\n    {\n      \"name\": \"Réception\",\n      \"category\": \"Completed\",\n      \"color\": \"#16A34A\",\n      \"position\": 2\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Read the template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Name and statuses of the template\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(JSON.stringify(body)).to.include(pm.environment.get('template_name'));",
+                  "    pm.expect(JSON.stringify(body)).to.include('Chantier');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{template_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "A template id that is not an integer is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/abc/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "abc",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unknown template answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/2147483647/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "2147483647",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update the template description",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{template_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Étude, chantier, réception des travaux.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "The template reflects the update",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Description is updated\", function () {",
+                  "    pm.expect(JSON.stringify(pm.response.json())).to.include('réception des travaux');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{template_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Updating a template with a blank name is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{template_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \" \"\n}"
+            }
+          }
+        },
+        {
+          "name": "An agent cannot update a template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{template_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"x\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Updating an unknown template answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/2147483647/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "2147483647",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"x\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Renaming a template to a taken name answers 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{template_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{default_template_name}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "An agent cannot delete a template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{template_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Deleting a template with an id that is not an integer is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/abc/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "abc",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Deleting an unknown template answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/2147483647/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "2147483647",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "The default template cannot be deleted",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{default_template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{default_template_id}}",
+                ""
+              ]
+            }
+          }
         }
       ]
     },
@@ -874,6 +1851,411 @@
             }
           ],
           "response": []
+        },
+        {
+          "name": "A project list with a negative limit is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/?limit=-1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "-1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "A project id that is not an integer is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/abc/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "abc",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Updating an unknown project answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/2147483647/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "2147483647",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"x\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Deleting a project with an id that is not an integer is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/abc/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "abc",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Deleting an unknown project answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/2147483647/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "2147483647",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Closing a project with an id that is not an integer is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/abc/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "abc",
+                "close"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Closing an unknown project answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/2147483647/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "2147483647",
+                "close"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create a project from the template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.environment.set(\"templated_project_id\", String(pm.response.json().project_id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Rénovation de l'école (newman)\",\n  \"template_id\": {{template_id}}\n}"
+            }
+          }
+        },
+        {
+          "name": "The project starts with the statuses of the template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Statuses copied from the template\", function () {",
+                  "    pm.expect(pm.response.json().statuses.map((s) => s.name)).to.include.members(['Étude', 'Chantier', 'Réception']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{templated_project_id}}/statuses/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{templated_project_id}}",
+                "statuses",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete the project created from the template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{templated_project_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{templated_project_id}}",
+                ""
+              ]
+            }
+          }
         }
       ]
     },
@@ -1084,6 +2466,1332 @@
             }
           ],
           "response": []
+        },
+        {
+          "name": "A member list with a negative limit is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/users/?limit=-1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "users",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "-1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Members of an unknown project answer 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/2147483647/users/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "2147483647",
+                "users",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Adding a member without user_id is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/users/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "users",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Adding an unknown user answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test(\"Body matches the expected text\", function () {",
+                  "    pm.expect(pm.response.text()).to.eql(\"User not found.\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/users/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "users",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": 2147483647\n}"
+            }
+          }
+        },
+        {
+          "name": "Adding the same member twice answers 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/users/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "users",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{agent_user_id}}\n}"
+            }
+          }
+        },
+        {
+          "name": "A member without rights cannot update the project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"x\"\n}"
+            }
+          }
+        },
+        {
+          "name": "A member without rights cannot close the project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "close"
+              ]
+            }
+          }
+        },
+        {
+          "name": "A member without rights cannot delete the project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "A member without rights cannot remove a member",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/users/1/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "users",
+                "1",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Removing a member with an id that is not an integer is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/users/abc/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "users",
+                "abc",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Removing a member of an unknown project answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/2147483647/users/{{agent_user_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "2147483647",
+                "users",
+                "{{agent_user_id}}",
+                ""
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Statuses",
+      "item": [
+        {
+          "name": "List the statuses of the project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"One status per category at least\", function () {",
+                  "    const statuses = pm.response.json().statuses;",
+                  "    pm.expect(statuses.map((s) => s.category)).to.include.members(['Todo', 'InProgress', 'Completed']);",
+                  "    pm.environment.set('todo_status_id', String(statuses.find((s) => s.category === 'Todo').id));",
+                  "    pm.environment.set('todo_status_name', statuses.find((s) => s.category === 'Todo').name);",
+                  "    pm.environment.set('completed_status_id', String(statuses.find((s) => s.category === 'Completed').id));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "A status list with a project id that is not an integer is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/abc/statuses/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "abc",
+                "statuses",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Statuses of an unknown project answer 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/2147483647/statuses/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "2147483647",
+                "statuses",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add a status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.environment.set(\"new_status_id\", String(pm.response.json().id ?? pm.response.json().status_id ?? pm.response.json().status.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"À valider\",\n  \"category\": \"InProgress\",\n  \"color\": \"#D97706\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Adding a status with a taken name answers 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"À valider\",\n  \"category\": \"InProgress\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Adding a status with an unknown category is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Fini\",\n  \"category\": \"Done\"\n}"
+            }
+          }
+        },
+        {
+          "name": "A member without rights cannot add a status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bloqué\",\n  \"category\": \"InProgress\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Adding a status to an unknown project answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/2147483647/statuses/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "2147483647",
+                "statuses",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bloqué\",\n  \"category\": \"InProgress\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Rename the status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/{{new_status_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                "{{new_status_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"En validation\",\n  \"color\": \"#7C3AED\"\n}"
+            }
+          }
+        },
+        {
+          "name": "The status list reflects the rename",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"New name is listed\", function () {",
+                  "    pm.expect(pm.response.json().statuses.map((s) => s.name)).to.include('En validation');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "A status color that is not #RRGGBB is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/{{new_status_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                "{{new_status_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"color\": \"red\"\n}"
+            }
+          }
+        },
+        {
+          "name": "A member without rights cannot update a status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/{{new_status_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                "{{new_status_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"x\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Updating an unknown status answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test(\"Body matches the expected text\", function () {",
+                  "    pm.expect(pm.response.text()).to.eql(\"Unknown status.\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/2147483647/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                "2147483647",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"x\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Renaming a status to a taken name answers 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/{{new_status_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                "{{new_status_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{todo_status_name}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "The last status of a category cannot be deleted",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/{{completed_status_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                "{{completed_status_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Deleting a status with a move_to that is not an integer is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/{{new_status_id}}/?move_to=abc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                "{{new_status_id}}",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "move_to",
+                  "value": "abc"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "A member without rights cannot delete a status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/{{new_status_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                "{{new_status_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Deleting an unknown status answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/2147483647/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                "2147483647",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete the status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/statuses/{{new_status_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "statuses",
+                "{{new_status_id}}",
+                ""
+              ]
+            }
+          }
         }
       ]
     },
@@ -1330,6 +4038,794 @@
           "response": []
         },
         {
+          "name": "A task list with a negative limit is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/?limit=-1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "-1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Tasks of an unknown project answer 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/2147483647/tasks/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "2147483647",
+                "tasks",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Creating a task in an unknown project answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/2147483647/tasks/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "2147483647",
+                "tasks",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"x\",\n  \"fields\": []\n}"
+            }
+          }
+        },
+        {
+          "name": "Read the task",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Name of the task\", function () {",
+                  "    pm.expect(JSON.stringify(pm.response.json())).to.include('Consulter les riverains');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/{{task_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                "{{task_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "A task id that is not an integer is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/abc/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                "abc",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unknown task answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/2147483647/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                "2147483647",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Moving a task to a status of another project is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/{{task_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                "{{task_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status_id\": 2147483647\n}"
+            }
+          }
+        },
+        {
+          "name": "Updating an unknown task answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/2147483647/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                "2147483647",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"x\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Deleting a task with an id that is not an integer is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/abc/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                "abc",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create a task nobody is assigned to",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.environment.set(\"unassigned_task_id\", String(pm.response.json().task_id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Commander les panneaux de chantier\",\n  \"fields\": []\n}"
+            }
+          }
+        },
+        {
+          "name": "An agent not assigned to the task cannot read its collaboration",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/{{unassigned_task_id}}/collaboration",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                "{{unassigned_task_id}}",
+                "collaboration"
+              ]
+            }
+          }
+        },
+        {
+          "name": "An agent not assigned to the task cannot comment it",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/{{unassigned_task_id}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                "{{unassigned_task_id}}",
+                "comments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Je m'en occupe.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Commenting an unknown task answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/2147483647/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                "2147483647",
+                "comments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"x\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Complete the unassigned task",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/{{unassigned_task_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                "{{unassigned_task_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Completed\"\n}"
+            }
+          }
+        },
+        {
+          "name": "The completed task is archived",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/{{unassigned_task_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                "{{unassigned_task_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "List the archived tasks",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"The completed task is listed\", function () {",
+                  "    pm.expect(JSON.stringify(pm.response.json())).to.include('Commander les panneaux de chantier');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/archived-tasks/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "archived-tasks",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "Archived tasks with a negative limit are rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/archived-tasks/?limit=-1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "archived-tasks",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "-1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Archived tasks of an unknown project answer 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/2147483647/archived-tasks/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "2147483647",
+                "archived-tasks",
+                ""
+              ]
+            }
+          }
+        },
+        {
           "name": "Agent changes the task status",
           "request": {
             "method": "PATCH",
@@ -1443,6 +4939,86 @@
             }
           ],
           "response": []
+        },
+        {
+          "name": "A cross-project task list with an unknown status is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tasks/?status=Done",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "Done"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "The cross-project task list of an account that does not exist answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_ghost}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tasks/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                ""
+              ]
+            }
+          }
         },
         {
           "name": "Agent cannot rename the task",
@@ -1730,6 +5306,52 @@
             }
           ],
           "response": []
+        },
+        {
+          "name": "A collaboration with an unknown comment order is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/tasks/{{task_id}}/collaboration?comments_order=newest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "tasks",
+                "{{task_id}}",
+                "collaboration"
+              ],
+              "query": [
+                {
+                  "key": "comments_order",
+                  "value": "newest"
+                }
+              ]
+            }
+          }
         },
         {
           "name": "Task of an unknown project answers 404",
@@ -2148,8 +5770,162 @@
             }
           ],
           "response": []
+        },
+        {
+          "name": "Delete the template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{template_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "The deleted template answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{template_id}}",
+                ""
+              ]
+            }
+          }
         }
       ]
+    },
+    {
+      "name": "OpenAPI coverage",
+      "item": [
+        {
+          "name": "OpenAPI coverage",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// OpenAPI coverage (MAIR-262), last request of the collection: every documented operation has",
+                  "// at least one success case, and each documented 400/401/403/404/409/412 has a case of its own.",
+                  "// 429, 500, 502 and 503 cannot be produced on purpose on a healthy stack: the handler tests",
+                  "// (`cargo test`) cover them. Any other gap is listed in the collection variable",
+                  "// `openapi_coverage_exceptions` ({ \"METHOD /template STATUS\": \"reason\" }, `2xx` for the success",
+                  "// case); an exception that is covered or no longer documented fails too, so it never goes stale.",
+                  "const spec = JSON.parse(pm.collectionVariables.get('openapi_spec'));",
+                  "const covered = JSON.parse(pm.collectionVariables.get('openapi_covered') || '[]');",
+                  "const exceptions = JSON.parse(pm.collectionVariables.get('openapi_coverage_exceptions') || '{}');",
+                  "const required = [];",
+                  "Object.keys(spec.paths).forEach((template) => {",
+                  "    Object.keys(spec.paths[template]).filter((method) => ['get', 'post', 'put', 'patch', 'delete'].includes(method)).forEach((method) => {",
+                  "        const op = `${method.toUpperCase()} ${template}`;",
+                  "        const statuses = Object.keys(spec.paths[template][method].responses);",
+                  "        if (statuses.some((s) => s.startsWith('2'))) {",
+                  "            required.push({ key: `${op} 2xx`, covered: statuses.some((s) => s.startsWith('2') && covered.includes(`${op} ${s}`)) });",
+                  "        }",
+                  "        statuses.filter((s) => ['400', '401', '403', '404', '409', '412'].includes(s))",
+                  "            .forEach((s) => required.push({ key: `${op} ${s}`, covered: covered.includes(`${op} ${s}`) }));",
+                  "    });",
+                  "});",
+                  "const missing = required.filter((r) => !r.covered && !(r.key in exceptions)).map((r) => r.key);",
+                  "const stale = Object.keys(exceptions).filter((key) => !required.some((r) => r.key === key && !r.covered));",
+                  "pm.test(`Every documented operation and status is tested (${covered.length} covered)`, () => {",
+                  "    pm.expect(missing, `not tested:\\n${missing.join('\\n')}`).to.be.empty;",
+                  "});",
+                  "pm.test('Every coverage exception is still needed', () => {",
+                  "    pm.expect(stale, `stale exceptions:\\n${stale.join('\\n')}`).to.be.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Fails when a documented operation or status was never tested by this collection."
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "openapi_spec",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "openapi_covered",
+      "value": "[]",
+      "type": "string"
+    },
+    {
+      "key": "openapi_coverage_exceptions",
+      "value": "{}",
+      "type": "string"
     }
   ]
 }
