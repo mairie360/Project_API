@@ -2994,6 +2994,7 @@ dependencies = [
  "url",
  "utoipa",
  "utoipa-swagger-ui",
+ "yaml_serde",
 ]
 
 [[package]]

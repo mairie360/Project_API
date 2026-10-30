@@ -4,6 +4,7 @@
 //! status codes of every handler.
 
 pub mod access;
+pub mod access_matrix;
 pub mod flows;
 pub mod read_cache;
 pub mod service;
