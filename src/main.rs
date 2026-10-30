@@ -12,6 +12,7 @@ use actix_web::{middleware, web, App, HttpServer};
 use project_api::database::pg_url::build_pg_url;
 use project_api::endpoints::swagger::{api_docs_enabled, ApiDoc, API_DOCS_ENABLED};
 use project_api::endpoints::{config, health};
+use project_api::request_log::request_logger;
 
 use mairie360_api_lib::env_manager::{get_critical_env_var, get_env_var};
 use mairie360_api_lib::logging::telemetry::{init_telemetry, TracingLogger};
@@ -49,7 +50,8 @@ async fn main() -> std::io::Result<()> {
     let server = HttpServer::new(move || {
         App::new()
             .app_data(data.clone())
-            .wrap(middleware::Logger::default())
+            // Method and path only, never the query string (MAIR-290, see `request_log`).
+            .wrap(request_logger())
             // One span per request (MAIR-503), including those refused by `JwtMiddleware`; it
             // continues the `traceparent` of the BFF.
             .wrap(TracingLogger::default())
