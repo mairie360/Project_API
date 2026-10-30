@@ -85,9 +85,30 @@ macro_rules! assignable_to_project_sql {
     };
 }
 
+/// SQL condition "status `$status` is given and is not a status of project `$project`" (MAIR-566).
+/// Both are placeholders such as `"$10"`.
+#[macro_export]
+macro_rules! status_outside_project_sql {
+    ($project:literal, $status:literal) => {
+        concat!(
+            "(",
+            $status,
+            "::int IS NOT NULL AND NOT EXISTS (SELECT 1 FROM project_task_statuses ps WHERE ps.id = ",
+            $status,
+            " AND ps.project_id = ",
+            $project,
+            "))"
+        )
+    };
+}
+
 /// Id returned by [`CreateTaskQueryView`] when `assigned_to` is neither the owner nor a member of the
 /// project: nothing is inserted (task ids start at 1).
 pub const ASSIGNEE_NOT_IN_PROJECT: i32 = 0;
+
+/// Id returned by [`CreateTaskQueryView`] when `status_id` is not a status of the project
+/// (MAIR-566): nothing is inserted.
+pub const STATUS_NOT_IN_PROJECT: i32 = -1;
 
 /// Creates a task signed by `created_by` (`tasks.updated_by`, which the history trigger records as the
 /// author of `task_created`) and returns its id, or [`ASSIGNEE_NOT_IN_PROJECT`].
@@ -120,8 +141,17 @@ impl CreateTaskQueryView {
                 QueryParam::Text(serde_json::json!({ "fields": fields }).to_string()),
                 QueryParam::Text(description.to_string()),
                 QueryParam::I32(id_to_sql(created_by)),
+                QueryParam::OptionI32(None),
             ],
         }
+    }
+
+    /// Creates the task in this status of the project (MAIR-566): the database gives it the
+    /// status's category, whatever `status` says.
+    #[must_use]
+    pub fn with_status_id(mut self, status_id: Option<u64>) -> Self {
+        self.params[9] = QueryParam::OptionI32(status_id.map(id_to_sql));
+        self
     }
 
     pub fn project_id(&self) -> u64 {
@@ -138,18 +168,27 @@ impl ApiRequestDto for CreateTaskQueryView {
         concat!(
             "WITH inserted AS ( \
                 INSERT INTO tasks (project_id, title, status, priority, due_date, assigned_to, \
-                                   custom_fields, description, updated_by) \
+                                   custom_fields, description, updated_by, status_id) \
                 SELECT $1, $2, $3::task_status, $4::task_priority, \
-                       NULLIF($5, '')::timestamptz AT TIME ZONE 'UTC', $6, $7::jsonb, $8, $9 \
-                WHERE $6::int IS NULL OR ",
+                       NULLIF($5, '')::timestamptz AT TIME ZONE 'UTC', $6, $7::jsonb, $8, $9, $10 \
+                WHERE (NOT ",
+            crate::status_outside_project_sql!("$1", "$10"),
+            ") AND ($6::int IS NULL OR ",
             crate::assignable_to_project_sql!("$1", "$6"),
-            " RETURNING id \
+            ") RETURNING id \
              ) \
-             SELECT COALESCE((SELECT id FROM inserted), 0)"
+             SELECT COALESCE((SELECT id FROM inserted), \
+                             CASE WHEN ",
+            crate::status_outside_project_sql!("$1", "$10"),
+            " THEN -1 ELSE 0 END)"
         )
     }
 
     fn query_params(&self) -> &[QueryParam] {
         &self.params
+    }
+
+    fn invalidated_read_caches(&self) -> &'static [&'static str] {
+        crate::database::project::PROJECTS_READ_CACHES
     }
 }

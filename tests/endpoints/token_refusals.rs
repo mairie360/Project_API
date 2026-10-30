@@ -171,7 +171,7 @@ async fn every_secured_operation_refuses_an_unknown_or_archived_account() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
     let archived = ctx.user("Archived", Some("Admin")).await;
-    archive_user(ctx.db(), archived).await;
+    archive_user(archived).await;
 
     for (method, uri) in secured_operations(1) {
         for (label, holder) in [

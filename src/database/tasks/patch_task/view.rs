@@ -12,15 +12,24 @@ pub struct TaskChanges<'a> {
     pub title: Option<&'a str>,
     pub description: Option<&'a str>,
     pub status: Option<TaskStatus>,
+    /// A status of the task's project (MAIR-566); the database sets the category from it.
+    pub status_id: Option<u64>,
     pub priority: Option<TaskPriority>,
     pub due_date: Option<chrono::DateTime<chrono::Utc>>,
     pub assigned_to: Option<Option<u64>>,
     pub fields: Option<&'a [DynamicTaskField]>,
 }
 
+/// [`PatchTaskQueryView`]: the task was updated.
+pub const TASK_UPDATED: i32 = 1;
+/// The task is not in this project, or the new assignee neither owns nor is a member of it.
+pub const TASK_NOT_UPDATED: i32 = 0;
+/// `status_id` is not a status of the task's project (MAIR-566).
+pub const TASK_STATUS_NOT_IN_PROJECT: i32 = -1;
+
 /// Updates a task of a project, signed by `updated_by` (the history trigger records the changes under
-/// that author). Returns `true` if the task exists in this project and the new assignee, if any, owns
-/// or is a member of the project; nothing is written otherwise.
+/// that author). Returns [`TASK_UPDATED`], or [`TASK_STATUS_NOT_IN_PROJECT`] / [`TASK_NOT_UPDATED`]
+/// when nothing is written.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PatchTaskQueryView {
     params: Vec<QueryParam>,
@@ -47,6 +56,7 @@ impl PatchTaskQueryView {
                         .unwrap_or_default(),
                 ),
                 QueryParam::I32(id_to_sql(updated_by)),
+                QueryParam::OptionI32(changes.status_id.map(id_to_sql)),
             ],
         }
     }
@@ -69,6 +79,7 @@ impl ApiRequestDto for PatchTaskQueryView {
                 UPDATE tasks SET \
                     title = COALESCE(NULLIF($3, ''), title), \
                     status = COALESCE(NULLIF($4, '')::task_status, status), \
+                    status_id = COALESCE($13::int, status_id), \
                     priority = COALESCE(NULLIF($5, '')::task_priority, priority), \
                     due_date = COALESCE(NULLIF($6, '')::timestamptz AT TIME ZONE 'UTC', due_date), \
                     assigned_to = CASE WHEN $7 THEN $8 ELSE assigned_to END, \
@@ -77,16 +88,24 @@ impl ApiRequestDto for PatchTaskQueryView {
                         ELSE jsonb_set(COALESCE(custom_fields, '{}'::jsonb), '{fields}', $11::jsonb, true) END, \
                     updated_by = $12, \
                     updated_at = CURRENT_TIMESTAMP \
-                WHERE id = $1 AND project_id = $2 \
-                  AND (NOT $7 OR $8::int IS NULL OR ",
+                WHERE id = $1 AND project_id = $2 AND NOT ",
+            crate::status_outside_project_sql!("$2", "$13"),
+            " AND (NOT $7 OR $8::int IS NULL OR ",
             crate::assignable_to_project_sql!("$2", "$8"),
             ") RETURNING id \
              ) \
-             SELECT EXISTS (SELECT 1 FROM updated)"
+             SELECT CASE WHEN EXISTS (SELECT 1 FROM updated) THEN 1 \
+                         WHEN ",
+            crate::status_outside_project_sql!("$2", "$13"),
+            " THEN -1 ELSE 0 END"
         )
     }
 
     fn query_params(&self) -> &[QueryParam] {
         &self.params
+    }
+
+    fn invalidated_read_caches(&self) -> &'static [&'static str] {
+        crate::database::project::PROJECTS_READ_CACHES
     }
 }

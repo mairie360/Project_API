@@ -74,12 +74,14 @@ async fn trigger_get_project_tasks(
         PageParams,
     ),
     path = "",
-    summary = "List the tasks of a project",
-    description = "Returns one page of the tasks of the project, oldest first, with their \
+    summary = "List the active tasks of a project",
+    description = "Returns one page of the active tasks of the project, oldest first, with their \
                    description, status, priority, due date, assignee and custom fields. Being a \
                    member of the project is enough.\n\n\
                    `limit` (default 100, at most 500) and `offset` (default 0) select the page; \
-                   `total` is the number of tasks of the project, whatever the page.\n\n\
+                   `total` is the number of active tasks of the project, whatever the page. A \
+                   `Completed` task is archived (MAIR-502) and listed by \
+                   `GET /api/v1/projects/{project_id}/archived-tasks/` instead.\n\n\
                    `GET /api/v1/projects/{project_id}/` already returns the first page of these \
                    tasks with the project and its members: this endpoint refreshes or pages \
                    through the task list alone.",
@@ -97,6 +99,7 @@ async fn trigger_get_project_tasks(
                         "status": "InProgress",
                         "priority": "High",
                         "due_date": "2026-10-15T00:00:00Z",
+                        "archived_at": null,
                         "assigned_to": 42,
                         "fields": [
                             { "label": "Date de la réunion", "task_type": "date", "fields_options": [] }

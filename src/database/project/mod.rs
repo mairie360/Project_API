@@ -6,6 +6,18 @@ pub mod get_projects;
 pub mod update;
 pub mod update_status;
 
+use mairie360_api_lib::smart_db::ReadCache;
+
+/// Read cache of `GET /api/v1/projects/` (MAIR-524): one entry per caller and query string, kept
+/// 30 seconds. Every write view that changes what the list shows (a project, its tasks, its
+/// members) lists [`PROJECTS_READ_CACHES`] in `invalidated_read_caches`, so a write through this
+/// API is visible on the next read. Roles and groups live in `Core_API`, which cannot invalidate
+/// it: a visibility change made there shows within the TTL.
+pub const PROJECTS_READ_CACHE: ReadCache = ReadCache::new("projects", 30);
+
+/// The read caches a write on a project, a task or a membership invalidates.
+pub const PROJECTS_READ_CACHES: &[&str] = &[PROJECTS_READ_CACHE.namespace()];
+
 /// SQL condition "project `p` is visible to user `$1`", by role:
 /// - Admin or Maire: every project;
 /// - Responsable: their projects, those they are a member of, and those of their team (a member of

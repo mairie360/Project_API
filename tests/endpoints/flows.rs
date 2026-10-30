@@ -43,6 +43,33 @@ async fn a_manager_runs_a_project_end_to_end() {
     assert_eq!(status(&app, task_change).await, 204);
     let tasks = json(&app, get(&format!("{p}tasks/"), s.manager)).await;
     assert_eq!(tasks["total"], 1);
+    let project_change = patch(&p, s.manager, json!({ "priority": "Urgent" }));
+    assert_eq!(status(&app, project_change).await, 204);
+    // The list carries the aggregates of the tasks and filters on them (MAIR-474).
+    let urgent = json(
+        &app,
+        get(
+            "/api/v1/projects/?priority=High&status=Active&limit=500",
+            s.manager,
+        ),
+    )
+    .await;
+    let listed = urgent["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|project| project["id"] == s.project_id)
+        .expect("the urgent project is listed");
+    assert_eq!(
+        listed["priority"], "High",
+        "an Urgent priority is stored High"
+    );
+    assert_eq!(listed["tasks_total"], 1);
+    assert_eq!(listed["members_total"], 2);
+    assert_eq!(
+        urgent["summary"]["by_priority"]["high"], urgent["total"],
+        "the summary counts the matching projects"
+    );
 
     let comment = post(
         &format!("{t}comments"),
@@ -108,4 +135,315 @@ async fn removing_a_member_unassigns_their_tasks_in_the_same_write() {
         json!({ "message": "Encore là ?" }),
     );
     assert_eq!(status(&app, comment).await, 404);
+}
+
+/// MAIR-558: the status and the priority chosen at creation are stored and read back as given,
+/// instead of `Active` and the highest priority of the tasks; a PATCH of the priority is kept, and
+/// the list filters and counts both.
+#[actix_web::test]
+#[serial]
+async fn mair_558_a_project_keeps_the_status_and_the_priority_it_was_given() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let s = scenario(&ctx, &app).await;
+
+    let created = post(
+        "/api/v1/projects/",
+        s.manager,
+        json!({ "name": "Kermesse de l'école", "status": "Todo", "priority": "High" }),
+    );
+    let project_id = json(&app, created).await["project_id"].as_u64().unwrap();
+    let p = format!("/api/v1/projects/{project_id}/");
+    let project = json(&app, get(&p, s.manager)).await;
+    assert_eq!(project["project"]["status"], "Todo");
+    assert_eq!(project["project"]["priority"], "High");
+
+    // A low task does not lower the priority of the project.
+    let task = post(
+        &format!("{p}tasks/"),
+        s.manager,
+        json!({ "name": "Stands", "fields": [], "priority": "Low" }),
+    );
+    assert_eq!(status(&app, task).await, 200);
+    let todo = json(
+        &app,
+        get(
+            "/api/v1/projects/?status=Todo&priority=High&limit=500",
+            s.manager,
+        ),
+    )
+    .await;
+    let listed: Vec<_> = todo["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|project| project["id"].as_u64().unwrap())
+        .collect();
+    assert!(listed.contains(&project_id), "{todo}");
+    assert!(
+        !listed.contains(&s.project_id),
+        "an Active project is not Todo"
+    );
+    assert_eq!(todo["summary"]["by_status"]["todo"], todo["total"]);
+
+    let changed = patch(
+        &p,
+        s.manager,
+        json!({ "status": "Review", "priority": "Low" }),
+    );
+    assert_eq!(status(&app, changed).await, 204);
+    let project = json(&app, get(&p, s.manager)).await;
+    assert_eq!(project["project"]["status"], "Review");
+    assert_eq!(project["project"]["priority"], "Low");
+    // A PATCH without priority keeps it.
+    let renamed = patch(&p, s.manager, json!({ "name": "Kermesse 2027" }));
+    assert_eq!(status(&app, renamed).await, 204);
+    let project = json(&app, get(&p, s.manager)).await;
+    assert_eq!(project["project"]["priority"], "Low");
+
+    // Without status nor priority, a project is Active and Medium.
+    let plain = post(
+        "/api/v1/projects/",
+        s.manager,
+        json!({ "name": "Sans priorité" }),
+    );
+    let plain_id = json(&app, plain).await["project_id"].as_u64().unwrap();
+    let project = json(
+        &app,
+        get(&format!("/api/v1/projects/{plain_id}/"), s.manager),
+    )
+    .await;
+    assert_eq!(project["project"]["status"], "Active");
+    assert_eq!(project["project"]["priority"], "Medium");
+
+    // `Error` is a read fallback, never written.
+    for body in [
+        json!({ "name": "X", "status": "Error" }),
+        json!({ "name": "X", "priority": "Error" }),
+        json!({ "name": "X", "priority": "Highest" }),
+    ] {
+        let refused = post("/api/v1/projects/", s.manager, body.clone());
+        assert_eq!(status(&app, refused).await, 400, "{body}");
+    }
+    let refused = patch(&p, s.manager, json!({ "priority": "Error" }));
+    assert_eq!(status(&app, refused).await, 400);
+}
+
+/// A date picker sends the due date alone (`2026-11-05`): task creation and update accept it as
+/// midnight UTC of that day, instead of answering `400` (MAIR-559).
+#[actix_web::test]
+#[serial]
+async fn mair_559_a_task_due_date_may_be_a_date_alone() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let s = scenario(&ctx, &app).await;
+    let tasks = format!("/api/v1/projects/{}/tasks/", s.project_id);
+
+    let created = post(
+        &tasks,
+        s.manager,
+        json!({ "name": "Préparer la salle", "fields": [], "due_date": "2026-11-05" }),
+    );
+    let task_id = json(&app, created).await["task_id"].as_u64().unwrap();
+    let task = format!("{tasks}{task_id}/");
+    let read = json(&app, get(&task, s.manager)).await;
+    assert_eq!(read["due_date"], "2026-11-05T00:00:00Z");
+
+    let moved = patch(&task, s.manager, json!({ "due_date": "2026-12-01" }));
+    assert_eq!(status(&app, moved).await, 204);
+    let read = json(&app, get(&task, s.manager)).await;
+    assert_eq!(read["due_date"], "2026-12-01T00:00:00Z");
+
+    // A date-time is still accepted, and `null` leaves the due date unchanged.
+    let precise = patch(
+        &task,
+        s.manager,
+        json!({ "due_date": "2026-12-02T09:30:00+01:00" }),
+    );
+    assert_eq!(status(&app, precise).await, 204);
+    let kept = patch(
+        &task,
+        s.manager,
+        json!({ "due_date": null, "name": "Salle" }),
+    );
+    assert_eq!(status(&app, kept).await, 204);
+    let read = json(&app, get(&task, s.manager)).await;
+    assert_eq!(read["due_date"], "2026-12-02T08:30:00Z");
+
+    for due_date in ["05/11/2026", "2026-02-30", ""] {
+        let refused = post(
+            &tasks,
+            s.manager,
+            json!({ "name": "X", "fields": [], "due_date": due_date }),
+        );
+        assert_eq!(status(&app, refused).await, 400, "{due_date}");
+        let refused = patch(&task, s.manager, json!({ "due_date": due_date }));
+        assert_eq!(status(&app, refused).await, 400, "{due_date}");
+    }
+}
+
+/// Invalid filters of the list are refused with a `400` naming the parameter, before any query.
+#[actix_web::test]
+#[serial]
+async fn the_projects_list_refuses_invalid_filters() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let user = ctx.user("Filterer", None).await;
+
+    for query in [
+        "status=active",
+        "status=Active,",
+        "priority=Highest",
+        "priority=Urgent",
+        "priority=",
+        "due_before=2026-13-01T00:00:00Z",
+        "due_after=tomorrow",
+        "search=a%00b",
+    ] {
+        let request = get(&format!("/api/v1/projects/?{query}"), user);
+        assert_eq!(status(&app, request).await, 400, "{query}");
+    }
+    let long = "a".repeat(256);
+    assert_eq!(
+        status(&app, get(&format!("/api/v1/projects/?search={long}"), user)).await,
+        400
+    );
+    for query in [
+        "status=Todo,Active,Review,Suspended,Completed,Error",
+        "priority=Low,Medium,High",
+        "search=march%C3%A9&due_before=2026-12-31T23:59:59Z&due_after=2026-01-01T00:00:00%2B02:00",
+    ] {
+        let request = get(&format!("/api/v1/projects/?{query}"), user);
+        assert_eq!(status(&app, request).await, 200, "{query}");
+    }
+}
+
+/// One task read alone (MAIR-474): whoever sees the project sees it; a task of another project, an unknown
+/// task or a project out of sight answer 404.
+#[actix_web::test]
+#[serial]
+async fn a_task_is_read_alone_by_whoever_sees_its_project() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let s = scenario(&ctx, &app).await;
+
+    for viewer in [s.manager, s.member, s.assignee] {
+        let task = json(&app, get(&s.task(), viewer)).await;
+        assert_eq!(task["id"], s.task_id, "viewer {viewer}");
+        assert_eq!(task["assigned_to"], s.assignee);
+        assert_eq!(task["title"], "Consulter les riverains");
+    }
+    for outsider in [s.outsider, s.outsider_manager] {
+        assert_eq!(status(&app, get(&s.task(), outsider)).await, 404);
+    }
+    let unknown = format!("/api/v1/projects/{}/tasks/{}/", s.project_id, i32::MAX);
+    assert_eq!(status(&app, get(&unknown, s.manager)).await, 404);
+
+    // The same task through another project the manager sees is not found.
+    let other = json(
+        &app,
+        post(
+            "/api/v1/projects/",
+            s.manager,
+            serde_json::json!({ "name": "Autre projet", "description": "" }),
+        ),
+    )
+    .await;
+    let elsewhere = format!(
+        "/api/v1/projects/{}/tasks/{}/",
+        other["project_id"], s.task_id
+    );
+    assert_eq!(status(&app, get(&elsewhere, s.manager)).await, 404);
+}
+
+/// A completed task is archived (MAIR-502): it leaves the active tasks of the project detail and of
+/// the task list, is counted in `tasks_archived` and listed by `…/archived-tasks/`; reopened, it
+/// comes back.
+#[actix_web::test]
+#[serial]
+async fn a_completed_task_moves_to_the_archived_tasks_and_back_when_reopened() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let s = scenario(&ctx, &app).await;
+    let p = s.project();
+    let ids = |page: &serde_json::Value| -> Vec<u64> {
+        page["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|task| task["id"].as_u64().unwrap())
+            .collect()
+    };
+
+    let before = json(&app, get(&p, s.member)).await;
+    assert_eq!(ids(&before), vec![s.task_id]);
+    assert_eq!(before["tasks_archived"], 0);
+
+    // The assignee completes their task.
+    let done = patch(
+        &s.task(),
+        s.assignee,
+        serde_json::json!({ "status": "Completed" }),
+    );
+    assert_eq!(status(&app, done).await, 204);
+
+    let detail = json(&app, get(&p, s.member)).await;
+    assert!(ids(&detail).is_empty(), "{detail}");
+    assert_eq!(
+        (
+            detail["tasks_total"].clone(),
+            detail["tasks_archived"].clone()
+        ),
+        (0.into(), 1.into())
+    );
+    let active = json(&app, get(&format!("{p}tasks/"), s.member)).await;
+    assert_eq!(active["total"], 0);
+    let archived = json(&app, get(&format!("{p}archived-tasks/"), s.member)).await;
+    assert_eq!(ids(&archived), vec![s.task_id]);
+    assert_eq!(archived["total"], 1);
+    assert!(archived["tasks"][0]["archived_at"].is_string());
+    // Still readable alone, with its archive date.
+    let task = json(&app, get(&s.task(), s.member)).await;
+    assert!(task["archived_at"].is_string());
+
+    let reopened = patch(
+        &s.task(),
+        s.manager,
+        serde_json::json!({ "status": "InProgress" }),
+    );
+    assert_eq!(status(&app, reopened).await, 204);
+    let after = json(&app, get(&p, s.member)).await;
+    assert_eq!(ids(&after), vec![s.task_id]);
+    assert_eq!(after["tasks_archived"], 0);
+    assert!(after["tasks"][0]["archived_at"].is_null());
+    let none = json(&app, get(&format!("{p}archived-tasks/"), s.member)).await;
+    assert_eq!(none["total"], 0);
+
+    // The follow-up can be read from the latest comment; any other order is refused.
+    let latest = json(
+        &app,
+        get(
+            &format!("{}collaboration?comments_order=latest&limit=1", s.task()),
+            s.manager,
+        ),
+    )
+    .await;
+    assert!(latest["comments"].is_array());
+    assert_eq!(
+        status(
+            &app,
+            get(
+                &format!("{}collaboration?comments_order=newest", s.task()),
+                s.manager
+            )
+        )
+        .await,
+        400
+    );
+
+    // Like the active list, the archived one needs the project to be visible.
+    assert_eq!(
+        status(&app, get(&format!("{p}archived-tasks/"), s.outsider)).await,
+        404
+    );
 }

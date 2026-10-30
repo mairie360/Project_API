@@ -7,8 +7,11 @@
 --   Responsable owning a group of 20 agents: load-test.js signs their tokens to read as a
 --   non-admin, the expensive branch of `project_visible_to_user_sql!`;
 -- - 5 000 projects owned by the agents, 5 members each, 10 tasks each (50 000 tasks, their
---   `task_created` history written by the database trigger);
--- - project 12 (init-test.sql) becomes the hot project: 300 members, 2 000 tasks, and task 87
+--   `task_created` history written by the database trigger), each assigned to a member: an
+--   agent has 20 to 30 tasks over 2 or 3 projects. Four tasks out of five have a due date spread
+--   from 10 days ago to 50 days ahead (MAIR-524: `GET /tasks/?assigned_to=…&due_before=…`, the
+--   dashboard's pending tasks), the fifth none;
+-- - project 12 (init-test.sql) becomes the hot project: 300 members, 2 000 tasks (1 800 completed, hence archived), and task 87
 --   gets 1 000 comments and 1 000 status changes, so its pages are read deep.
 --
 -- Fixed ids, ON CONFLICT DO NOTHING / NOT EXISTS: the file is idempotent, like init-test.sql.
@@ -48,10 +51,13 @@ CROSS JOIN LATERAL (
 ) m
 ON CONFLICT DO NOTHING;
 
--- Project 1000 + p is owned by agent 100001 + p % 2000, created over the last 500 days.
-INSERT INTO projects (id, title, description, owner_id, created_at)
+-- Project 1000 + p is owned by agent 100001 + p % 2000, created over the last 500 days. Its
+-- priority is its own (MAIR-558): one project in three is high, project 0 first, so every
+-- `search=perf project <n>` of the filtered list (n < 50) matches a high project.
+INSERT INTO projects (id, title, description, owner_id, created_at, priority)
 SELECT 1000 + p, 'Perf project ' || p, 'Performance seed',
-       100001 + p % 2000, now() - (p % 500) * interval '1 day' - p * interval '1 second'
+       100001 + p % 2000, now() - (p % 500) * interval '1 day' - p * interval '1 second',
+       (ARRAY['high', 'medium', 'low'])[1 + p % 3]::task_priority
 FROM generate_series(0, 4999) AS p
 ON CONFLICT (id) DO NOTHING;
 
@@ -61,11 +67,14 @@ SELECT 1000 + p, 100001 + (p + k) % 2000
 FROM generate_series(0, 4999) AS p CROSS JOIN generate_series(1, 5) AS k
 ON CONFLICT DO NOTHING;
 
-INSERT INTO tasks (project_id, title, status, priority, assigned_to, updated_by)
+INSERT INTO tasks (project_id, title, status, priority, assigned_to, updated_by, due_date)
 SELECT 1000 + p, 'Perf task ' || t,
        (ARRAY['todo', 'in_progress', 'completed'])[1 + t % 3]::task_status,
        (ARRAY['low', 'medium', 'high'])[1 + t % 3]::task_priority,
-       100001 + (p + 1) % 2000, 100001 + p % 2000
+       100001 + (p + 1) % 2000, 100001 + p % 2000,
+       CASE WHEN t % 5 <> 0
+            THEN date_trunc('day', now() AT TIME ZONE 'UTC') + ((7 * t + p) % 60 - 10) * interval '1 day'
+       END
 FROM generate_series(0, 4999) AS p CROSS JOIN generate_series(1, 10) AS t
 WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE project_id = 1000);
 
@@ -74,8 +83,13 @@ INSERT INTO project_members (project_id, user_id)
 SELECT 12, n FROM generate_series(100001, 100300) AS n
 ON CONFLICT DO NOTHING;
 
-INSERT INTO tasks (project_id, title, status, priority, assigned_to, updated_by)
-SELECT 12, 'Perf hot task ' || t, 'todo', 'medium', 100001 + t % 300, 1
+-- MAIR-502: like a long-lived project, most of them are done, hence archived by the database
+-- (tasks.archived_at): 200 active tasks (t % 10 = 0), 1 800 archived.
+INSERT INTO tasks (project_id, title, status, priority, assigned_to, updated_by, due_date)
+SELECT 12, 'Perf hot task ' || t,
+       (CASE WHEN t % 10 = 0 THEN 'todo' ELSE 'completed' END)::task_status,
+       'medium', 100001 + t % 300, 1,
+       date_trunc('day', now() AT TIME ZONE 'UTC') + (t % 45 - 5) * interval '1 day'
 FROM generate_series(1, 2000) AS t
 WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE project_id = 12 AND title = 'Perf hot task 1');
 
@@ -84,13 +98,15 @@ SELECT 87, 100001 + c % 300, 'Perf comment ' || c, now() - c * interval '1 minut
 FROM generate_series(1, 1000) AS c
 WHERE NOT EXISTS (SELECT 1 FROM task_comments WHERE task_id = 87 AND message = 'Perf comment 1');
 
--- 1 000 status changes of task 87, logged by fn_log_task_change like real writes.
+-- 1 000 status changes of task 87, logged by fn_log_task_change like real writes. Only the three
+-- categories still in use: since MAIR-566 the database reads `review` as `in_progress`, so a cycle
+-- through it would skip one change in four and leave the feed under the 1 000 k6 reads.
 DO $$
 BEGIN
     IF (SELECT count(*) FROM task_history WHERE task_id = 87) < 1000 THEN
         FOR i IN 1..1000 LOOP
             UPDATE tasks
-            SET status = (ARRAY['todo', 'in_progress', 'review', 'completed'])[1 + i % 4]::task_status,
+            SET status = (ARRAY['todo', 'in_progress', 'completed'])[1 + i % 3]::task_status,
                 updated_by = 42
             WHERE id = 87;
         END LOOP;

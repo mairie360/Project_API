@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `project_api` is one microservice in the **mairie360** suite: an Actix-web REST API (port `3001`) that manages projects, their tasks (and task fields) and their user membership. It was scaffolded from a generic "Rust API template" (see `README.md`), so config files still carry `#change api name` / `#change port` placeholders.
 
-Shared infrastructure (DB, Redis, cache-aside, JWT auth, env helpers, test containers) lives in the external crate **`mairie360_api_lib`** (pinned to `1.2.2`) — read its source under `~/.cargo/registry/src/*/mairie360_api_lib-<version>/src/` when an import is unclear. `project_api` has **no direct `sqlx` dependency**; all SQL goes through the library.
+Shared infrastructure (DB, Redis, cache-aside, JWT auth, env helpers, test containers) lives in the external crate **`mairie360_api_lib`** (pinned to `4.2.0`) — read its source under `~/.cargo/registry/src/*/mairie360_api_lib-<version>/src/` when an import is unclear. `project_api` has **no direct `sqlx` dependency**; all SQL goes through the library.
 
-## Data access (`mairie360_api_lib` 1.2.2)
+## Data access (`mairie360_api_lib` 4.2.0)
 
 `AppState` (`mairie360_api_lib::state::AppState`, built once in `main.rs` via `AppState::new(redis_url, pg_url)`) owns a `SmartDatabase` (Postgres + Redis cache-aside) reachable from handlers with `state.get_smart_db()`.
 
@@ -17,6 +17,7 @@ Every DB operation is described by a **query view** — a struct in `src/databas
 - `execute(view)` — INSERT/UPDATE/DELETE, returns `Result<(), ApiLibError>` (no row count, so "not found" is not detectable this way).
 - `fetch_scalar::<T, _>(&view)` — one primitive column (e.g. `RETURNING id` → `i32`).
 - `fetch_one::<T, _>(&view)` / `fetch_all::<T, _>(&view)` — `T: Serialize + DeserializeOwned`; **the SQL must return a single JSON column**, so multi-column reads wrap rows in `to_jsonb(t)`.
+- `cached(&key, async || …)` — read-through Redis cache of a whole page (lib `ReadCache`, MAIR-524). `GET /projects/` is cached under `database::project::PROJECTS_READ_CACHE` (`"projects"`, 30 s, one entry per caller and query string). **Every write view that changes what the list shows** (project create/update/close/delete, task create/patch/delete, member add/remove, unassign) returns `PROJECTS_READ_CACHES` from `invalidated_read_caches`; the lib bumps the namespace generation after `execute` / `fetch_*`, or after `commit()` inside a `SmartTransaction`. A new write view on projects, tasks or members must do the same (`tests/views.rs` lists them). Roles and groups change in Core API, which cannot invalidate it: visibility changes made there show within the TTL.
 
 Ids are `u64` in the API and `INT4` in the database: convert them with the lib's `id_to_sql` / `id_from_sql`
 (saturating, so `2^32 + 1` no longer wraps to row `1`), never with `as`; `src/lib.rs` denies the
@@ -93,7 +94,7 @@ Both the ZAP and k6 stacks carry the OpenAPI coverage gate (MAIR-194) from mairi
 never reached, or when an operation declaring `security(("jwt" = []))` only got 401/403. `load-test.js` is built on
 `coverage.js` and covers every operation (MAIR-195), under a high load on a volume seed (MAIR-474): the performance
 stack's `seeder` also runs `init-perf.sql` (5 000 projects, 50 000 tasks, 2 100 accounts in 100 teams, hot project 12
-with 2 000 tasks, task 87 with 1 000 comments and history entries). GET handlers run in the `reads` scenario (up to
+with 2 000 tasks (200 active, 1 800 completed hence archived, MAIR-502), task 87 with 1 000 comments and history entries; four tasks out of five have a due date from 10 days ago to 50 days ahead, read by `GET /tasks/?assigned_to=…&due_before=…`, MAIR-524). GET handlers run in the `reads` scenario (up to
 100 VUs) as the Admin, a seeded Responsable or a seeded agent (tokens signed in k6 with the stack's `JWT_SECRET`) on
 random pages; the other methods in the `writes` scenario (10 VUs), each handler creating and deleting its own
 project/task so they are order-independent (the task writes share one project, so they also queue on its lock); a
@@ -121,7 +122,7 @@ its own project and deletes it at the end, so it is replayable against a persist
 
 `tests/routing_test.rs` needs no Docker: it mounts `endpoints::config` under `/api` in an actix test app and checks that every `/api/v1` operation published by `ApiDoc` (the contract `@mairie360/project-api-openapi` is generated from) hits a real route and has no empty segment. It catches a `scope(...)` that drifts from the `doc.rs` nesting or a `#[utoipa::path]` without the right `path` (utoipa appends it to the nest path, so `#[delete("/")]` needs `path = ""`, `#[patch("/close")]` needs `path = "close"`).
 
-Integration tests (`tests/queries/`) require a **running Docker daemon and network access to ghcr.io**: each `#[tokio::test]` calls `mairie360_api_lib::test_setup::queries_setup::get_shared_db()`, which starts a `ghcr.io/mairie360/database` Postgres container (published on a random host port), runs Liquibase migrations against it, truncates + seeds it once per test run, and hands back a connection string. `tests/common::get_smart_db(url)` wraps it in a `SmartDatabase` (real Redis not needed — no query view sets a `cache_key`). Tests drive the query views through `execute` / `fetch_*` and hit real SQL — there is no compile-time query checking.
+Integration tests (`tests/queries/`) require a **running Docker daemon and network access to ghcr.io**: the lib's `test_setup::queries_setup::get_shared_db()` starts a `ghcr.io/mairie360/database` Postgres container (published on a random host port, image tag from `TEST_DB_VERSION` in `.cargo/config.toml`), runs Liquibase migrations against it, truncates + seeds it once per test run, and hands back its **superuser** URL, used by the fixtures only (`tests/common::fixtures_db()`, behind every helper of `tests/common/fixtures.rs`). Everything that runs Project_API's code connects as the `project_api` role, like in staging (MAIR-556): `tests/common::get_smart_db()` (query views) and `TestContext` (`AppState::new(…, project_db_url().await)`, endpoints), both through `get_shared_db_as("project_api")`. A query outside the grants of Database's `api_grants.sql` then fails the test with `permission denied` (SQLSTATE `42501`): add the grant there, never connect the code under test as the superuser. `tests/queries/db_role.rs` checks both sides. The compose stacks connect `project` as `project_api` too (`-Dproject_api_password` passed to Liquibase); postgres, liquibase and the seeder keep the superuser. Real Redis is not needed — no query view sets a `cache_key`, and a failed read-cache invalidation is only logged. Tests drive the query views through `execute` / `fetch_*` and hit real SQL — there is no compile-time query checking.
 
 Handler tests (`tests/endpoints/`, MAIR-419) run in the same binary and database: `init_app!` mounts the real
 `/api` scope behind `JwtMiddleware`, `jwt_for(user_id)` signs tokens with a test secret set in-process, and
@@ -131,7 +132,7 @@ scheme, garbage, another secret, an expired token, `alg: none`, a payload swappe
 asymmetric algorithm, and `404` for an unknown or archived account; a new route is covered by documenting it.
 They assert the refusals (`401` without a valid JWT, `404` for a project the caller cannot see, `403` for a
 member without manager role, assignee limited to the status, task reachable only through its own project) and
-an end-to-end manager flow. **A new route or access rule gets its negative test here.** `cargo cov` / `cov_test`
+an end-to-end manager flow. **A new route or access rule gets its negative test here.** `TestContext::new()` points at a Redis that is not running (read caches bypassed); `TestContext::with_redis()` starts a Redis container of its own, used by `read_cache.rs` (cache hit, invalidation after each write family, no entry shared between two callers). `cargo cov` / `cov_test`
 only exclude `main.rs` and `lib.rs`: `endpoints/` counts toward the 60 % line gate.
 
 ## Architecture
@@ -140,7 +141,7 @@ only exclude `main.rs` and `lib.rs`: `endpoints/` counts toward the 60 % line ga
 
 `main` refuses to start while Postgres does not answer: `AppState::new` (lib 3.0.0) retries for `DB_CONNECT_TIMEOUT` seconds (default 30), then panics. `HttpServer` mounts, in order: Swagger UI (`/swagger-ui/*`, `/api-docs/openapi.json`) only when `API_DOCS_ENABLED=true` (`swagger::api_docs_enabled`), the public probes `health::health` (`/health`, liveness, no dependency) and `health::ready` (`/ready`, readiness: Postgres `SELECT 1` + Redis read, 2 s each; `200 ready` or `503 not ready: postgres, redis` — MAIR-423), then `web::scope("/api").wrap(JwtMiddleware).configure(endpoints::config)`. Everything under `/api` requires a valid JWT (the probes are not mounted there); handlers get the caller via the `AuthenticatedUser { id }` extractor from `mairie360_api_lib::security`.
 
-Route tree: `endpoints::config` → `v1::config` → `/v1/projects` → `projects::{get,post}` + `project_id::config` (`/{project_id}/close`, `/delete`, `/tasks/...`, `/users/...`). `src/lib.rs` re-exports `database` and `endpoints`; the crate is both a lib and a bin so `examples/` and `tests/` can depend on the lib.
+Route tree: `endpoints::config` → `v1::config` → `/v1/projects` → `projects::{get,post}` + `project_id::config` (`/{project_id}/close`, `/delete`, `/tasks/...`, `/users/...`), and `/v1/tasks` → `tasks::get` (the cross-project task list). `src/lib.rs` re-exports `database` and `endpoints`; the crate is both a lib and a bin so `examples/` and `tests/` can depend on the lib.
 
 ### Endpoint module convention (`src/endpoints/v1/…`)
 
@@ -181,6 +182,49 @@ Every task write sets `tasks.updated_by` to the caller, which signs the history;
 history and `project_api` only has `SELECT` on that table. History labels are generated in
 `database/tasks/collaboration/view.rs` (`From<TaskHistoryRow>`). `tasks.custom_fields` only holds `fields`.
 
+`GET /projects/` is also the BFF_Project projects page (MAIR-474): each project carries the aggregates of its
+tasks (`tasks_total`, `tasks_completed`, `priority` = highest task priority or `Medium` without task, `due_date` =
+earliest task due date) and its first 5 members (+ `members_total`); optional filters `search` (case-insensitive
+substring of the name or description, `strpos`, so `%`/`_` are plain characters), `status` and `priority`
+(comma-separated lists, `Error` = a stored status the API does not interpret; the database has no `urgent`
+priority), `due_before` / `due_after` (RFC 3339, a project without due date never matches); `summary` counts every
+match per status and per priority. `GetProjectsQueryView` aggregates the tasks once per visible project (lateral
+over `idx_tasks_project_id`, materialized CTE) and reads the members for the page only: about 30 ms for an Admin on
+the 5 000-project seed, 2 ms for an agent (a covering index `tasks (project_id) INCLUDE (status, priority,
+due_date)` would halve the Admin cost, Database follow-up).
+
+`GET /tasks/` (MAIR-524) lists the tasks of every project visible to the caller (same
+`project_visible_to_user_sql!` rule), each with `project_id` and `project_name`, so BFF_Dashboard reads a
+user's pending tasks in one call: filters `assigned_to`, `status` (CSV of `Todo`, `InProgress`, `Completed`,
+`Error`; default = active tasks only, archived ones only when `Completed` is asked), `due_before`, plus
+`limit`/`offset` and `total`; order `due_date` ASC NULLS LAST, `id`. `GetVisibleTasksQueryView` picks one of
+four static statements (with/without assignee, with/without archived) so no `$n IS NULL OR …` hides the
+assignee from the planner: the visible project ids are a materialized CTE joined to `tasks`, and on the volume
+seed the `assigned_to` + `due_before` read is a range of `idx_tasks_assignee_due` (Database v3.1.0) in 2-5 ms,
+Admin included (`tests/queries/tasks/get_visible_tasks.rs` checks the plan reads `tasks` through an index).
+The list without assignee scans the active tasks (≈ 20-55 ms on 35 000 active tasks). Not cached.
+
+`GET /projects/{project_id}/tasks/{task_id}/` reads one task alone (any viewer of the project, 404 for a task of
+another project): BFF_Project's task guards use it instead of reading every task of the project (MAIR-474).
+
+A completed task is archived (MAIR-502, Database `tasks.archived_at`, kept by a trigger): `GET /projects/{id}/`
+and `GET …/tasks/` only list the active tasks (`tasks_total` counts them, `tasks_archived` the others),
+`GET …/archived-tasks/` pages the archived ones (most recently archived first), and every task read carries
+`archived_at`. The project list aggregates (`tasks_total`, `tasks_completed`) still count every task.
+
+Task statuses are set per project (MAIR-566, Database `project_task_statuses`, `project_templates`): a project
+gets a copy of its template's statuses (`POST /projects/` `template_id`, the default template `Simple`
+without it), each status in one of the three categories `Todo` / `InProgress` / `Completed` that the task
+`status` still carries, so the archiving, the progress and `GET /tasks/` work whatever the names. Every task
+read carries `status_id` and `status_name`; `POST …/tasks/` and `PATCH …/tasks/{id}/` take `status_id` (a
+status of another project is a `400`: `status_outside_project_sql!` checks it in the write), and `status` alone
+still moves a task to the first status of that category (database trigger). `…/statuses/` lists them (viewers)
+and adds, renames, moves, recategorizes or deletes them (managers; `database::statuses`): a category keeps one
+status (`409`), a status holding tasks is deleted with `?move_to=` (`409` without). `/project-templates/` is read
+by anyone signed in and written by Admin and Responsable only (`TemplateManagerQueryView`); the default template
+cannot be deleted. Editing a template never changes an existing project. Integration tests need a Database
+image carrying MAIR-566 (`TEST_DB_VERSION`).
+
 List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`,
 `GET …/users/` — MAIR-425; the members embedded in `GET /projects/{id}/` are the first 100 + `users_total`)
 take `limit` (default 100, clamped to 1–500) / `offset` (`endpoints::pagination::PageParams`) and return a
@@ -192,6 +236,27 @@ client status maps them with `db_error::classify_db_error` (`Conflict` / `Invali
 `Internal` at `error`) instead of matching `DbError` by hand (MAIR-421). A path segment that is not a valid id
 answers `400` (`PathConfig` in `endpoints::config`), as every route documents.
 
+### Logs and observability (MAIR-503)
+
+Logs and traces come from `mairie360_api_lib::logging::telemetry` (feature `otel`), shared by every API: `main.rs`
+only calls `init_telemetry("project-api")` and keeps the guard. Read the lib for the details.
+
+- Logs on stdout in the format of every API: coloured text (`RUST_LOG`, default `info`), one JSON object per line
+  with `LOG_FORMAT=json`. The request root span is hidden from them (it holds the client address and query string).
+- Traces over OTLP/HTTP, opt-in: nothing is exported unless `OTEL_EXPORTER_OTLP_ENDPOINT` (or
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) is set, `OTEL_SDK_DISABLED=true` forces it off, a failing exporter is
+  logged and never stops the API. The endpoint is an agent relaying to Scaleway Cockpit (OTel Collector or Grafana
+  Alloy, e.g. `http://alloy:4318`); `OTEL_SERVICE_NAME` defaults to `project-api`.
+- `main.rs` wraps the app in the lib's `TracingLogger`, inside the request log (`middleware::Logger`, kept), so
+  requests refused by `JwtMiddleware` get a span too. Root spans are named `<METHOD> <route pattern>` and continue
+  an incoming `traceparent`. The SQL appears as span **events** (`db.statement` with `$n` placeholders, never the
+  values). The lib's `Redact` drops `http.client_ip` and the query string before export: build test providers with
+  `telemetry::tracer_provider`, never `SdkTracerProvider::builder()`.
+- Never add `opentelemetry*` / `tracing-actix-web` to `Cargo.toml`: use the lib's re-exports, its versions are
+  coupled.
+- `tests/endpoints/telemetry.rs` asserts the span of a real route (status, route, continued trace id, no query
+  string, SQL events) and of a `401`; the redaction of logs and spans is tested in the lib.
+
 ### Deployment
 
 `Dockerfile` = multi-stage release build onto `gcr.io/distroless/cc-debian12`, copied from `API_template` (MAIR-427): images pinned by digest, a dependency-only layer, `cargo build --release --locked`. `.cargo/audit.toml`, `.github/workflows/cicd.yml` and `src/main.rs` are the template's too: keep them in sync with it rather than editing them here alone. `development.Dockerfile` + `entrypoint.sh` = `cargo watch` dev container used by compose. `nginx.conf` reverse-proxies `:80` → api `:3001`. CI (`.github/workflows/cicd.yml`) just calls the reusable `mairie360/CICD` workflow, which builds/pushes the `project-api` image and runs the three `*_test.sh` scripts with `IMAGE_REF` set to the `dev-<sha>` image published by `release-dev` (newman, no Postman account involved).
@@ -199,3 +264,19 @@ answers `400` (`PathConfig` in `endpoints::config`), as every route documents.
 ## Pull request reviewers
 
 Every PR requests a review from the whole team, minus its author: `CarolinHugo`, `LAURETbenjamin`, `MathTek` and `Quentintnrl` (`gh pr create … --reviewer CarolinHugo,LAURETbenjamin,MathTek`). `.github/CODEOWNERS` makes GitHub request them automatically as well.
+
+## Postgres pool settings (MAIR-565)
+
+Since `mairie360_api_lib` 3.4.0, `Database` reads three optional env vars through `DbPoolConfig::from_env`:
+`DB_POOL_MIN_CONNECTIONS` (default 1, sqlx's was 0: the API keeps one connection open, so the first request after a
+pause no longer reconnects), `DB_POOL_MAX_CONNECTIONS` (default 10) and `DB_POOL_IDLE_TIMEOUT_SECS` (default 600). An
+invalid value falls back to its default with a `warn!`. Per-instance values are set by the `Deploiment` chart
+(`APIs.dbPool`); the compose stacks set none and use the defaults.
+
+## Promotion to staging and prod (MAIR-494)
+
+A push to `main` only releases dev (`cicd.yml` stops at `release-dev`). Staging and prod are manual:
+`gh workflow run promote-staging.yml -R mairie360/Project_API` (main's newest commit) or `gh workflow run promote-staging.yml -R mairie360/Project_API -f sha=SHA` (a given commit), then the same with `promote-prod.yml`
+(environments `Staging` / `Prod`). Staging refuses a commit without `dev-<sha>` and a green main run, and runs
+the integration, ZAP and k6 stacks on that image; prod refuses one without `staging-<sha>` and tags the version semantic-release computes
+for that commit. `cicd.yml`, `promote-staging.yml` and `promote-prod.yml` pin the same mairie360/CICD release.

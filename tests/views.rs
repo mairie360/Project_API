@@ -36,8 +36,21 @@ fn create_project_view_accessors() {
     assert_eq!(view.title(), "Titre");
     assert_eq!(view.description(), "Desc");
     assert_eq!(view.owner_id(), 42);
-    assert_eq!(view.query_params().len(), 3);
+    // Status and priority (MAIR-558), empty for the table defaults; no template (MAIR-566), the
+    // default one.
+    assert_eq!(view.query_params().len(), 6);
+    assert_eq!(view.query_params()[3].as_text(), "");
+    assert_eq!(view.query_params()[4].as_text(), "");
+    assert_eq!(view.query_params()[5].as_option_i32(), None);
+    let view = view.with_template(Some(4));
+    assert_eq!(view.query_params()[5].as_option_i32(), Some(4));
     assert!(view.query_sql().contains("INSERT INTO projects"));
+
+    let view = view
+        .with_status(ProjectStatus::Todo)
+        .with_priority(TaskPriority::High);
+    assert_eq!(view.query_params()[3].as_text(), "todo");
+    assert_eq!(view.query_params()[4].as_text(), "high");
 }
 
 #[test]
@@ -58,11 +71,13 @@ fn delete_project_view_accessors() {
 fn get_projects_view_accessors() {
     let view = GetProjectsQueryView::new(9, 50, 100);
     assert_eq!(view.user_id(), 9);
-    assert_eq!(view.query_params().len(), 3);
-    assert_eq!(view.query_params()[1].as_i64(), 50);
-    assert_eq!(view.query_params()[2].as_i64(), 100);
+    assert_eq!(view.query_params().len(), 8);
+    assert_eq!(view.query_params()[6].as_i64(), 50);
+    assert_eq!(view.query_params()[7].as_i64(), 100);
     assert!(view.query_sql().contains("project_members"));
-    assert!(view.query_sql().contains("'total', count(*)"));
+    assert!(view
+        .query_sql()
+        .contains("'total', (SELECT count(*) FROM filtered)"));
 }
 
 #[test]
@@ -116,11 +131,19 @@ fn project_status_from_string_all_branches() {
         ProjectStatus::from("whatever".to_string()),
         ProjectStatus::Active
     );
+    // MAIR-558: `todo` and `review` used to be read back as `active`.
+    assert_eq!(ProjectStatus::from("todo".to_string()), ProjectStatus::Todo);
+    assert_eq!(
+        ProjectStatus::from("review".to_string()),
+        ProjectStatus::Review
+    );
 }
 
 #[test]
 fn project_status_display_all_branches() {
+    assert_eq!(ProjectStatus::Todo.to_string(), "todo");
     assert_eq!(ProjectStatus::Active.to_string(), "active");
+    assert_eq!(ProjectStatus::Review.to_string(), "review");
     assert_eq!(ProjectStatus::Suspended.to_string(), "suspended");
     assert_eq!(ProjectStatus::Archived.to_string(), "archived");
     assert_eq!(ProjectStatus::Completed.to_string(), "completed");
@@ -160,8 +183,10 @@ fn create_task_view_accessors() {
     );
     assert_eq!(view.project_id(), 3);
     assert_eq!(view.title(), "Ma tache");
-    assert_eq!(view.query_params().len(), 9);
+    // No status_id (MAIR-566): the first status of the category.
+    assert_eq!(view.query_params().len(), 10);
     assert_eq!(view.query_params()[7].as_text(), "Ma description");
+    assert_eq!(view.query_params()[9].as_option_i32(), None);
     assert_eq!(view.query_params()[8].as_i32(), 5);
     assert!(view.query_sql().contains("INSERT INTO tasks"));
     assert!(view.query_sql().contains("project_members"));
@@ -181,8 +206,10 @@ fn create_task_view_without_optionals() {
         &[],
     );
     assert_eq!(view.title(), "T");
-    assert_eq!(view.query_params().len(), 9);
+    assert_eq!(view.query_params().len(), 10);
     assert_eq!(view.query_params()[6].as_text(), r#"{"fields":[]}"#);
+    let view = view.with_status_id(Some(7));
+    assert_eq!(view.query_params()[9].as_option_i32(), Some(7));
 }
 
 #[test]
@@ -261,6 +288,7 @@ fn patch_task_view_accessors() {
             title: Some("nouveau titre"),
             description: Some(""),
             status: Some(TaskStatus::Completed),
+            status_id: Some(31),
             priority: Some(TaskPriority::Medium),
             due_date: Some(due),
             assigned_to: Some(Some(7)),
@@ -269,7 +297,7 @@ fn patch_task_view_accessors() {
     );
     assert_eq!(view.task_id(), 99);
     assert_eq!(view.project_id(), 4);
-    assert_eq!(view.query_params().len(), 12);
+    assert_eq!(view.query_params().len(), 13);
     assert!(view.query_params()[6].as_bool());
     assert_eq!(view.query_params()[7].as_option_i32(), Some(7));
     // An empty description is a change (it clears the description), not an absence.
@@ -279,6 +307,8 @@ fn patch_task_view_accessors() {
     assert_eq!(view.query_params()[11].as_i32(), 3);
     assert!(view.query_sql().contains("UPDATE tasks SET"));
     assert!(view.query_sql().contains("updated_by = $12"));
+    // MAIR-566: the status among the project's statuses.
+    assert_eq!(view.query_params()[12].as_option_i32(), Some(31));
 }
 
 #[test]
@@ -479,4 +509,137 @@ fn patch_task_body_with_only_a_status_is_detected() {
     assert!(!with_title.only_changes_status());
     assert!(!clearing_assignee.only_changes_status());
     assert_eq!(clearing_assignee.assigned_to, Some(None));
+}
+
+// ---------------------------------------------------------------------------
+// read cache of the projects list (MAIR-524)
+// ---------------------------------------------------------------------------
+
+/// Every write that changes what `GET /projects/` shows (a project, its tasks, which are
+/// aggregated in the list, its members) invalidates its read cache; reads and comments do not.
+#[test]
+fn writes_shown_by_the_projects_list_invalidate_its_read_cache() {
+    use project_api::database::project::update::view::UpdateProjectQueryView;
+    use project_api::database::project::PROJECTS_READ_CACHE;
+    use project_api::database::tasks::collaboration::view::AddTaskCommentQueryView;
+    use project_api::database::tasks::get_visible_tasks::view::{
+        GetVisibleTasksQueryView, TaskFilters,
+    };
+    use project_api::database::users::remove_user_from_project::view::UnassignMemberTasksQueryView;
+
+    let projects: &[&str] = &[PROJECTS_READ_CACHE.namespace()];
+    assert_eq!(projects, ["projects"]);
+    assert_eq!(PROJECTS_READ_CACHE.ttl(), 30);
+    fn caches<Q: ApiRequestDto>(view: Q) -> &'static [&'static str] {
+        view.invalidated_read_caches()
+    }
+    let writes: Vec<(&str, &[&str])> = vec![
+        (
+            "create project",
+            caches(CreateProjectQueryView::new("Titre", None, 1)),
+        ),
+        (
+            "update project",
+            caches(UpdateProjectQueryView::new(1, Some("Titre"), None, None)),
+        ),
+        (
+            "close project",
+            caches(UpdateProjectStatusQueryView::new(
+                1,
+                ProjectStatus::Completed,
+            )),
+        ),
+        ("delete project", caches(DeleteProjectQueryView::new(1))),
+        (
+            "create task",
+            caches(CreateTaskQueryView::new(
+                1,
+                1,
+                "Tâche",
+                "",
+                TaskStatus::Todo,
+                TaskPriority::Medium,
+                None,
+                None,
+                &[],
+            )),
+        ),
+        (
+            "patch task",
+            caches(PatchTaskQueryView::new(1, 2, 3, TaskChanges::default())),
+        ),
+        ("delete task", caches(DeleteTaskQueryView::new(1))),
+        ("add member", caches(AddUserToProjectQueryView::new(1, 2))),
+        (
+            "remove member",
+            caches(RemoveUserFromProjectQueryView::new(1, 2)),
+        ),
+        (
+            "unassign member",
+            caches(UnassignMemberTasksQueryView::new(1, 2, 3)),
+        ),
+    ];
+    for (name, invalidated) in &writes {
+        assert_eq!(*invalidated, projects, "{name}");
+    }
+
+    let untouched: Vec<(&str, &[&str])> = vec![
+        ("list projects", caches(GetProjectsQueryView::new(1, 10, 0))),
+        (
+            "list tasks",
+            caches(GetVisibleTasksQueryView::new(
+                1,
+                &TaskFilters::default(),
+                10,
+                0,
+            )),
+        ),
+        (
+            "comment",
+            caches(AddTaskCommentQueryView::new(1, 2, 3, "Vu")),
+        ),
+    ];
+    for (name, invalidated) in &untouched {
+        assert!(invalidated.is_empty(), "{name}");
+    }
+}
+
+/// The cross-project task list runs one statement per variant: the assignee is a parameter only
+/// when filtered on, and archived tasks are only read when `completed` is asked for.
+#[test]
+fn visible_tasks_view_picks_its_statement_from_the_filters() {
+    use project_api::database::tasks::get_visible_tasks::view::{
+        GetVisibleTasksQueryView, TaskFilters,
+    };
+
+    let all = GetVisibleTasksQueryView::new(4, &TaskFilters::default(), 20, 40);
+    assert_eq!(all.user_id(), 4);
+    assert_eq!(all.query_params().len(), 6);
+    assert!(all.query_sql().contains("t.archived_at IS NULL"));
+    assert!(!all.query_sql().contains("$7"));
+
+    let mine = GetVisibleTasksQueryView::new(
+        4,
+        &TaskFilters {
+            assigned_to: Some(42),
+            ..TaskFilters::default()
+        },
+        20,
+        0,
+    );
+    assert_eq!(mine.query_params().len(), 7);
+    assert!(mine
+        .query_sql()
+        .contains("t.assigned_to = $7 AND t.archived_at IS NULL"));
+
+    let completed = GetVisibleTasksQueryView::new(
+        4,
+        &TaskFilters {
+            statuses: vec!["completed"],
+            ..TaskFilters::default()
+        },
+        20,
+        0,
+    );
+    assert!(!completed.query_sql().contains("t.archived_at IS NULL"));
 }

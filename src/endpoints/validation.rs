@@ -14,7 +14,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use actix_web::{dev::Payload, web, FromRequest, HttpRequest};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer};
 
 /// `projects.title` and `tasks.title` are `VARCHAR(255)`; also the cap of custom field and history
 /// labels (stored in JSONB).
@@ -133,6 +135,21 @@ pub fn check_json(field: &str, value: &serde_json::Value) -> Result<(), Validati
     }
 }
 
+/// A comma-separated list whose every item is one of `allowed` (case-sensitive, no blank item).
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] naming `field` and listing the allowed values otherwise.
+pub fn check_list(field: &str, value: &str, allowed: &[&str]) -> Result<(), ValidationError> {
+    if value.split(',').all(|item| allowed.contains(&item)) {
+        return Ok(());
+    }
+    Err(ValidationError::new(
+        field,
+        &format!("must be a comma-separated list of {}", allowed.join(", ")),
+    ))
+}
+
 /// Runs `check` on `value` when it is present.
 ///
 /// # Errors
@@ -143,6 +160,104 @@ where
     F: FnOnce(&str) -> Result<(), ValidationError>,
 {
     value.map_or(Ok(()), check)
+}
+
+/// Parses a task due date: an RFC 3339 date-time (`2026-11-05T09:00:00+01:00`), or a date alone
+/// (`2026-11-05`, what a date picker sends), read as midnight UTC of that day (MAIR-559).
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] naming `field` when the value is neither.
+pub fn parse_due_date(field: &str, value: &str) -> Result<DateTime<Utc>, ValidationError> {
+    if let Ok(date_time) = DateTime::parse_from_rfc3339(value) {
+        return Ok(date_time.with_timezone(&Utc));
+    }
+    NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .ok()
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .map(|midnight| midnight.and_utc())
+        .ok_or_else(|| {
+            ValidationError::new(
+                field,
+                "must be a date (`YYYY-MM-DD`) or an RFC 3339 date-time",
+            )
+        })
+}
+
+/// `deserialize_with` of an optional `due_date` body field, through [`parse_due_date`]: absent or
+/// `null` give `None`. Use it with `#[serde(default)]`.
+///
+/// # Errors
+///
+/// Fails the deserialization (hence a `400`) when the value is not a string or not a due date.
+pub fn deserialize_optional_due_date<'de, D>(
+    deserializer: D,
+) -> Result<Option<DateTime<Utc>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)?
+        .map(|value| parse_due_date("due_date", &value).map_err(serde::de::Error::custom))
+        .transpose()
+}
+
+/// Cap of a task status or project template name (`VARCHAR(100)`, MAIR-566).
+pub const MAX_STATUS_NAME_LENGTH: usize = 100;
+/// Most statuses a template may define.
+pub const MAX_TEMPLATE_STATUSES: usize = 30;
+
+/// Checks a status colour: `#` followed by 6 hexadecimal digits (`#2563EB`).
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] naming `field` otherwise.
+pub fn check_color(field: &str, value: &str) -> Result<(), ValidationError> {
+    let digits = value.strip_prefix('#').unwrap_or_default();
+    if digits.len() == 6 && digits.chars().all(|c| c.is_ascii_hexdigit()) {
+        Ok(())
+    } else {
+        Err(ValidationError::new(
+            field,
+            "must be `#` followed by 6 hexadecimal digits",
+        ))
+    }
+}
+
+/// Checks the statuses of a template (MAIR-566): 1 to [`MAX_TEMPLATE_STATUSES`] statuses, names
+/// unique whatever the case, and every category in `required` covered.
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] naming `field`.
+pub fn check_status_list<C: PartialEq + fmt::Debug>(
+    field: &str,
+    statuses: &[(&str, C)],
+    required: &[C],
+) -> Result<(), ValidationError> {
+    if statuses.is_empty() || statuses.len() > MAX_TEMPLATE_STATUSES {
+        return Err(ValidationError::new(
+            field,
+            &format!("must hold 1 to {MAX_TEMPLATE_STATUSES} statuses"),
+        ));
+    }
+    let mut names = std::collections::HashSet::new();
+    for (name, _) in statuses {
+        if !names.insert(name.trim().to_lowercase()) {
+            return Err(ValidationError::new(
+                field,
+                "two statuses have the same name",
+            ));
+        }
+    }
+    for category in required {
+        if !statuses.iter().any(|(_, c)| c == category) {
+            return Err(ValidationError::new(
+                field,
+                &format!("must hold a status of each category, none is {category:?}"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn bad_request(error: &ValidationError) -> actix_web::Error {
@@ -216,6 +331,17 @@ mod tests {
     }
 
     #[test]
+    fn list_accepts_only_allowed_items() {
+        let allowed = ["Low", "High"];
+        assert!(check_list("priority", "Low", &allowed).is_ok());
+        assert!(check_list("priority", "Low,High", &allowed).is_ok());
+        assert!(check_list("priority", "", &allowed).is_err());
+        assert!(check_list("priority", "Low,", &allowed).is_err());
+        assert!(check_list("priority", "low", &allowed).is_err());
+        assert!(check_list("priority", "Low, High", &allowed).is_err());
+    }
+
+    #[test]
     fn label_counts_characters_not_bytes() {
         assert!(check_label("name", &"é".repeat(255), MAX_TITLE_LENGTH).is_ok());
     }
@@ -248,5 +374,59 @@ mod tests {
     fn optional_skips_absent_values() {
         assert!(check_optional(None, |v| check_label("name", v, MAX_TITLE_LENGTH)).is_ok());
         assert!(check_optional(Some(" "), |v| check_label("name", v, MAX_TITLE_LENGTH)).is_err());
+    }
+
+    #[test]
+    fn mair_566_status_colors_and_lists() {
+        assert!(check_color("color", "#2563EB").is_ok());
+        assert!(check_color("color", "#2563eb").is_ok());
+        for invalid in ["2563EB", "#2563E", "#2563EBA", "#GGGGGG", "", "blue"] {
+            assert!(check_color("color", invalid).is_err(), "{invalid}");
+        }
+        let all = [1, 2, 3];
+        assert!(check_status_list("statuses", &[("A", 1), ("B", 2), ("C", 3)], &all).is_ok());
+        assert!(check_status_list::<i32>("statuses", &[], &all).is_err());
+        let duplicate = check_status_list(
+            "statuses",
+            &[("À faire", 1), (" à faire ", 2), ("C", 3)],
+            &all,
+        );
+        assert!(duplicate.unwrap_err().to_string().contains("same name"));
+        let missing = check_status_list("statuses", &[("A", 1), ("B", 2)], &all);
+        assert!(missing.unwrap_err().to_string().contains("none is 3"));
+        let many: Vec<(&str, i32)> = (0..=MAX_TEMPLATE_STATUSES)
+            .map(|i| (["A", "B", "C"][i % 3], 1))
+            .collect();
+        assert!(check_status_list("statuses", &many, &[1]).is_err());
+    }
+
+    #[test]
+    fn mair_559_due_date_accepts_a_date_alone() {
+        let midnight = parse_due_date("due_date", "2026-11-05").unwrap();
+        assert_eq!(midnight.to_rfc3339(), "2026-11-05T00:00:00+00:00");
+        let offset = parse_due_date("due_date", "2026-11-05T09:30:00+01:00").unwrap();
+        assert_eq!(offset.to_rfc3339(), "2026-11-05T08:30:00+00:00");
+        for invalid in ["", "05/11/2026", "2026-13-01", "2026-02-30", "demain"] {
+            let error = parse_due_date("due_date", invalid).unwrap_err();
+            assert!(error.to_string().contains("`due_date`"), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn mair_559_due_date_field_absent_null_or_date() {
+        #[derive(Deserialize)]
+        struct Body {
+            #[serde(default, deserialize_with = "deserialize_optional_due_date")]
+            due_date: Option<DateTime<Utc>>,
+        }
+        let read = |json: &str| serde_json::from_str::<Body>(json).map(|body| body.due_date);
+        assert_eq!(read("{}").unwrap(), None);
+        assert_eq!(read(r#"{"due_date":null}"#).unwrap(), None);
+        assert_eq!(
+            read(r#"{"due_date":"2026-11-05"}"#).unwrap(),
+            Some(parse_due_date("due_date", "2026-11-05T00:00:00Z").unwrap())
+        );
+        assert!(read(r#"{"due_date":"05/11/2026"}"#).is_err());
+        assert!(read(r#"{"due_date":20261105}"#).is_err());
     }
 }
