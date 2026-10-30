@@ -55,6 +55,16 @@ operations:
     roles: [Admin, Maire]
     ownership: [owner, member]
     personal: [assigned_to]
+  GET /api/v1/projects/{project_id}/archived-tasks/:
+    access: authenticated
+    roles: [Admin, Maire]
+    ownership: [owner, member]
+    personal: [assigned_to]
+  GET /api/v1/projects/{project_id}/tasks/{task_id}/:
+    access: authenticated
+    roles: [Admin, Maire]
+    ownership: [owner, member]
+    personal: [assigned_to]
   POST /api/v1/projects/{project_id}/tasks/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
   PATCH /api/v1/projects/{project_id}/tasks/{task_id}/:
     access: authenticated
@@ -80,3 +90,23 @@ operations:
     personal: [users.id, users.name]
   POST /api/v1/projects/{project_id}/users/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
   DELETE /api/v1/projects/{project_id}/users/{user_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+
+  GET /api/v1/projects/{project_id}/statuses/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member]}
+  POST /api/v1/projects/{project_id}/statuses/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+  PATCH /api/v1/projects/{project_id}/statuses/{status_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+  DELETE /api/v1/projects/{project_id}/statuses/{status_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+
+  GET /api/v1/tasks/:
+    access: authenticated
+    roles: [Admin, Maire, Responsable, User, Guest]
+    personal: [tasks.assigned_to]
+    note: "lists only the tasks of the projects the caller sees"
+
+  GET /api/v1/project-templates/: {access: authenticated, roles: [Admin, Maire, Responsable, User, Guest]}
+  GET /api/v1/project-templates/{template_id}/: {access: authenticated, roles: [Admin, Maire, Responsable, User, Guest]}
+  POST /api/v1/project-templates/:
+    access: authenticated
+    roles: [Admin, Responsable]
+    note: "template management is reserved to Admin and Responsable (MAIR-566): not the Maire"
+  PATCH /api/v1/project-templates/{template_id}/: {access: authenticated, roles: [Admin, Responsable]}
+  DELETE /api/v1/project-templates/{template_id}/: {access: authenticated, roles: [Admin, Responsable]}

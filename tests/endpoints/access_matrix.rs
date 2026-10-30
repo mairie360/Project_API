@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use serial_test::serial;
 use utoipa::OpenApi;
 
-use super::{as_user, json, post, status, TestApp, TestContext};
+use super::{as_user, get, json, post, status, TestApp, TestContext};
 use crate::init_app;
 
 const MATRIX: &str = include_str!("../../access-matrix.yaml");
@@ -118,11 +118,14 @@ struct People {
 }
 
 /// Fresh instances for one call: a project owned by `owner` with `member` and `assignee` as
-/// members, a task assigned to `assignee`, and an extra member to remove.
+/// members, a task assigned to `assignee`, an extra member to remove, the first task status of
+/// the project and a project template created by the Admin.
 struct Fixtures {
     project: u64,
     task: u64,
     extra: u64,
+    status: u64,
+    template: u64,
 }
 
 async fn fixtures<B: MessageBody>(
@@ -162,10 +165,37 @@ async fn fixtures<B: MessageBody>(
         ),
     )
     .await;
+    let statuses = json(
+        app,
+        get(
+            &format!("/api/v1/projects/{project}/statuses/"),
+            people.owner,
+        ),
+    )
+    .await;
+    let template = json(
+        app,
+        post(
+            "/api/v1/project-templates/",
+            ADMIN_ID,
+            json!({
+                "name": format!("Modèle de la matrice {project}"),
+                "statuses": [
+                    { "name": "À faire", "category": "Todo" },
+                    { "name": "En cours", "category": "InProgress" },
+                    { "name": "Terminé", "category": "Completed" }
+                ],
+                "custom_fields": []
+            }),
+        ),
+    )
+    .await;
     Fixtures {
         project,
         task: task["task_id"].as_u64().unwrap(),
         extra,
+        status: statuses["statuses"][0]["id"].as_u64().unwrap(),
+        template: template["template_id"].as_u64().unwrap(),
     }
 }
 
@@ -176,7 +206,9 @@ fn request(spec: &Value, name: &str, f: &Fixtures) -> TestRequest {
     let uri = path
         .replace("{project_id}", &f.project.to_string())
         .replace("{task_id}", &f.task.to_string())
-        .replace("{user_id}", &f.extra.to_string());
+        .replace("{user_id}", &f.extra.to_string())
+        .replace("{status_id}", &f.status.to_string())
+        .replace("{template_id}", &f.template.to_string());
     let example = spec["paths"][path][method.to_lowercase()]["requestBody"]["content"]
         ["application/json"]["example"]
         .clone();
