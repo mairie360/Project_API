@@ -4,7 +4,7 @@
 # call it. tests/endpoints/access_matrix.rs reads the spec the API serves and fails when an
 # operation is missing here or listed here without existing, then calls every operation as each
 # role and as each relation to the project, and checks the answer: an allowed caller never gets
-# 401 / 403 / 404, any other caller gets 403, or 404 when the project is not visible to them
+# 401 / 403 / 404 nor a 5xx, any other caller gets 403, or 404 when the project is not visible to them
 # (401 without a session). Change this file and the code together.
 #
 # Keys of an operation ("METHOD /path" of the OpenAPI):
@@ -16,6 +16,9 @@
 #                              manager role)
 #              member          a member of the project
 #              assignee        the agent the task is assigned to (status changes only on PATCH)
+#              responsable     a Responsable who sees the project without owning it: a member of
+#                              it, or sharing a group with its owner or one of its members; with
+#                              the manager role, seeing the project is enough to manage it
 #   personal   personal fields of the answer (gdpr/inventory.yaml of Database), for the review
 #   note       the rule when it is not obvious
 #
@@ -44,57 +47,57 @@ operations:
   GET /api/v1/projects/{project_id}/:
     access: authenticated
     roles: [Admin, Maire]
-    ownership: [owner, member]
+    ownership: [owner, member, responsable]
     personal: [users.id, users.name, tasks.assigned_to]
-  PATCH /api/v1/projects/{project_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
-  DELETE /api/v1/projects/{project_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
-  PATCH /api/v1/projects/{project_id}/close: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+  PATCH /api/v1/projects/{project_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  DELETE /api/v1/projects/{project_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  PATCH /api/v1/projects/{project_id}/close: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
 
   GET /api/v1/projects/{project_id}/tasks/:
     access: authenticated
     roles: [Admin, Maire]
-    ownership: [owner, member]
+    ownership: [owner, member, responsable]
     personal: [assigned_to]
   GET /api/v1/projects/{project_id}/archived-tasks/:
     access: authenticated
     roles: [Admin, Maire]
-    ownership: [owner, member]
+    ownership: [owner, member, responsable]
     personal: [assigned_to]
   GET /api/v1/projects/{project_id}/tasks/{task_id}/:
     access: authenticated
     roles: [Admin, Maire]
-    ownership: [owner, member]
+    ownership: [owner, member, responsable]
     personal: [assigned_to]
-  POST /api/v1/projects/{project_id}/tasks/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+  POST /api/v1/projects/{project_id}/tasks/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
   PATCH /api/v1/projects/{project_id}/tasks/{task_id}/:
     access: authenticated
     roles: [Admin, Maire]
-    ownership: [owner, assignee]
+    ownership: [owner, assignee, responsable]
     note: "the assignee may only change the status"
-  DELETE /api/v1/projects/{project_id}/tasks/{task_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+  DELETE /api/v1/projects/{project_id}/tasks/{task_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
   GET /api/v1/projects/{project_id}/tasks/{task_id}/collaboration:
     access: authenticated
     roles: [Admin, Maire]
-    ownership: [owner, assignee]
+    ownership: [owner, assignee, responsable]
     personal: [comments.author, comments.message, history.author, history.changes]
   POST /api/v1/projects/{project_id}/tasks/{task_id}/comments:
     access: authenticated
     roles: [Admin, Maire]
-    ownership: [owner, assignee]
+    ownership: [owner, assignee, responsable]
     personal: [author, message]
 
   GET /api/v1/projects/{project_id}/users/:
     access: authenticated
     roles: [Admin, Maire]
-    ownership: [owner, member]
+    ownership: [owner, member, responsable]
     personal: [users.id, users.name]
-  POST /api/v1/projects/{project_id}/users/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
-  DELETE /api/v1/projects/{project_id}/users/{user_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+  POST /api/v1/projects/{project_id}/users/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  DELETE /api/v1/projects/{project_id}/users/{user_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
 
-  GET /api/v1/projects/{project_id}/statuses/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member]}
-  POST /api/v1/projects/{project_id}/statuses/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
-  PATCH /api/v1/projects/{project_id}/statuses/{status_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
-  DELETE /api/v1/projects/{project_id}/statuses/{status_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner]}
+  GET /api/v1/projects/{project_id}/statuses/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member, responsable]}
+  POST /api/v1/projects/{project_id}/statuses/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  PATCH /api/v1/projects/{project_id}/statuses/{status_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  DELETE /api/v1/projects/{project_id}/statuses/{status_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
 
   GET /api/v1/tasks/:
     access: authenticated

@@ -1,7 +1,9 @@
 //! MAIR-288: `access-matrix.yaml` covers every operation of the `OpenAPI`, and the API answers as
 //! it says. Each operation is called without a session, as a user of each role who has no relation
-//! to the project, and as its owner, a member and the task's assignee: an allowed caller never gets
-//! 401 / 403 / 404, any other caller gets 403, or 404 when the project is not visible to them.
+//! to the project, and as its owner, a member, the task's assignee and two Responsables who see it
+//! without owning it (a member, and one sharing a group with the owner): an allowed caller never
+//! gets 401 / 403 / 404 nor a 5xx, any other caller gets 403, or 404 when the project is not visible
+//! to them.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,11 +16,12 @@ use serial_test::serial;
 use utoipa::OpenApi;
 
 use super::{as_user, get, json, post, status, TestApp, TestContext};
+use crate::common::fixtures::create_group;
 use crate::init_app;
 
 const MATRIX: &str = include_str!("../../access-matrix.yaml");
 const ROLES: [&str; 5] = ["Admin", "Maire", "Responsable", "User", "Guest"];
-const RELATIONS: [&str; 3] = ["owner", "member", "assignee"];
+const RELATIONS: [&str; 4] = ["owner", "member", "assignee", "responsable"];
 /// The Admin seeded by the database migrations.
 const ADMIN_ID: u64 = 1;
 
@@ -115,6 +118,10 @@ struct People {
     owner: u64,
     member: u64,
     assignee: u64,
+    /// A Responsable member of every fixture project.
+    responsable_member: u64,
+    /// A Responsable sharing a group with the owner, not a member.
+    group_responsable: u64,
 }
 
 /// Fresh instances for one call: a project owned by `owner` with `member` and `assignee` as
@@ -144,7 +151,12 @@ async fn fixtures<B: MessageBody>(
     )
     .await;
     let project = created["project_id"].as_u64().unwrap();
-    for user in [people.member, people.assignee, extra] {
+    for user in [
+        people.member,
+        people.assignee,
+        people.responsable_member,
+        extra,
+    ] {
         let got = status(
             app,
             post(
@@ -246,7 +258,10 @@ async fn every_role_and_relation_gets_what_the_matrix_says() {
         owner: ctx.user("Owner", Some("Responsable")).await,
         member: ctx.user("Member", Some("User")).await,
         assignee: ctx.user("Assignee", Some("User")).await,
+        responsable_member: ctx.user("ResponsableMember", Some("Responsable")).await,
+        group_responsable: ctx.user("GroupResponsable", Some("Responsable")).await,
     };
+    create_group(people.owner, &[people.owner, people.group_responsable]).await;
     // Users of each role with no relation to the projects (the schema also gives every account
     // the Guest role).
     let mut callers: Vec<(String, u64)> = vec![("Admin".to_string(), ADMIN_ID)];
@@ -277,8 +292,21 @@ async fn every_role_and_relation_gets_what_the_matrix_says() {
             .map(|(role, id)| (role.clone(), *id, op.roles.contains(role)))
             .collect();
         // The owner is a Responsable, the member and the assignee plain agents; the assignee is
-        // also a member of the project.
+        // also a member of the project. Two Responsables see the project without owning it: one
+        // is a member of it, the other shares a group with the owner.
         for (who, user, role, relations) in [
+            (
+                "Responsable member",
+                people.responsable_member,
+                "Responsable",
+                &["responsable", "member"][..],
+            ),
+            (
+                "Responsable of the owner's group",
+                people.group_responsable,
+                "Responsable",
+                &["responsable"][..],
+            ),
             ("owner", people.owner, "Responsable", &["owner"][..]),
             ("member", people.member, "User", &["member"][..]),
             (
@@ -300,7 +328,7 @@ async fn every_role_and_relation_gets_what_the_matrix_says() {
             }
             let got = status(&app, as_user(request(&spec, name, &f), user)).await;
             let refused = got == 401 || got == 403 || got == 404;
-            if allowed && refused {
+            if allowed && (refused || got >= 500) {
                 failures.push(format!(
                     "{name}: {who} is allowed by the matrix but got {got}"
                 ));
