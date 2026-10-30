@@ -156,9 +156,12 @@ services:
     depends_on:
       project:
         condition: service_started
+    # Bounded (90 tries, about 3 minutes): an API that never gets ready fails the stack instead of
+    # leaving gdpr-marker waiting forever.
     command: >
-      sh -c 'until curl -fsS http://project:3001/ready >/dev/null; do
-      echo "waiting for project..."; sleep 2; done; echo "project ready"'
+      sh -c 'for i in $$(seq 90); do
+      curl -fsS http://project:3001/ready >/dev/null && echo "project ready" && exit 0;
+      echo "waiting for project..."; sleep 2; done; echo "project never got ready" >&2; exit 1'
     networks:
       - backend
 
