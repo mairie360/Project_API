@@ -7,7 +7,7 @@
 // `request()` (raw `http.*` calls are not counted).
 //
 // High load on a volume seed (MAIR-474): the performance stack also runs init-perf.sql (5 000
-// projects, 50 000 tasks, 2 100 accounts in 100 teams, a hot project 12 with 2 000 tasks and a
+// projects, 50 000 tasks, 2 100 accounts in 100 teams, a hot project 12 with 2 000 tasks (200 active, 1 800 archived) and a
 // task 87 with 1 000 comments and 1 000 history entries). Three scenarios:
 // - `reads`: the GET operations, ramping up to the read VUs of the profile (PROFILES). Each call picks a caller (the Admin, a
 //   seeded Responsable or a seeded agent, tokens signed here with the stack's JWT_SECRET) and a
@@ -56,10 +56,19 @@ const MANAGERS = { first: 103001, count: 100 };
 const HOT_MANAGERS = 15;
 const HOT_PROJECT_ID = 12;
 const HOT_TASK_ID = 87;
-const HOT_TASKS = 2000;
+// Hot project 12 (init-perf.sql): 200 active tasks, 1 800 completed hence archived (MAIR-502).
+const HOT_TASKS = 200;
+const HOT_ARCHIVED_TASKS = 1800;
 const HOT_MEMBERS = 300;
 const HOT_FEED = 1000;
 const PAGE = 100;
+// Task statuses (MAIR-566): every seeded project gets a copy of the default template `Simple`
+// (seeded by the Database, one status per category), so the hot project has three statuses
+// holding its 2 000 tasks.
+const CATEGORIES = ['Todo', 'InProgress', 'Completed'];
+// Dashboard window of `GET /tasks/` (MAIR-524): init-perf.sql spreads the due dates of an agent's
+// tasks from 10 days ago to 50 days ahead, so a 30-day window always holds some.
+const DUE_WINDOW_DAYS = 30;
 
 // Load profile (MAIR-474), K6_PROFILE:
 // - `ci` (default): what the CI runner holds with the same strict thresholds. The runner
@@ -156,6 +165,32 @@ function deleteTask(projectId, taskId) {
   fixture('DELETE', `/api/v1/projects/${projectId}/tasks/${taskId}/`);
 }
 
+/** A name no other VU or iteration uses: template and status names are unique (409 otherwise). */
+function uniqueName(prefix) {
+  return `${prefix} ${__VU}-${__ITER}-${Date.now()}`;
+}
+
+/** The three statuses of a template, one per category (MAIR-566). */
+function templateStatuses(prefix) {
+  return CATEGORIES.map((category, index) => ({ name: `${prefix} ${index}`, category }));
+}
+
+function createTemplate(name) {
+  return fixture('POST', '/api/v1/project-templates/', {
+    name,
+    description: 'k6 fixture',
+    statuses: templateStatuses('k6'),
+  }).json('template_id');
+}
+
+function deleteTemplate(templateId) {
+  fixture('DELETE', `/api/v1/project-templates/${templateId}/`);
+}
+
+function createStatus(projectId, name) {
+  return fixture('POST', `/api/v1/projects/${projectId}/statuses/`, { name, category: 'InProgress' }).json('status_id');
+}
+
 function addMember(projectId, userId) {
   fixture('POST', `/api/v1/projects/${projectId}/users/`, { user_id: userId });
 }
@@ -165,19 +200,31 @@ const spec = loadSpec();
 const readHandlers = {
   'GET /health': ({ request }) => check(request(), { 'health 200': (r) => r.status === 200 }),
   'GET /ready': ({ request }) => check(request(), { 'ready 200': (r) => r.status === 200 }),
-  // A third of the calls each as the Admin (any page of the 5 000 projects), a Responsable (their
-  // team's projects) and an agent (their own).
+  // A third of the calls each as the Admin (any page of the 5 000 projects, or the projects page of the
+  // BFF: high priority, active, a search), a Responsable (their team's projects) and an agent (their own).
+  // Every answer carries the task aggregates and a summary over every matching project (MAIR-474).
   'GET /api/v1/projects/': ({ request }) => {
     const caller = randomInt(3);
+    const filtered = caller === 0 && randomInt(2) === 0;
     const res =
       caller === 0
-        ? request({ query: { limit: PAGE, offset: randomOffset(SEEDED_PROJECTS) } })
+        ? request({
+          query: filtered
+            ? { limit: 10, priority: 'High', status: 'Active', search: `perf project ${randomInt(50)}` }
+            : { limit: PAGE, offset: randomOffset(SEEDED_PROJECTS) },
+        })
         : request({ headers: bearer(caller === 1 ? randomManager() : randomAgent()) });
+    const sum = (counts) => Object.values(counts || {}).reduce((total, n) => total + n, 0);
     check(res, {
       'list projects 200': (r) => r.status === 200,
-      // The Admin sees the whole seed, a seeded agent or Responsable at least their own projects.
+      // The Admin sees the whole seed (one seeded project in three is high), a seeded agent or
+      // Responsable at least their own projects.
       'list projects reads the seed': (r) =>
-        r.status === 200 && r.json('total') >= (caller === 0 ? SEEDED_PROJECTS : 1) && r.json('projects').length > 0,
+        r.status === 200 && r.json('total') >= (caller === 0 && !filtered ? SEEDED_PROJECTS : 1) && r.json('projects').length > 0,
+      'list projects summarizes every match': (r) =>
+        r.status === 200 && sum(r.json('summary.by_status')) === r.json('total')
+        && sum(r.json('summary.by_priority')) === r.json('total')
+        && r.json('projects').every((project) => project.tasks_total >= project.tasks_completed),
     });
   },
   // The k6 fixture as Admin, or the hot project as a Responsable who sees it through their team.
@@ -191,6 +238,20 @@ const readHandlers = {
       'get project reads its tasks and members': (r) => r.status === 200 && r.json('tasks_total') >= 1,
     });
   },
+  'GET /api/v1/projects/{project_id}/archived-tasks/': ({ request }) =>
+    check(
+      request({
+        path: { project_id: HOT_PROJECT_ID },
+        query: { limit: PAGE, offset: randomOffset(HOT_ARCHIVED_TASKS) },
+        headers: bearer(randomHotManager()),
+      }),
+      {
+        'list archived tasks 200': (r) => r.status === 200,
+        'list archived tasks reads the hot project': (r) =>
+          r.status === 200 && r.json('total') >= HOT_ARCHIVED_TASKS && r.json('tasks').length > 0
+          && r.json('tasks').every((task) => task.archived_at),
+      },
+    ),
   'GET /api/v1/projects/{project_id}/tasks/': ({ request }) =>
     check(
       request({
@@ -204,6 +265,12 @@ const readHandlers = {
           r.status === 200 && r.json('total') >= HOT_TASKS && r.json('tasks').length > 0,
       },
     ),
+  // One task of the hot project, as a Responsable who sees it through their team (MAIR-474).
+  'GET /api/v1/projects/{project_id}/tasks/{task_id}/': ({ request }) =>
+    check(request({ path: { project_id: HOT_PROJECT_ID, task_id: HOT_TASK_ID }, headers: bearer(randomHotManager()) }), {
+      'get task 200': (r) => r.status === 200,
+      'get task reads the hot task': (r) => r.status === 200 && r.json('id') === HOT_TASK_ID,
+    }),
   'GET /api/v1/projects/{project_id}/tasks/{task_id}/collaboration': ({ request }) =>
     check(
       request({
@@ -217,6 +284,55 @@ const readHandlers = {
           r.status === 200 && r.json('comments_total') >= HOT_FEED && r.json('history_total') >= HOT_FEED,
       },
     ),
+  // The dashboard's pending tasks of an agent across every project, in one call (MAIR-524): half as
+  // the agent themself, half as the Admin, both with `assigned_to` + `due_before`, the read of
+  // `idx_tasks_assignee_due`.
+  'GET /api/v1/tasks/': ({ request }) => {
+    const agent = randomAgent();
+    const dueBefore = new Date(Date.now() + DUE_WINDOW_DAYS * 24 * 3600 * 1000).toISOString();
+    const query = { assigned_to: agent, due_before: dueBefore, limit: 20 };
+    const res = randomInt(2) === 0 ? request({ query, headers: bearer(agent) }) : request({ query });
+    check(res, {
+      'list my tasks 200': (r) => r.status === 200,
+      'list my tasks reads the seed': (r) => r.status === 200 && r.json('total') >= 1 && r.json('tasks').length > 0,
+      'list my tasks keeps the filters': (r) =>
+        r.status === 200 && r.json('tasks').every((task) =>
+          task.assigned_to === agent && task.archived_at === null && task.due_date !== null
+          && Date.parse(task.due_date) <= Date.parse(dueBefore) && task.project_name),
+    });
+  },
+  // Project templates (MAIR-566), read by anyone signed in: the Admin, a Responsable or an agent.
+  'GET /api/v1/project-templates/': ({ request }) => {
+    const caller = randomInt(3);
+    const res = caller === 0 ? request() : request({ headers: bearer(caller === 1 ? randomManager() : randomAgent()) });
+    check(res, {
+      'list templates 200': (r) => r.status === 200,
+      'list templates reads the default one first': (r) =>
+        r.status === 200 && r.json('templates').length > 0 && r.json('templates.0.is_default') === true
+        && CATEGORIES.every((category) => r.json('templates.0.statuses').some((status) => status.category === category)),
+    });
+  },
+  'GET /api/v1/project-templates/{template_id}/': ({ request, data }) => {
+    const caller = randomInt(3);
+    const call = { path: { template_id: data.defaultTemplateId } };
+    const res = caller === 0 ? request(call) : request(Object.assign(call, { headers: bearer(caller === 1 ? randomManager() : randomAgent()) }));
+    check(res, {
+      'get template 200': (r) => r.status === 200,
+      'get template reads the default one': (r) =>
+        r.status === 200 && r.json('id') === data.defaultTemplateId && r.json('is_default') === true
+        && r.json('statuses').length >= CATEGORIES.length,
+    });
+  },
+  // The statuses of the hot project (copied from `Simple` by the Database), as a Responsable who
+  // sees it through their team: every one of its tasks, archived included, is in one of them.
+  'GET /api/v1/projects/{project_id}/statuses/': ({ request }) =>
+    check(request({ path: { project_id: HOT_PROJECT_ID }, headers: bearer(randomHotManager()) }), {
+      'list statuses 200': (r) => r.status === 200,
+      'list statuses reads the hot project': (r) =>
+        r.status === 200
+        && CATEGORIES.every((category) => r.json('statuses').some((status) => status.category === category))
+        && r.json('statuses').reduce((total, status) => total + status.task_count, 0) >= HOT_TASKS + HOT_ARCHIVED_TASKS,
+    }),
   'GET /api/v1/projects/{project_id}/users/': ({ request }) =>
     check(
       request({
@@ -298,6 +414,62 @@ const writeHandlers = {
     });
   },
 
+  // Project templates (MAIR-566), as the Admin: create → patch → delete, each on a template of its
+  // own with a unique name (two templates cannot share one).
+  'POST /api/v1/project-templates/': ({ request }) => {
+    const res = request({
+      body: { name: uniqueName('k6 create template'), description: 'Load test', statuses: templateStatuses('k6') },
+    });
+    check(res, { 'create template 200': (r) => r.status === 200 });
+    if (res.status === 200) deleteTemplate(res.json('template_id'));
+  },
+  'PATCH /api/v1/project-templates/{template_id}/': ({ request }) => {
+    const templateId = createTemplate(uniqueName('k6 patch template'));
+    check(
+      request({
+        path: { template_id: templateId },
+        body: { name: uniqueName('k6 patched template'), statuses: templateStatuses('k6 patched') },
+      }),
+      { 'patch template 204': (r) => r.status === 204 },
+    );
+    deleteTemplate(templateId);
+  },
+  'DELETE /api/v1/project-templates/{template_id}/': ({ request }) => {
+    const templateId = createTemplate(uniqueName('k6 delete template'));
+    check(request({ path: { template_id: templateId } }), {
+      'delete template 204': (r) => r.status === 204,
+    });
+  },
+
+  // Task statuses (MAIR-566), on a project of their own (it starts with the three statuses of
+  // `Simple`): add → patch → delete a fourth one, which holds no task and is not the last of its
+  // category, so it can go without `move_to`.
+  'POST /api/v1/projects/{project_id}/statuses/': ({ request }) => {
+    const projectId = createProject('k6 add status');
+    check(
+      request({ path: { project_id: projectId }, body: { name: 'À valider', category: 'InProgress', color: '#D97706', position: 2 } }),
+      { 'add status 200': (r) => r.status === 200 },
+    );
+    deleteProject(projectId);
+  },
+  'PATCH /api/v1/projects/{project_id}/statuses/{status_id}/': ({ request }) => {
+    const projectId = createProject('k6 patch status');
+    const statusId = createStatus(projectId, 'À valider');
+    check(
+      request({ path: { project_id: projectId, status_id: statusId }, body: { name: 'En validation', color: '#7C3AED', position: 0 } }),
+      { 'patch status 204': (r) => r.status === 204 },
+    );
+    deleteProject(projectId);
+  },
+  'DELETE /api/v1/projects/{project_id}/statuses/{status_id}/': ({ request }) => {
+    const projectId = createProject('k6 delete status');
+    const statusId = createStatus(projectId, 'À valider');
+    check(request({ path: { project_id: projectId, status_id: statusId } }), {
+      'delete status 204': (r) => r.status === 204,
+    });
+    deleteProject(projectId);
+  },
+
   // Members, on a project of their own: two VUs adding the same user to a shared project would
   // answer 409.
   'POST /api/v1/projects/{project_id}/users/': ({ request }) => {
@@ -374,8 +546,15 @@ export const options = {
   },
 };
 
-/** Read fixtures: a project with a member, a task (its creation is logged) and a comment. */
+/**
+ * Read fixtures: a project with a member, a task (its creation is logged) and a comment, and the
+ * id of the default template (`Simple`, seeded by the Database, MAIR-566).
+ */
 export function setup() {
+  const defaultTemplate = fixture('GET', '/api/v1/project-templates/')
+    .json('templates')
+    .find((template) => template.is_default);
+  if (!defaultTemplate) fail('no default project template: the Database image lacks MAIR-566');
   const projectId = createProject('k6 read fixture');
   addMember(projectId, MEMBER_ID);
   const taskId = createTask(projectId, 'k6 read task');
@@ -383,7 +562,7 @@ export function setup() {
   const writeProjectId = createProject('k6 write sandbox');
   // Tasks are assigned to MEMBER_ID, who must belong to the project (MAIR-393).
   addMember(writeProjectId, MEMBER_ID);
-  return { projectId, taskId, writeProjectId };
+  return { projectId, taskId, writeProjectId, defaultTemplateId: defaultTemplate.id };
 }
 
 export function teardown(data) {

@@ -21,11 +21,23 @@ pub struct TaskView {
     pub description: String,
     /// Statut courant. `Error` signale une valeur en base que l'API ne sait pas interpréter.
     pub status: TaskStatus,
+    /// Id of the task's status among its project's statuses (`GET /api/v1/projects/{project_id}/statuses/`,
+    /// MAIR-566); `status` is its category.
+    #[schema(example = 31)]
+    pub status_id: Option<u64>,
+    /// Name of the task's status in its project (e.g. `À valider`), `null` only for a task read
+    /// while its status is being deleted.
+    #[schema(example = "En cours")]
+    pub status_name: Option<String>,
     /// Priorité. `Error` signale une valeur en base que l'API ne sait pas interpréter.
     pub priority: TaskPriority,
     /// Échéance, ou `null` si la tâche n'en a pas.
     #[schema(value_type = Option<String>, format = DateTime, example = "2026-10-15T00:00:00Z")]
     pub due_date: Option<DateTime<Utc>>,
+    /// When the task was archived (MAIR-502: a task is archived as soon as it is `Completed`, and
+    /// back when it is reopened), or `null` while it is active.
+    #[schema(value_type = Option<String>, format = DateTime, example = json!(null))]
+    pub archived_at: Option<DateTime<Utc>>,
     /// Identifiant Core API de l'agent assigné, ou `null` si la tâche n'est assignée à personne.
     #[schema(example = 42)]
     pub assigned_to: Option<u64>,
@@ -40,8 +52,11 @@ impl From<Task> for TaskView {
             title: task.title().to_string(),
             description: task.description().to_string(),
             status: task.status().to_string().into(),
+            status_id: task.status_id().map(id_from_sql),
+            status_name: task.status_name().map(str::to_string),
             priority: task.priority().to_string().into(),
             due_date: task.due_date(),
+            archived_at: task.archived_at(),
             assigned_to: task.assigned_to().map(id_from_sql),
             fields: task.fields(),
         }

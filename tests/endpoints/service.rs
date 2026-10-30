@@ -4,12 +4,12 @@ use actix_web::test::TestRequest;
 use actix_web::{web, App};
 use mairie360_api_lib::state::AppState;
 use mairie360_api_lib::test_setup::db_setup::start_postgres_container;
-use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use mairie360_api_lib::test_setup::redis_setup::start_redis_container;
 use project_api::endpoints::health;
 use serial_test::serial;
 
 use super::{get, status, TestContext};
+use crate::common::project_db_url;
 use crate::init_app;
 
 /// Nothing listens on port 1: the connection is refused immediately.
@@ -38,9 +38,8 @@ async fn ready(state: AppState) -> (u16, String) {
 #[actix_web::test]
 #[serial]
 async fn ready_when_postgres_and_redis_answer() {
-    let (_container, pg_url) = get_shared_db().await;
     let (_redis, redis) = start_redis_container().await;
-    let state = AppState::new(redis.url.clone(), pg_url.to_string()).await;
+    let state = AppState::new(redis.url.clone(), project_db_url().await).await;
 
     let (code, body) = ready(state).await;
     assert_eq!(code, 200);
@@ -50,8 +49,7 @@ async fn ready_when_postgres_and_redis_answer() {
 #[actix_web::test]
 #[serial]
 async fn not_ready_without_redis() {
-    let (_container, pg_url) = get_shared_db().await;
-    let state = AppState::new(UNREACHABLE_REDIS.to_string(), pg_url.to_string()).await;
+    let state = AppState::new(UNREACHABLE_REDIS.to_string(), project_db_url().await).await;
 
     let (code, body) = ready(state).await;
     assert_eq!(code, 503);

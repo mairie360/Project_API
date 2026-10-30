@@ -2,8 +2,8 @@ use mairie360_api_lib::database::db_interface::{
     id_from_sql, id_to_sql, ApiRequestDto, QueryParam,
 };
 
-/// Le projet `project_id` s'il est visible par l'utilisateur (aucune ligne sinon, ou s'il n'existe pas).
-/// Les lignes sont des `get_projects::view::ProjectView`.
+/// The project `project_id` if the user can see it (no row otherwise, or if it does not exist).
+/// The rows are `get_projects::view::ProjectView`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GetVisibleProjectQueryView {
     params: Vec<QueryParam>,
@@ -32,7 +32,7 @@ impl ApiRequestDto for GetVisibleProjectQueryView {
     fn query_sql(&self) -> &'static str {
         concat!(
             "SELECT to_jsonb(t) FROM ( \
-                SELECT p.id, p.title, p.description, p.status \
+                SELECT p.id, p.title, p.description, p.status, p.priority \
                 FROM projects p \
                 WHERE p.id = $2 AND ",
             crate::project_visible_to_user_sql!(),

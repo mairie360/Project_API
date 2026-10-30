@@ -432,7 +432,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Réfection de la place du marché (newman)\",\n  \"description\": \"Travaux de voirie 2026\"\n}",
+              "raw": "{\n  \"name\": \"Réfection de la place du marché (newman)\",\n  \"description\": \"Travaux de voirie 2026\",\n  \"status\": \"Todo\",\n  \"priority\": \"High\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -542,7 +542,9 @@
                   "    const body = pm.response.json();",
                   "    pm.expect(body.project.id).to.eql(Number(pm.environment.get(\"project_id\")));",
                   "    pm.expect(body.project.name).to.eql(\"Réfection de la place du marché (newman)\");",
-                  "    pm.expect(body.project.status).to.eql(\"Active\");",
+                  "    // MAIR-558: the status and the priority given at creation are stored.",
+                  "    pm.expect(body.project.status).to.eql(\"Todo\");",
+                  "    pm.expect(body.project.priority).to.eql(\"High\");",
                   "    pm.expect(body.tasks).to.be.an(\"array\").that.is.empty;",
                   "    pm.expect(body.users).to.be.an(\"array\");",
                   "});"
@@ -663,7 +665,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"description\": \"Travaux de voirie 2026, phase 2\",\n  \"status\": \"Suspended\"\n}",
+              "raw": "{\n  \"description\": \"Travaux de voirie 2026, phase 2\",\n  \"status\": \"Suspended\",\n  \"priority\": \"Low\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -774,9 +776,10 @@
                   "pm.test(\"Status is 200\", function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
-                  "pm.test(\"Status and description were updated\", function () {",
+                  "pm.test(\"Status, priority and description were updated\", function () {",
                   "    const project = pm.response.json().project;",
                   "    pm.expect(project.status).to.eql(\"Suspended\");",
+                  "    pm.expect(project.priority).to.eql(\"Low\");",
                   "    pm.expect(project.description).to.eql(\"Travaux de voirie 2026, phase 2\");",
                   "});"
                 ]
@@ -1288,6 +1291,65 @@
                 "exec": [
                   "pm.test(\"Status is 204\", function () {",
                   "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Agent lists their pending tasks across projects",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tasks/?assigned_to={{agent_user_id}}&status=Todo,InProgress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "assigned_to",
+                  "value": "{{agent_user_id}}"
+                },
+                {
+                  "key": "status",
+                  "value": "Todo,InProgress"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"The agent's task is listed with its project (MAIR-524)\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const task = body.tasks.find(t => t.id === Number(pm.environment.get(\"task_id\")));",
+                  "    pm.expect(task, 'task').to.exist;",
+                  "    pm.expect(task.status).to.eql(\"InProgress\");",
+                  "    pm.expect(task.project_id).to.eql(Number(pm.environment.get(\"project_id\")));",
+                  "    pm.expect(task.project_name).to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(body.tasks.every(t => t.assigned_to === Number(pm.environment.get(\"agent_user_id\")))).to.be.true;",
+                  "    pm.expect(body.total).to.be.a(\"number\").at.least(1);",
                   "});"
                 ]
               }

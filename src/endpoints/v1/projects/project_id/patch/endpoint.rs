@@ -7,9 +7,8 @@ use mairie360_api_lib::state::AppState;
 use crate::endpoints::db_error::log_db_error;
 
 use crate::database::project::update::view::UpdateProjectQueryView;
-use crate::database::project::update_status::view::ProjectStatus as DbProjectStatus;
 use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
-use crate::endpoints::v1::projects::get::view::ProjectStatus;
+use crate::endpoints::v1::projects::get::view::stored_priority;
 use crate::endpoints::v1::projects::project_id::patch::view::UpdateProjectView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 use crate::endpoints::validation::ValidatedJson;
@@ -63,23 +62,24 @@ async fn trigger_update_project(
         return Err(UpdateProjectError::BadRequest);
     }
     let status = match view.status {
-        Some(ProjectStatus::Error) => return Err(UpdateProjectError::BadRequest),
-        Some(status) => Some(DbProjectStatus::from(status.to_string())),
+        Some(status) => Some(status.stored().ok_or(UpdateProjectError::BadRequest)?),
         None => None,
     };
+    let mut query_view = UpdateProjectQueryView::new(
+        project_id,
+        view.name.as_deref().map(str::trim),
+        view.description.as_deref(),
+        status,
+    );
+    if let Some(priority) = &view.priority {
+        query_view = query_view
+            .with_priority(stored_priority(priority).ok_or(UpdateProjectError::BadRequest)?);
+    }
 
-    let updated: bool = tx
-        .fetch_scalar(&UpdateProjectQueryView::new(
-            project_id,
-            view.name.as_deref().map(str::trim),
-            view.description.as_deref(),
-            status,
-        ))
-        .await
-        .map_err(|e| {
-            log_db_error("projects/project_id/patch", &e);
-            UpdateProjectError::DatabaseError
-        })?;
+    let updated: bool = tx.fetch_scalar(&query_view).await.map_err(|e| {
+        log_db_error("projects/project_id/patch", &e);
+        UpdateProjectError::DatabaseError
+    })?;
 
     if updated {
         Ok(())
@@ -94,19 +94,20 @@ async fn trigger_update_project(
         ProjectPathParams,
     ),
     path = "",
-    summary = "Modifier un projet",
-    description = "Met à jour le nom, la description ou le statut d'un projet. Modification \
-                   partielle : un champ absent ou `null` reste inchangé. Réservé aux responsables \
-                   du projet.\n\n\
-                   Un `name` réduit à des espaces est refusé en `400`, de même que le statut \
-                   `Error`, qui n'est qu'une valeur de repli à la lecture et n'est pas \
-                   assignable.\n\n\
-                   La réponse a un corps vide ; relire le projet avec \
+    summary = "Update a project",
+    description = "Updates the name, the description, the status or the priority of a project. \
+                   Partial update: a missing or `null` field is kept. Restricted to the managers \
+                   of the project.\n\n\
+                   A `name` made of spaces only is refused in `400`, and so is the `Error` status \
+                   or priority, which is only a fallback on read and cannot be assigned. The \
+                   priority is stored as given (MAIR-558), `Urgent` as `High`; it does not follow \
+                   the tasks.\n\n\
+                   The response has an empty body; read the project back with \
                    `GET /api/v1/projects/{project_id}/`.",
     request_body(
         content = UpdateProjectView,
-        description = "Champs à modifier. Tous facultatifs.",
-        example = json!({ "status": "Suspended" })
+        description = "Fields to change, all optional.",
+        example = json!({ "status": "Review", "priority": "High" })
     ),
     responses(
         (
@@ -115,7 +116,7 @@ async fn trigger_update_project(
         ),
         (
             status = 400,
-            description = "Malformed JSON body, `project_id` not an integer, `name` empty, `Error` status, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs.",
+            description = "Malformed JSON body, `project_id` not an integer, `name` empty, `status` or `priority` not one of the enum values, `Error` status or priority, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs.",
             body = String,
             content_type = "text/plain",
             example = json!("Invalid `name`: must be at most 255 characters")

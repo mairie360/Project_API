@@ -1,7 +1,6 @@
 use crate::common::fixtures::{create_user, set_task_status};
 use crate::common::get_smart_db;
 use mairie360_api_lib::smart_db::SmartDatabase;
-use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::tasks::collaboration::view::{
     AddTaskCommentQueryView, GetTaskCollaborationQueryView, TaskCollaborationRow, TaskComment,
@@ -65,13 +64,12 @@ async fn comment(
 
 #[tokio::test]
 async fn test_comments_and_history_are_signed_and_read_back() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let author = create_user(&db, "Jeanne", None).await;
+    let db = get_smart_db().await;
+    let author = create_user("Jeanne", None).await;
     let (project_id, task_id) = create_task(&db, author).await;
 
     let comments = comment(&db, project_id, task_id, author, "  Devis reçu.  ").await;
-    set_task_status(&db, task_id, "in_progress").await;
+    set_task_status(task_id, "in_progress").await;
 
     let created = &comments[0];
     assert!(created.id.starts_with("comment-"));
@@ -91,10 +89,16 @@ async fn test_comments_and_history_are_signed_and_read_back() {
         vec!["status_changed", "task_created"]
     );
     assert_eq!(view.history_total, 2);
-    assert_eq!(view.history[0].label, "Status changed: todo → in_progress");
+    // MAIR-566: the label names the project statuses, `changes` keeps the categories too.
+    assert_eq!(view.history[0].label, "Status changed: À faire → En cours");
+    let changes = view.history[0].changes.clone().expect("status changes");
     assert_eq!(
-        view.history[0].changes,
-        Some(serde_json::json!({ "status": { "from": "todo", "to": "in_progress" } }))
+        changes["status"],
+        serde_json::json!({ "from": "todo", "to": "in_progress" })
+    );
+    assert_eq!(
+        changes["status_name"],
+        serde_json::json!({ "from": "À faire", "to": "En cours" })
     );
     assert_eq!(view.history[1].label, "Task created");
     assert_eq!(view.history[1].author.id, format!("user-{author}"));
@@ -103,9 +107,8 @@ async fn test_comments_and_history_are_signed_and_read_back() {
 
 #[tokio::test]
 async fn test_comments_are_paginated_in_reading_order() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let author = create_user(&db, "Paul", None).await;
+    let db = get_smart_db().await;
+    let author = create_user("Paul", None).await;
     let (project_id, task_id) = create_task(&db, author).await;
     for message in ["un", "deux", "trois"] {
         comment(&db, project_id, task_id, author, message).await;
@@ -126,9 +129,8 @@ async fn test_comments_are_paginated_in_reading_order() {
 
 #[tokio::test]
 async fn test_collaboration_of_a_task_from_another_project_is_not_found() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let author = create_user(&db, "Claire", None).await;
+    let db = get_smart_db().await;
+    let author = create_user("Claire", None).await;
     let (project_id, task_id) = create_task(&db, author).await;
     let other_project = project_id + 10_000;
 
@@ -151,4 +153,43 @@ async fn test_collaboration_of_a_task_from_another_project_is_not_found() {
             .comments_total,
         0
     );
+}
+
+/// MAIR-502: `latest_comments_first` pages the comments from the most recent one, so page 1 holds
+/// the latest comments, like the history; the totals do not change.
+#[tokio::test]
+async fn test_comments_can_be_paged_from_the_most_recent_one() {
+    let db = get_smart_db().await;
+    let author = create_user("Lina", None).await;
+    let (project_id, task_id) = create_task(&db, author).await;
+    for message in ["un", "deux", "trois"] {
+        comment(&db, project_id, task_id, author, message).await;
+    }
+    let page = |offset| {
+        GetTaskCollaborationQueryView::new(project_id, task_id, 2, offset).latest_comments_first()
+    };
+    let read = |rows: Vec<TaskCollaborationRow>| -> TaskCollaborationView {
+        rows.into_iter().next().expect("task found").into()
+    };
+
+    let first = read(db.fetch_all(&page(0)).await.unwrap());
+    assert_eq!(first.comments_total, 3);
+    assert_eq!(
+        first
+            .comments
+            .iter()
+            .map(|c| c.message.as_str())
+            .collect::<Vec<_>>(),
+        vec!["trois", "deux"]
+    );
+    let second = read(db.fetch_all(&page(2)).await.unwrap());
+    assert_eq!(
+        second
+            .comments
+            .iter()
+            .map(|c| c.message.as_str())
+            .collect::<Vec<_>>(),
+        vec!["un"]
+    );
+    assert_eq!(second.history_total, 1);
 }

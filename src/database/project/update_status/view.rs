@@ -2,9 +2,13 @@ use mairie360_api_lib::database::db_interface::{
     id_from_sql, id_to_sql, ApiRequestDto, QueryParam,
 };
 
+/// Stored status of a project (`project_status`). `Todo` and `Review` are the Kanban columns
+/// before and after `Active` (MAIR-558).
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ProjectStatus {
+    Todo,
     Active,
+    Review,
     Suspended,
     Archived,
     Completed,
@@ -14,6 +18,8 @@ pub enum ProjectStatus {
 impl From<String> for ProjectStatus {
     fn from(s: String) -> Self {
         match s.as_str() {
+            "todo" => ProjectStatus::Todo,
+            "review" => ProjectStatus::Review,
             "suspended" => ProjectStatus::Suspended,
             "archived" => ProjectStatus::Archived,
             "completed" => ProjectStatus::Completed,
@@ -26,7 +32,9 @@ impl From<String> for ProjectStatus {
 impl std::fmt::Display for ProjectStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
+            ProjectStatus::Todo => "todo",
             ProjectStatus::Active => "active",
+            ProjectStatus::Review => "review",
             ProjectStatus::Suspended => "suspended",
             ProjectStatus::Archived => "archived",
             ProjectStatus::Completed => "completed",
@@ -67,5 +75,9 @@ impl ApiRequestDto for UpdateProjectStatusQueryView {
 
     fn query_params(&self) -> &[QueryParam] {
         &self.params
+    }
+
+    fn invalidated_read_caches(&self) -> &'static [&'static str] {
+        crate::database::project::PROJECTS_READ_CACHES
     }
 }

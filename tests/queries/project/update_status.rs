@@ -1,5 +1,4 @@
 use crate::common::get_smart_db;
-use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::project::update_status::view::{
     ProjectStatus, UpdateProjectStatusQueryView,
@@ -18,8 +17,7 @@ async fn create_project(db: &mairie360_api_lib::smart_db::SmartDatabase) -> u64 
 
 #[tokio::test]
 async fn test_update_project_status_to_suspended_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     let view = UpdateProjectStatusQueryView::new(project_id, ProjectStatus::Suspended);
@@ -34,8 +32,7 @@ async fn test_update_project_status_to_suspended_success() {
 
 #[tokio::test]
 async fn test_update_project_status_to_active_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     let view = UpdateProjectStatusQueryView::new(project_id, ProjectStatus::Active);
@@ -50,8 +47,7 @@ async fn test_update_project_status_to_active_success() {
 
 #[tokio::test]
 async fn test_update_project_status_to_completed_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     let view = UpdateProjectStatusQueryView::new(project_id, ProjectStatus::Completed);
@@ -66,8 +62,7 @@ async fn test_update_project_status_to_completed_success() {
 
 #[tokio::test]
 async fn test_update_project_status_unknown_status_error() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     let view = UpdateProjectStatusQueryView::new(project_id, ProjectStatus::Error);

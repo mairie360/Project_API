@@ -31,10 +31,18 @@ export ADMIN_JWT="$jwt_header.$jwt_payload.$jwt_signature"
 unset JWT_SECRET jwt_header jwt_payload jwt_signature
 
 # Marker engine. CI checks mairie360/CICD out as cicd-repo/; locally it is cloned once at the
-# cicd_version pinned in .github/workflows/cicd.yml (override with CICD_VERSION, e.g. a branch).
+# cicd_version pinned in .github/workflows/cicd.yml, or at the first release that ships the engine
+# (GDPR_ENGINE_MIN_CICD) while that pin is older (override with CICD_VERSION, e.g. a branch).
+GDPR_ENGINE_MIN_CICD="v4.12.0"
 CICD_DIR="cicd-repo"
 if [ ! -f "$CICD_DIR/tests/gdpr/marker/scan.mjs" ]; then
-    CICD_VERSION="${CICD_VERSION:-$(sed -n 's/^[[:space:]]*cicd_version:[[:space:]]*\([^[:space:]#]*\).*/\1/p' .github/workflows/cicd.yml | head -n 1)}"
+    if [ -z "${CICD_VERSION:-}" ]; then
+        CICD_VERSION="$(sed -n 's/^[[:space:]]*cicd_version:[[:space:]]*\([^[:space:]#]*\).*/\1/p' .github/workflows/cicd.yml | head -n 1)"
+        case "$CICD_VERSION" in
+            v[0-9]*) CICD_VERSION="$(printf '%s\n%s\n' "$CICD_VERSION" "$GDPR_ENGINE_MIN_CICD" | sort -V | tail -n 1)" ;;
+            *) CICD_VERSION="$GDPR_ENGINE_MIN_CICD" ;;
+        esac
+    fi
     echo "==> Fetching mairie360/CICD $CICD_VERSION into $CICD_DIR/..."
     rm -rf "$CICD_DIR"
     git clone --quiet --depth 1 --branch "$CICD_VERSION" https://github.com/mairie360/CICD "$CICD_DIR" || exit 1

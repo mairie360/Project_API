@@ -1,7 +1,6 @@
 use crate::common::fixtures::create_user;
 use crate::common::get_smart_db;
 use mairie360_api_lib::smart_db::SmartDatabase;
-use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use project_api::database::paged::PagedRows;
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::tasks::collaboration::view::{
@@ -60,8 +59,7 @@ async fn assert_task_created(
 
 #[tokio::test]
 async fn test_create_task_todo_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     assert_task_created(
@@ -77,8 +75,7 @@ async fn test_create_task_todo_success() {
 
 #[tokio::test]
 async fn test_create_task_in_progress_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     assert_task_created(
@@ -94,8 +91,7 @@ async fn test_create_task_in_progress_success() {
 
 #[tokio::test]
 async fn test_create_task_completed_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     assert_task_created(
@@ -111,8 +107,7 @@ async fn test_create_task_completed_success() {
 
 #[tokio::test]
 async fn test_create_task_status_error_error() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     let view = CreateTaskQueryView::new(
@@ -137,8 +132,7 @@ async fn test_create_task_status_error_error() {
 
 #[tokio::test]
 async fn test_create_task_low_priority_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     assert_task_created(
@@ -154,8 +148,7 @@ async fn test_create_task_low_priority_success() {
 
 #[tokio::test]
 async fn test_create_task_high_priority_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     assert_task_created(
@@ -171,8 +164,7 @@ async fn test_create_task_high_priority_success() {
 
 #[tokio::test]
 async fn test_create_task_no_due_date_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     assert_task_created(
@@ -188,8 +180,7 @@ async fn test_create_task_no_due_date_success() {
 
 #[tokio::test]
 async fn test_create_task_no_owner_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     assert_task_created(
@@ -205,8 +196,7 @@ async fn test_create_task_no_owner_success() {
 
 #[tokio::test]
 async fn test_create_task_no_owner_and_no_due_date_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
 
     assert_task_created(
@@ -222,8 +212,7 @@ async fn test_create_task_no_owner_and_no_due_date_success() {
 
 #[tokio::test]
 async fn test_create_task_unknown_project() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
 
     let view = CreateTaskQueryView::new(
         999_999,
@@ -247,10 +236,9 @@ async fn test_create_task_unknown_project() {
 
 #[tokio::test]
 async fn test_create_task_assignee_outside_the_project_is_refused() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
-    let outsider = create_user(&db, "Outsider", None).await;
+    let outsider = create_user("Outsider", None).await;
 
     for assignee in [outsider, 999_999] {
         let view = CreateTaskQueryView::new(
@@ -276,10 +264,9 @@ async fn test_create_task_assignee_outside_the_project_is_refused() {
 
 #[tokio::test]
 async fn test_create_task_assignee_member_of_the_project_is_accepted() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
-    let member = create_user(&db, "Member", None).await;
+    let member = create_user("Member", None).await;
     db.execute(AddUserToProjectQueryView::new(project_id, member))
         .await
         .unwrap();
@@ -297,10 +284,9 @@ async fn test_create_task_assignee_member_of_the_project_is_accepted() {
 
 #[tokio::test]
 async fn test_create_task_persists_the_description_and_logs_the_creation() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
     let project_id = create_project(&db).await;
-    let author = create_user(&db, "Creator", None).await;
+    let author = create_user("Creator", None).await;
 
     let task_id = db
         .fetch_scalar::<i32, _>(&CreateTaskQueryView::new(

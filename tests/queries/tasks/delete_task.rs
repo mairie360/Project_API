@@ -1,5 +1,4 @@
 use crate::common::get_smart_db;
-use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority, TaskStatus,
@@ -8,8 +7,7 @@ use project_api::database::tasks::delete_task::view::DeleteTaskQueryView;
 
 #[tokio::test]
 async fn test_delete_task_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
 
     let view = CreateProjectQueryView::new("Test Project", Some("Test Description"), 1);
     let project_id = db.fetch_scalar::<i32, _>(&view).await.unwrap() as u64;
@@ -39,8 +37,7 @@ async fn test_delete_task_success() {
 
 #[tokio::test]
 async fn test_delete_task_unknown_task() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
 
     let view = DeleteTaskQueryView::new(999);
     let result = db.execute(view).await;

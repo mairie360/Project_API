@@ -13,6 +13,27 @@ use crate::endpoints::v1::projects::access::{require_access, AccessDenied, Requi
 use crate::endpoints::v1::projects::project_id::tasks::task_id::collaboration::view::TaskCollaborationView;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
 
+/// Order of the comments pages (MAIR-502).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum CommentsOrder {
+    /// Oldest first, the reading order of a discussion (default).
+    #[default]
+    Oldest,
+    /// Most recent first: page 1 holds the latest comments.
+    Latest,
+}
+
+/// Order of the comments of `GET …/collaboration`.
+#[derive(Debug, Default, Clone, Copy, serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct CollaborationOrderParams {
+    /// `oldest` (default) pages the comments from the first one, `latest` from the most recent one,
+    /// so that page 1 holds the latest comments, like the history.
+    #[param(inline, example = "latest")]
+    comments_order: Option<CommentsOrder>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum GetTaskCollaborationError {
     Forbidden,
@@ -51,17 +72,16 @@ async fn trigger_get_task_collaboration(
     project_id: u64,
     task_id: u64,
     page: Page,
+    order: CommentsOrder,
 ) -> Result<TaskCollaborationView, GetTaskCollaborationError> {
-    let rows: Vec<TaskCollaborationRow> = state
-        .get_smart_db()
-        .fetch_all(&GetTaskCollaborationQueryView::new(
-            project_id,
-            task_id,
-            page.limit,
-            page.offset,
-        ))
-        .await
-        .map_err(|e| {
+    let view = GetTaskCollaborationQueryView::new(project_id, task_id, page.limit, page.offset);
+    let view = if order == CommentsOrder::Latest {
+        view.latest_comments_first()
+    } else {
+        view
+    };
+    let rows: Vec<TaskCollaborationRow> =
+        state.get_smart_db().fetch_all(&view).await.map_err(|e| {
             log_db_error("projects/project_id/tasks/task_id/collaboration", &e);
             GetTaskCollaborationError::DatabaseError
         })?;
@@ -81,7 +101,8 @@ async fn trigger_get_task_collaboration(
                    to the task.\n\n\
                    The two lists are sorted in opposite orders: `comments` from oldest to newest \
                    (reading order of a discussion), `history` from newest to oldest (order of a \
-                   log). `limit` / `offset` page each list independently in its own order; \
+                   log). With `comments_order=latest`, the comments are paged from the most recent \
+                   one, so page 1 holds the latest comments and history entries (MAIR-502). `limit` / `offset` page each list independently in its own order; \
                    `comments_total` and `history_total` give the full counts.\n\n\
                    The history is written by the server only: `task_created` when the task is \
                    created, `task_updated` for every `PATCH` changing other fields than the \
@@ -89,7 +110,8 @@ async fn trigger_get_task_collaboration(
                    caller of the request that made it. There is no route to add an entry.",
     params(
         TaskPathParams,
-        PageParams
+        PageParams,
+        CollaborationOrderParams
     ),
     responses(
         (
@@ -128,7 +150,7 @@ async fn trigger_get_task_collaboration(
         ),
         (
             status = 400,
-            description = "A URL segment is not an integer, or `limit` / `offset` is not a non-negative integer.",
+            description = "A URL segment is not an integer, `limit` / `offset` is not a non-negative integer, or `comments_order` is neither `oldest` nor `latest`.",
             body = String,
             content_type = "text/plain",
             example = json!("Path deserialize error: can not parse `abc` to a u64")
@@ -173,6 +195,7 @@ pub async fn get_task_collaboration(
     auth_user: AuthenticatedUser,
     params: web::Path<TaskPathParams>,
     page: web::Query<PageParams>,
+    order: web::Query<CollaborationOrderParams>,
 ) -> Result<impl Responder, GetTaskCollaborationError> {
     require_access(
         &state,
@@ -182,9 +205,14 @@ pub async fn get_task_collaboration(
         Requirement::ActOnTask,
     )
     .await?;
-    let result =
-        trigger_get_task_collaboration(state, params.project_id(), params.task_id(), page.page())
-            .await?;
+    let result = trigger_get_task_collaboration(
+        state,
+        params.project_id(),
+        params.task_id(),
+        page.page(),
+        order.comments_order.unwrap_or_default(),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(result))
 }
 

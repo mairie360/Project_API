@@ -1,9 +1,12 @@
+//! Test set-up helpers. They run as the superuser (`fixtures_db`, MAIR-556): users, roles and
+//! groups are outside the grants of `project_api`, which only the code under test connects as.
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use super::fixtures_db;
 use mairie360_api_lib::database::db_interface::{ApiRequestDto, QueryParam};
-use mairie360_api_lib::smart_db::SmartDatabase;
 
-/// Requête SQL de mise en place propre aux tests (utilisateurs, rôles, groupes), sans paramètres.
+/// Test set-up SQL (users, roles, groups), without parameters.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct FixtureSql {
     #[serde(skip)]
@@ -33,7 +36,7 @@ fn fixture_sql(sql: String) -> FixtureSql {
     }
 }
 
-/// Suffixe unique par appel, pour isoler les données d'un test dans la base partagée.
+/// Unique suffix per call, to isolate the data of a test in the shared database.
 pub fn unique_suffix() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let nanos = std::time::SystemTime::now()
@@ -48,7 +51,8 @@ pub fn unique_suffix() -> String {
 const FIXTURE_PASSWORD_HASH: &str = "$argon2id$v=19$m=16,t=2,p=1$dGVzdHNhbHQ$dGVzdGhhc2g";
 
 /// Creates a user (with a role if `role` is given) and returns its id.
-pub async fn create_user(db: &SmartDatabase, first_name: &str, role: Option<&str>) -> u64 {
+pub async fn create_user(first_name: &str, role: Option<&str>) -> u64 {
+    let db = fixtures_db().await;
     let suffix = unique_suffix();
     let id: i32 = db
         .fetch_scalar(&fixture_sql(format!(
@@ -69,7 +73,8 @@ pub async fn create_user(db: &SmartDatabase, first_name: &str, role: Option<&str
 }
 
 /// Archives a user: its tokens stay well signed but no longer designate an active account.
-pub async fn archive_user(db: &SmartDatabase, user_id: u64) {
+pub async fn archive_user(user_id: u64) {
+    let db = fixtures_db().await;
     db.execute(fixture_sql(format!(
         "UPDATE users SET is_archived = true WHERE id = {user_id}"
     )))
@@ -77,8 +82,9 @@ pub async fn archive_user(db: &SmartDatabase, user_id: u64) {
     .unwrap();
 }
 
-/// Crée un groupe contenant `members` et renvoie son identifiant.
-pub async fn create_group(db: &SmartDatabase, owner_id: u64, members: &[u64]) -> u64 {
+/// Creates a group holding `members` and returns its id.
+pub async fn create_group(owner_id: u64, members: &[u64]) -> u64 {
+    let db = fixtures_db().await;
     let id: i32 = db
         .fetch_scalar(&fixture_sql(format!(
             "INSERT INTO groups (owner_id, name) VALUES ({owner_id}, 'Groupe {}') RETURNING id",
@@ -96,8 +102,9 @@ pub async fn create_group(db: &SmartDatabase, owner_id: u64, members: &[u64]) ->
     id as u64
 }
 
-/// Force le statut d'une tâche sans passer par l'API (déclenche le trigger d'historique).
-pub async fn set_task_status(db: &SmartDatabase, task_id: u64, status: &str) {
+/// Forces the status of a task without going through the API (fires the history trigger).
+pub async fn set_task_status(task_id: u64, status: &str) {
+    let db = fixtures_db().await;
     db.execute(fixture_sql(format!(
         "UPDATE tasks SET status = '{status}'::task_status WHERE id = {task_id}"
     )))

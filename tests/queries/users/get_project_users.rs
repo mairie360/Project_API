@@ -1,6 +1,5 @@
 use crate::common::fixtures::create_user;
 use crate::common::get_smart_db;
-use mairie360_api_lib::test_setup::queries_setup::get_shared_db;
 use project_api::database::paged::PagedRows;
 use project_api::database::project::create::view::CreateProjectQueryView;
 use project_api::database::users::add_user_to_project::view::AddUserToProjectQueryView;
@@ -10,8 +9,7 @@ use project_api::database::users::get_project_users::view::{
 
 #[tokio::test]
 async fn test_get_user_from_project_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
 
     let view = CreateProjectQueryView::new("Test Project", Some("Test Description"), 1);
     let project_id = db.fetch_scalar::<i32, _>(&view).await.unwrap() as u64;
@@ -41,8 +39,7 @@ async fn test_get_user_from_project_success() {
 
 #[tokio::test]
 async fn test_get_user_from_no_user_project_success() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
 
     let view = CreateProjectQueryView::new("Test Project", Some("Test Description"), 1);
     let project_id = db.fetch_scalar::<i32, _>(&view).await.unwrap() as u64;
@@ -68,8 +65,7 @@ async fn test_get_user_from_no_user_project_success() {
 
 #[tokio::test]
 async fn test_get_users_from_project_unknown_project() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
+    let db = get_smart_db().await;
 
     let view = GetProjectUsersQueryView::new(999, 100, 0);
     let result = db
@@ -92,15 +88,14 @@ async fn test_get_users_from_project_unknown_project() {
 
 #[tokio::test]
 async fn test_get_users_from_project_is_paged_with_exact_total() {
-    let (_container, host) = get_shared_db().await;
-    let db = get_smart_db(host.to_string()).await;
-    let owner = create_user(&db, "Owner", Some("Responsable")).await;
+    let db = get_smart_db().await;
+    let owner = create_user("Owner", Some("Responsable")).await;
     let project_id = db
         .fetch_scalar::<i32, _>(&CreateProjectQueryView::new("Membres", None, owner))
         .await
         .unwrap() as u64;
     for name in ["Alice", "Bruno", "Chloé"] {
-        let member = create_user(&db, name, None).await;
+        let member = create_user(name, None).await;
         db.execute(AddUserToProjectQueryView::new(project_id, member))
             .await
             .unwrap();
