@@ -265,7 +265,7 @@ only calls `init_telemetry("project-api")` and keeps the guard. Read the lib for
 
 ### Deployment
 
-`Dockerfile` = multi-stage release build onto `gcr.io/distroless/cc-debian12`, copied from `API_template` (MAIR-427): images pinned by digest, a dependency-only layer, `cargo build --release --locked`. `.cargo/audit.toml`, `.github/workflows/cicd.yml` and `src/main.rs` are the template's too: keep them in sync with it rather than editing them here alone. `development.Dockerfile` + `entrypoint.sh` = `cargo watch` dev container used by compose. `nginx.conf` reverse-proxies `:80` → api `:3001`. CI (`.github/workflows/cicd.yml`) just calls the reusable `mairie360/CICD` workflow, which builds/pushes the `project-api` image and runs the three `*_test.sh` scripts with `IMAGE_REF` set to the `dev-<sha>` image published by `release-dev` (newman, no Postman account involved).
+`Dockerfile` = multi-stage release build onto `gcr.io/distroless/cc-debian13` (builder `rust:1.99-slim-trixie`, same Debian as `development.Dockerfile`, MAIR-741), copied from `API_template` (MAIR-427): images pinned by digest, a dependency-only layer, `cargo build --release --locked`. `.cargo/audit.toml`, `.github/workflows/cicd.yml` and `src/main.rs` are the template's too: keep them in sync with it rather than editing them here alone. `development.Dockerfile` + `entrypoint.sh` = `cargo watch` dev container used by compose. `nginx.conf` reverse-proxies `:80` → api `:3001`. CI (`.github/workflows/cicd.yml`) just calls the reusable `mairie360/CICD` workflow, which builds/pushes the `project-api` image and runs the three `*_test.sh` scripts with `IMAGE_REF` set to the `dev-<sha>` image published by `release-dev` (newman, no Postman account involved).
 
 ## Pull request reviewers
 

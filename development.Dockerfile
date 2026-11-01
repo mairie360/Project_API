@@ -1,5 +1,5 @@
 # Same toolchain as the production `Dockerfile`, pinned by digest (Renovate bumps both together).
-FROM rust:1.99-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b AS development
+FROM rust:1.99-trixie@sha256:09027f873d45b8ecd1dc86f1fa13b7a62b875c961f017a0e331267b350430137 AS development
 
 RUN apt update && apt install -y curl && rm -rf /var/lib/apt/lists/*
 RUN cargo install cargo-watch --locked
