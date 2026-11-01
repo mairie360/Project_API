@@ -1,29 +1,37 @@
 # Journal des releases — Project_API
 
-<!-- release-journal-state {"dev": "59632677a529713c60589317738abd7c6c6d8fd8", "prod": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "prod_tag": "v1.2.0", "staging": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "updated": {"dev": "2026-10-21 21:32 UTC", "prod": "2026-10-21 09:10 UTC", "staging": "2026-10-21 03:21 UTC"}} -->
+<!-- release-journal-state {"dev": "26ec88b67857da787761289916105d2a2ee6a91e", "prod": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "prod_tag": "v1.2.0", "staging": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "updated": {"dev": "2026-11-01 12:34 UTC", "prod": "2026-10-21 09:10 UTC", "staging": "2026-10-21 03:21 UTC"}} -->
 > Tenu à jour par la CI (`mairie360/CICD`, action `release/release-journal`) à chaque passage en dev, staging et prod. Ne pas modifier à la main : le fichier est réécrit au passage suivant.
 
 | Environnement | Version | Commit | Mis à jour |
 | --- | --- | --- | --- |
 | prod | v1.2.0 | `5c1ed53` | 2026-10-21 09:10 UTC |
 | staging | — | `5c1ed53` | 2026-10-21 03:21 UTC |
-| dev | — | `5963267` | 2026-10-21 21:32 UTC |
+| dev | — | `26ec88b` | 2026-11-01 12:34 UTC |
 
 ## Ajouté sur main depuis la dernière release prod (v1.2.0)
 
-#### Technique
+#### Corrections
+- Journaux HTTP : la ligne de requête (query string) et le `Referer` ne sont plus journalisés. Avant : une valeur saisie dans une query string (nom, e-mail) pouvait se retrouver dans les journaux ; maintenant : seuls l'adresse du client, la méthode, le chemin sans query, le statut, la taille et la durée sont écrits (d'après la description de la PR, la partie `src/request_log.rs` n'étant pas entièrement visible dans le diff). (MAIR-290, [#139](https://github.com/mairie360/Project_API/pull/139))
+- Image d'exécution : avant, l'image `gcr.io/distroless/cc-debian12` embarquait une `libssl3` non corrigée (CVE-2026-84782) ; maintenant l'image est `gcr.io/distroless/cc-debian13:nonroot`, et le builder et `development.Dockerfile` passent aussi sur Debian 13 (trixie). (MAIR-741, [#206](https://github.com/mairie360/Project_API/pull/206))
 
-- Pin CICD passé de v4.4.0 à v4.4.3 dans `cicd.yml`, `promote-staging.yml` et `promote-prod.yml`, en trois PR successives : v4.4.1 corrige une release prod qui ne se publiait pas, v4.4.2 corrige une erreur HTTP 403 à la création de la release, v4.4.3 pousse le tag avec le token de l'app release. Ces changements touchent le pipeline de release et n'ont pas d'effet sur l'API elle-même. (MAIR-612, [#192](https://github.com/mairie360/Project_API/pull/192), [#194](https://github.com/mairie360/Project_API/pull/194), [#197](https://github.com/mairie360/Project_API/pull/197))
-- Mise à jour de la dépendance `tokio` de 1.54.0 à 1.54.1 (patch) par Renovate. Le diff fourni est vide, le fichier modifié n'est donc pas vérifiable ici. ([#199](https://github.com/mairie360/Project_API/pull/199))
-- Image de développement `rust:1.99-bookworm` épinglée sur le nouveau digest `5c1a173` dans `development.Dockerfile` uniquement. ([#195](https://github.com/mairie360/Project_API/pull/195))
+#### Technique
+- Matrice d'accès : `access-matrix.yaml` et `tests/endpoints/access_matrix.rs` vérifient que chaque opération de l'OpenAPI a une règle d'accès et que l'API répond selon elle ; ajout de `yaml_serde` en dev-dependency. (MAIR-288, [#148](https://github.com/mairie360/Project_API/pull/148))
+- Test du marqueur RGPD : `gdpr-marker.yaml`, `docker-compose-gdpr-marker.yml` et `gdpr_marker_test.sh`, plus le workflow `gdpr-pr.yml` qui contrôle la section « Données personnelles » des PR, ignorant `RUSTSEC-2026-0387` dans `.cargo/audit.toml`. (MAIR-290 et MAIR-295, [#139](https://github.com/mairie360/Project_API/pull/139), [#143](https://github.com/mairie360/Project_API/pull/143))
+- Dépendances : digests `rust:1.99-bookworm` de `development.Dockerfile` mis à jour trois fois (`5c1a173`, `48b7f43`, `9181b56`) ; `actix-web` 4.17.0 → 4.18.0 et `tokio` 1.54.0 → 1.54.1 (diffs non fournis, non vérifiés). (Renovate, [#195](https://github.com/mairie360/Project_API/pull/195), [#200](https://github.com/mairie360/Project_API/pull/200), [#203](https://github.com/mairie360/Project_API/pull/203), [#201](https://github.com/mairie360/Project_API/pull/201), [#199](https://github.com/mairie360/Project_API/pull/199))
+- Release MAIR-612 : version du workflow réutilisable mairie360/CICD passée de v4.4.0 à v4.4.3 dans `cicd.yml`, `promote-staging.yml` et `promote-prod.yml`, sans effet sur le code de l'API. ([#192](https://github.com/mairie360/Project_API/pull/192), [#194](https://github.com/mairie360/Project_API/pull/194), [#197](https://github.com/mairie360/Project_API/pull/197))
 
 ## Différence dev → staging (en dev, pas encore en staging)
 
-#### Technique
+#### Corrections
+- Journaux HTTP : la ligne de requête (query string) et le `Referer` ne sont plus journalisés. Avant : une valeur saisie dans une query string (nom, e-mail) pouvait se retrouver dans les journaux ; maintenant : seuls l'adresse du client, la méthode, le chemin sans query, le statut, la taille et la durée sont écrits (d'après la description de la PR, la partie `src/request_log.rs` n'étant pas entièrement visible dans le diff). (MAIR-290, [#139](https://github.com/mairie360/Project_API/pull/139))
+- Image d'exécution : avant, l'image `gcr.io/distroless/cc-debian12` embarquait une `libssl3` non corrigée (CVE-2026-84782) ; maintenant l'image est `gcr.io/distroless/cc-debian13:nonroot`, et le builder et `development.Dockerfile` passent aussi sur Debian 13 (trixie). (MAIR-741, [#206](https://github.com/mairie360/Project_API/pull/206))
 
-- Pin CICD passé de v4.4.0 à v4.4.3 dans `cicd.yml`, `promote-staging.yml` et `promote-prod.yml`, en trois PR successives : v4.4.1 corrige une release prod qui ne se publiait pas, v4.4.2 corrige une erreur HTTP 403 à la création de la release, v4.4.3 pousse le tag avec le token de l'app release. Ces changements touchent le pipeline de release et n'ont pas d'effet sur l'API elle-même. (MAIR-612, [#192](https://github.com/mairie360/Project_API/pull/192), [#194](https://github.com/mairie360/Project_API/pull/194), [#197](https://github.com/mairie360/Project_API/pull/197))
-- Mise à jour de la dépendance `tokio` de 1.54.0 à 1.54.1 (patch) par Renovate. Le diff fourni est vide, le fichier modifié n'est donc pas vérifiable ici. ([#199](https://github.com/mairie360/Project_API/pull/199))
-- Image de développement `rust:1.99-bookworm` épinglée sur le nouveau digest `5c1a173` dans `development.Dockerfile` uniquement. ([#195](https://github.com/mairie360/Project_API/pull/195))
+#### Technique
+- Matrice d'accès : `access-matrix.yaml` et `tests/endpoints/access_matrix.rs` vérifient que chaque opération de l'OpenAPI a une règle d'accès et que l'API répond selon elle ; ajout de `yaml_serde` en dev-dependency. (MAIR-288, [#148](https://github.com/mairie360/Project_API/pull/148))
+- Test du marqueur RGPD : `gdpr-marker.yaml`, `docker-compose-gdpr-marker.yml` et `gdpr_marker_test.sh`, plus le workflow `gdpr-pr.yml` qui contrôle la section « Données personnelles » des PR, ignorant `RUSTSEC-2026-0387` dans `.cargo/audit.toml`. (MAIR-290 et MAIR-295, [#139](https://github.com/mairie360/Project_API/pull/139), [#143](https://github.com/mairie360/Project_API/pull/143))
+- Dépendances : digests `rust:1.99-bookworm` de `development.Dockerfile` mis à jour trois fois (`5c1a173`, `48b7f43`, `9181b56`) ; `actix-web` 4.17.0 → 4.18.0 et `tokio` 1.54.0 → 1.54.1 (diffs non fournis, non vérifiés). (Renovate, [#195](https://github.com/mairie360/Project_API/pull/195), [#200](https://github.com/mairie360/Project_API/pull/200), [#203](https://github.com/mairie360/Project_API/pull/203), [#201](https://github.com/mairie360/Project_API/pull/201), [#199](https://github.com/mairie360/Project_API/pull/199))
+- Release MAIR-612 : version du workflow réutilisable mairie360/CICD passée de v4.4.0 à v4.4.3 dans `cicd.yml`, `promote-staging.yml` et `promote-prod.yml`, sans effet sur le code de l'API. ([#192](https://github.com/mairie360/Project_API/pull/192), [#194](https://github.com/mairie360/Project_API/pull/194), [#197](https://github.com/mairie360/Project_API/pull/197))
 
 ## Différence staging → prod (en staging, pas encore en prod)
 
@@ -34,6 +42,7 @@ _Rien._
 <!-- release-journal-history:start -->
 | Date | Environnement | Version | Commit | Run |
 | --- | --- | --- | --- | --- |
+| 2026-11-01 12:34 UTC | dev | — | `26ec88b` | [run](https://github.com/mairie360/Project_API/actions/runs/41306153308) |
 | 2026-10-21 21:32 UTC | dev | — | `5963267` | [run](https://github.com/mairie360/Project_API/actions/runs/39677850753) |
 | 2026-10-21 09:10 UTC | prod | v1.2.0 | `5c1ed53` | [run](https://github.com/mairie360/Project_API/actions/runs/39573696361) |
 | 2026-10-21 09:07 UTC | dev | — | `1a9a16d` | [run](https://github.com/mairie360/Project_API/actions/runs/39573548471) |
