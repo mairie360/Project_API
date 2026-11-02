@@ -45,9 +45,11 @@ docker run --rm --network host -v "$PWD/tests/postman:/etc/newman:ro" postman/ne
   run collection.json --environment environment.json
 ```
 
-## JWT secret
+## Session tokens
 
-`JWT_SECRET` must be random, at least 32 bytes and distinct per instance: `mairie360_api_lib`
-refuses to start with a missing, short or well-known one (MAIR-428). The compose stacks use the
-public test value `b"secret"` with `JWT_ALLOW_WEAK_SECRET=true`; never set that variable in a
-deployment.
+Only Core_API signs session JWTs (MAIR-680, Ed25519 / `EdDSA`). This API needs `JWT_PUBLIC_KEY`, Core's public
+key as PEM (several `PUBLIC KEY` blocks during a rotation, `\n`-escaped line breaks accepted), and no
+`JWT_SECRET`: while `JWT_SECRET` is set, HS256 tokens signed with it are still accepted (transition), so remove it
+once `JWT_PUBLIC_KEY` is deployed. The dev compose stack uses the public test key of `mairie360_api_lib` with
+`JWT_ALLOW_WEAK_SECRET=true`; never set that variable in a deployment. The test scripts generate a fresh key pair
+per run (`test_secrets.sh`).

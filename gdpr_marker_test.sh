@@ -20,15 +20,11 @@ fi
 export IMAGE_REF
 echo "==> API image under test: $IMAGE_REF"
 
-# Admin JWT of the run (sub=1, the Admin seeded by liquibase, valid 2 hours), signed with the
-# stack's public test JWT_SECRET: no token is committed (MAIR-428).
-JWT_SECRET='b"secret"'
-b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
-jwt_header="$(printf '%s' '{"alg":"HS256","typ":"JWT"}' | b64url)"
-jwt_payload="$(printf '{"sub":"1","role":"admin","exp":%s}' "$(( $(date +%s) + 2 * 3600 ))" | b64url)"
-jwt_signature="$(printf '%s.%s' "$jwt_header" "$jwt_payload" | openssl dgst -sha256 -hmac "$JWT_SECRET" -binary | b64url)"
-export ADMIN_JWT="$jwt_header.$jwt_payload.$jwt_signature"
-unset JWT_SECRET jwt_header jwt_payload jwt_signature
+# Fresh Ed25519 key pair for this run: the API gets its public key, and ADMIN_JWT (sub=1, the Admin
+# seeded by liquibase, valid 2 hours) is signed with it like Core signs it (MAIR-680,
+# test_secrets.sh). No key or token is committed.
+# shellcheck source=test_secrets.sh
+source "$(dirname "$0")/test_secrets.sh" || exit 1
 
 # Marker engine. CI checks mairie360/CICD out as cicd-repo/; locally it is cloned once at the
 # cicd_version pinned in .github/workflows/cicd.yml, or at the first release that ships the engine

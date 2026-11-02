@@ -10,7 +10,7 @@
 // projects, 50 000 tasks, 2 100 accounts in 100 teams, a hot project 12 with 2 000 tasks (200 active, 1 800 archived) and a
 // task 87 with 1 000 comments and 1 000 history entries). Three scenarios:
 // - `reads`: the GET operations, ramping up to the read VUs of the profile (PROFILES). Each call picks a caller (the Admin, a
-//   seeded Responsable or a seeded agent, tokens signed here with the stack's JWT_SECRET) and a
+//   seeded Responsable or a seeded agent, EdDSA tokens signed by performance_test.sh, MAIR-680) and a
 //   random page, so the visibility predicate and deep pages are measured, not only page 1 as Admin;
 // - `writes`: every other operation with the write VUs of the profile. Each handler is self-contained: it creates what it
 //   needs through `fixture()`, sends its request, then deletes what it created, so the handlers
@@ -19,24 +19,21 @@
 // - `list_rush`: `GET /projects/` as non-admins at the fixed arrival rate of the profile, failing if k6 has to drop
 //   iterations (the API no longer keeps up).
 import http from 'k6/http';
-import crypto from 'k6/crypto';
-import encoding from 'k6/encoding';
 import { check, fail, sleep } from 'k6';
 import { createCoverage, loadSpec } from '/coverage.js';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://localhost:3001').replace(/\/+$/, '');
 
-// Static HS256 JWT (sub=1, the Admin seeded by liquibase, role=admin, exp=2100, signed with the
-// stack's JWT_SECRET=b"secret"), the same one ZAP injects. The Admin passes every access check
-// of the API; public routes ignore the header.
-const TOKEN =
-  __ENV.JWT ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sZSI6ImFkbWluIiwiZXhwIjo0MTAyNDQ0ODAwfQ.xCeBe_2QxRlXW8WXr3t6F69wbEHA93HbP_7l4OTJwjA';
+// EdDSA JWT of the Admin (sub=1, seeded by liquibase), signed by performance_test.sh with the run's
+// key like Core signs it (test_secrets.sh, MAIR-680), the same one ZAP injects. The Admin passes
+// every access check of the API; public routes ignore the header.
+const TOKEN = __ENV.JWT;
+if (!TOKEN) throw new Error('JWT is not set: run ./performance_test.sh, which signs it');
 const AUTH = { Authorization: `Bearer ${TOKEN}` };
 
-// Secret of the stack (docker-compose-performance.yml passes the API's JWT_SECRET), used to sign
-// the tokens of the seeded non-admin callers.
-const JWT_SECRET = __ENV.JWT_SECRET || 'b"secret"';
+// EdDSA tokens of the seeded non-admin callers ({ "<user id>": "<jwt>" }), signed by
+// performance_test.sh: k6 cannot sign Ed25519 itself.
+const CALLER_TOKENS = JSON.parse(open(__ENV.JWT_TOKENS_FILE || '/tokens.json'));
 
 // Plain `User` accounts seeded by init-test.sql.
 const MEMBER_ID = 2;
@@ -95,16 +92,11 @@ function randomOffset(size) {
   return randomInt(Math.max(1, Math.ceil(size / PAGE))) * PAGE;
 }
 
-const tokens = {};
-
-/** `Authorization` header of user `sub`, an HS256 token signed with the stack's secret. */
+/** `Authorization` header of user `sub`, from the tokens signed by performance_test.sh. */
 function bearer(sub) {
-  if (!tokens[sub]) {
-    const part = (value) => encoding.b64encode(JSON.stringify(value), 'rawurl');
-    const unsigned = `${part({ alg: 'HS256', typ: 'JWT' })}.${part({ sub: String(sub), role: 'user', exp: 4102444800 })}`;
-    tokens[sub] = `Bearer ${unsigned}.${crypto.hmac('sha256', JWT_SECRET, unsigned, 'base64rawurl')}`;
-  }
-  return { Authorization: tokens[sub] };
+  const token = CALLER_TOKENS[String(sub)];
+  if (!token) throw new Error(`No token for user ${sub}: sign it in performance_test.sh`);
+  return { Authorization: `Bearer ${token}` };
 }
 
 const randomAgent = () => AGENTS.first + randomInt(AGENTS.count);

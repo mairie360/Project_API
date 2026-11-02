@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `project_api` is one microservice in the **mairie360** suite: an Actix-web REST API (port `3001`) that manages projects, their tasks (and task fields) and their user membership. It was scaffolded from a generic "Rust API template" (see `README.md`), so config files still carry `#change api name` / `#change port` placeholders.
 
-Shared infrastructure (DB, Redis, cache-aside, JWT auth, env helpers, test containers) lives in the external crate **`mairie360_api_lib`** (pinned to `4.2.0`) — read its source under `~/.cargo/registry/src/*/mairie360_api_lib-<version>/src/` when an import is unclear. `project_api` has **no direct `sqlx` dependency**; all SQL goes through the library.
+Shared infrastructure (DB, Redis, cache-aside, JWT auth, env helpers, test containers) lives in the external crate **`mairie360_api_lib`** (pinned to `4.3.0`) — read its source under `~/.cargo/registry/src/*/mairie360_api_lib-<version>/src/` when an import is unclear. `project_api` has **no direct `sqlx` dependency**; all SQL goes through the library.
 
-## Data access (`mairie360_api_lib` 4.2.0)
+## Data access (`mairie360_api_lib` 4.3.0)
 
 `AppState` (`mairie360_api_lib::state::AppState`, built once in `main.rs` via `AppState::new(redis_url, pg_url)`) owns a `SmartDatabase` (Postgres + Redis cache-aside) reachable from handlers with `state.get_smart_db()`.
 
@@ -42,18 +42,34 @@ Cargo aliases are defined in `.cargo/config.toml`:
 
 ### Running locally
 
-The binary needs these env vars (see `docker-compose.yml` `x-common-env`): `HOST`, `PORT`, `REDIS_URL`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `JWT_SECRET`, `JWT_TIMEOUT`, plus the optional `API_DOCS_ENABLED` (only `true` serves Swagger UI and `/api-docs/openapi.json`; off by default so off in production, on in every compose stack, MAIR-424). The Postgres URL is assembled by `database::pg_url::build_pg_url`, which percent-encodes user, password and database name, so `DB_PASSWORD` may contain any character. Normal workflow is Docker:
+The binary needs these env vars (see `docker-compose.yml` `x-common-env`): `HOST`, `PORT`, `REDIS_URL`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `JWT_PUBLIC_KEY`, `JWT_TIMEOUT`, plus the optional `API_DOCS_ENABLED` (only `true` serves Swagger UI and `/api-docs/openapi.json`; off by default so off in production, on in every compose stack, MAIR-424). The Postgres URL is assembled by `database::pg_url::build_pg_url`, which percent-encodes user, password and database name, so `DB_PASSWORD` may contain any character. Normal workflow is Docker:
 
 ```bash
 docker compose up            # full stack: postgres + liquibase migrations + redis + seeder + api + nginx
 docker compose watch         # same, with hot reload (cargo-watch syncs src/, Cargo.toml, Cargo.lock)
 ```
 
-`mairie360_api_lib` (2.0+) refuses to start with a missing, short (< 32 bytes) or well-known `JWT_SECRET`
-(MAIR-428). The four compose stacks keep the public test value `b"secret"` (the static ZAP / k6 admin token and the
-Postman script sign with it) and set `JWT_ALLOW_WEAK_SECRET: "true"` next to it: without it the API panics at
-startup and every stack fails. A deployment never sets that variable and gets its own random secret, distinct per
-instance.
+Session tokens (MAIR-680): only Core_API signs them, with its Ed25519 key (`EdDSA`, `kid` = RFC 7638 thumbprint,
+`iss` `mairie360-core`, `aud` `mairie360`). This API only gets `JWT_PUBLIC_KEY` (Core's public key as PEM, several
+`PUBLIC KEY` blocks during a rotation, `\n`-escaped line breaks accepted) and checks them with the lib (4.3.0). No
+`JWT_SECRET`: while it is set the lib still accepts HS256 tokens signed with it (transition), so a deployment
+removes it once `JWT_PUBLIC_KEY` is in place, and every HS256 token is then refused. The lib refuses to start
+without either variable, with a short or well-known `JWT_SECRET`, or with its committed test key.
+
+- The dev stack (`docker-compose.yml`) defaults `JWT_PUBLIC_KEY` to the public half of the lib's test key pair
+  (`test_setup::http_setup::TEST_JWT_PUBLIC_KEY`) with `JWT_ALLOW_WEAK_SECRET: "true"`, which only that stack sets.
+  To call it, sign a token with the matching private key (in a subshell, so the keys do not stay exported):
+
+  ```bash
+  (export JWT_PRIVATE_KEY="$(openssl pkey -inform DER -in ~/.cargo/registry/src/*/mairie360_api_lib-4.3.0/src/test_setup/fixtures/session_test_key.der)"
+   export JWT_PUBLIC_KEY="$(printf '%s\n' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
+   source ./test_secrets.sh && sign_jwt 1 admin 3600)
+  ```
+- The test stacks (integration, ZAP, k6, GDPR marker) require `JWT_PUBLIC_KEY` (`${JWT_PUBLIC_KEY:?…}`): their
+  `*_test.sh` script sources `test_secrets.sh`, which generates a fresh Ed25519 key pair per run, exports the public
+  key and signs the runners' tokens with the private one like Core does (`sign_jwt <sub> <role> <ttl> [key]`,
+  `sign_jwt_file` for k6). The private key never reaches the API and nothing is committed: run the scripts rather
+  than `docker compose up` on those files.
 
 The DB schema is **not in this repo** — it is applied by the `ghcr.io/mairie360/liquibase-migrations` image; `init-test.sql` only seeds a couple of extra test users.
 
@@ -78,8 +94,8 @@ published `ghcr.io/mairie360/project-api:dev-<sha>` image; when it is empty the 
 `development.Dockerfile` first. That image is distroless (no shell, no curl), so readiness is a `project-ready` sidecar
 polling `/ready`, and dependent services wait for it with `service_completed_successfully`.
 
-The ZAP scan is authenticated: `security-scan` injects a static admin JWT (`sub=1`, signed with
-`JWT_SECRET=b"secret"`, see the comment in `docker-compose-security.yml`) on every request, waits for the `seeder`
+The ZAP scan is authenticated: `security-scan` injects `ADMIN_JWT` (`sub=1`, an EdDSA token `security_test.sh`
+signs with the run's key, see `test_secrets.sh`) on every request, waits for the `seeder`
 service (`init-test.sql`: plain `User` accounts 2 and 3, user 1 is the Admin created by liquibase) and fails on any
 alert not set to `IGNORE` / `OUTOFSCOPE` in `.zap/rules.tsv` (no `-I`). `-O http://project:3001` is required: the
 spec's `servers` are unreachable from the ZAP container. Keep `rules.tsv` identical in every API. The scan fuzzes
@@ -95,7 +111,8 @@ never reached, or when an operation declaring `security(("jwt" = []))` only got 
 `coverage.js` and covers every operation (MAIR-195), under a high load on a volume seed (MAIR-474): the performance
 stack's `seeder` also runs `init-perf.sql` (5 000 projects, 50 000 tasks, 2 100 accounts in 100 teams, hot project 12
 with 2 000 tasks (200 active, 1 800 completed hence archived, MAIR-502), task 87 with 1 000 comments and history entries; four tasks out of five have a due date from 10 days ago to 50 days ahead, read by `GET /tasks/?assigned_to=…&due_before=…`, MAIR-524). GET handlers run in the `reads` scenario (up to
-100 VUs) as the Admin, a seeded Responsable or a seeded agent (tokens signed in k6 with the stack's `JWT_SECRET`) on
+100 VUs) as the Admin, a seeded Responsable or a seeded agent (EdDSA tokens signed by `performance_test.sh` into a JSON file mounted
+at `/tokens.json`: k6 cannot sign Ed25519; a new seeded caller needs its id in that script) on
 random pages; the other methods in the `writes` scenario (10 VUs), each handler creating and deleting its own
 project/task so they are order-independent (the task writes share one project, so they also queue on its lock); a
 `list_rush` scenario sends `GET /projects/` at a fixed 100 req/s. Thresholds: one `p(95)` per `op` tag (200 ms
@@ -115,9 +132,11 @@ rules in the view's `#[schema]` and the handler's `400` response. Map constraint
 
 `tests/postman/collection.json` is a Postman v2.1 collection (importable in the app) and
 `tests/postman/environment.json` its variables; the compose file overrides `baseUrl` with `--env-var` so the
-committed default (`http://localhost:3001`) stays usable from a host shell. There is no login route here, so the
-collection pre-request script forges the HS256 JWTs itself (claims `sub`/`role`/`exp`, signed with the stack's
-`JWT_SECRET`) for the seeded Admin (user 1) and a plain agent (user 2, from `init-test.sql`). The scenario creates
+committed default (`http://localhost:3001`) stays usable from a host shell. There is no login route here and the Postman
+sandbox cannot sign EdDSA, so `integration_test.sh` signs the JWTs with the run's key (`test_secrets.sh`) and the
+compose file passes them with `--env-var`: `jwt_admin` (user 1), `jwt_agent` (user 2, from `init-test.sql`),
+`jwt_forged` (Core's `kid`, another key) and `jwt_expired`; the pre-request script only forges `jwt_hs256`, an
+HS256 token that must be refused (MAIR-680). From a host shell, fill those variables yourself. The scenario creates
 its own project and deletes it at the end, so it is replayable against a persistent database.
 
 `tests/routing_test.rs` needs no Docker: it mounts `endpoints::config` under `/api` in an actix test app and checks that every `/api/v1` operation published by `ApiDoc` (the contract `@mairie360/project-api-openapi` is generated from) hits a real route and has no empty segment. It catches a `scope(...)` that drifts from the `doc.rs` nesting or a `#[utoipa::path]` without the right `path` (utoipa appends it to the nest path, so `#[delete("/")]` needs `path = ""`, `#[patch("/close")]` needs `path = "close"`).
@@ -125,10 +144,12 @@ its own project and deletes it at the end, so it is replayable against a persist
 Integration tests (`tests/queries/`) require a **running Docker daemon and network access to ghcr.io**: the lib's `test_setup::queries_setup::get_shared_db()` starts a `ghcr.io/mairie360/database` Postgres container (published on a random host port, image tag from `TEST_DB_VERSION` in `.cargo/config.toml`), runs Liquibase migrations against it, truncates + seeds it once per test run, and hands back its **superuser** URL, used by the fixtures only (`tests/common::fixtures_db()`, behind every helper of `tests/common/fixtures.rs`). Everything that runs Project_API's code connects as the `project_api` role, like in staging (MAIR-556): `tests/common::get_smart_db()` (query views) and `TestContext` (`AppState::new(…, project_db_url().await)`, endpoints), both through `get_shared_db_as("project_api")`. A query outside the grants of Database's `api_grants.sql` then fails the test with `permission denied` (SQLSTATE `42501`): add the grant there, never connect the code under test as the superuser. `tests/queries/db_role.rs` checks both sides. The compose stacks connect `project` as `project_api` too (`-Dproject_api_password` passed to Liquibase); postgres, liquibase and the seeder keep the superuser. Real Redis is not needed — no query view sets a `cache_key`, and a failed read-cache invalidation is only logged. Tests drive the query views through `execute` / `fetch_*` and hit real SQL — there is no compile-time query checking.
 
 Handler tests (`tests/endpoints/`, MAIR-419) run in the same binary and database: `init_app!` mounts the real
-`/api` scope behind `JwtMiddleware`, `jwt_for(user_id)` signs tokens with a test secret set in-process, and
+`/api` scope behind `JwtMiddleware`, `jwt_for(user_id)` signs EdDSA tokens like Core with the lib's test key pair
+(`sign_like_core`; the process only has `JWT_PUBLIC_KEY`, no `JWT_SECRET`, MAIR-680), and
 `access::scenario` builds a project owned by a Responsable with a plain member, an assignee and two outsiders.
 `token_refusals.rs` sweeps every operation of `ApiDoc` declaring `jwt`: `401` without a token, with another
-scheme, garbage, another secret, an expired token, `alg: none`, a payload swapped under a valid signature or an
+scheme, garbage, an HS256 token, an EdDSA token signed with another key or without/with another `aud`, an expired
+token, `alg: none`, a payload swapped under a valid signature or an
 asymmetric algorithm, and `404` for an unknown or archived account; a new route is covered by documenting it.
 They assert the refusals (`401` without a valid JWT, `404` for a project the caller cannot see, `403` for a
 member without manager role, assignee limited to the status, task reachable only through its own project) and
