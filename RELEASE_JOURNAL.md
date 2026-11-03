@@ -1,37 +1,43 @@
 # Journal des releases — Project_API
 
-<!-- release-journal-state {"dev": "7979c87f719be9aa10795fd086b7bbd8aa5d7c94", "prod": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "prod_tag": "v1.2.0", "staging": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "updated": {"dev": "2026-11-03 00:18 UTC", "prod": "2026-10-21 09:10 UTC", "staging": "2026-10-21 03:21 UTC"}} -->
+<!-- release-journal-state {"dev": "4e63d9b498f0ac8c16f9c12845bb9bca558be205", "prod": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "prod_tag": "v1.2.0", "staging": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "updated": {"dev": "2026-11-03 01:37 UTC", "prod": "2026-10-21 09:10 UTC", "staging": "2026-10-21 03:21 UTC"}} -->
 > Tenu à jour par la CI (`mairie360/CICD`, action `release/release-journal`) à chaque passage en dev, staging et prod. Ne pas modifier à la main : le fichier est réécrit au passage suivant.
 
 | Environnement | Version | Commit | Mis à jour |
 | --- | --- | --- | --- |
 | prod | v1.2.0 | `5c1ed53` | 2026-10-21 09:10 UTC |
 | staging | — | `5c1ed53` | 2026-10-21 03:21 UTC |
-| dev | — | `7979c87` | 2026-11-03 00:18 UTC |
+| dev | — | `4e63d9b` | 2026-11-03 01:37 UTC |
 
 ## Ajouté sur main depuis la dernière release prod (v1.2.0)
 
+#### Changements de comportement
+
+- Jetons de session : l'API ne valide plus les sessions avec `JWT_SECRET`, mais avec `JWT_PUBLIC_KEY` (clé publique Ed25519 de Core_API, au format PEM). Les jetons EdDSA signés par Core_API sont acceptés. Sans `JWT_SECRET` défini, tout jeton HS256 est refusé avec `401`. Tant que `JWT_SECRET` est défini, la lib accepte encore les HS256 signés avec lui (transition). Un déploiement doit donc fournir `JWT_PUBLIC_KEY` puis retirer `JWT_SECRET`. (MAIR-680, [#212](https://github.com/mairie360/Project_API/pull/212))
+
 #### Corrections
-- Les journaux des requêtes n'affichent plus la query string ni l'en-tête `Referer` : avant, des valeurs saisies par les agents (par exemple `?limit=<nom>` ou `?offset=<e-mail>`) pouvaient y apparaître en clair ; maintenant seuls l'adresse du client, la méthode, le chemin sans query, le statut, la taille et la durée sont journalisés. (MAIR-290, [#139](https://github.com/mairie360/Project_API/pull/139))
-- Les erreurs de base de données et de désérialisation de `mairie360_api_lib` 4.2.0 ne reprennent plus le message Postgres, `DETAIL` ni la valeur fournie : elles décrivent le SQLSTATE, la contrainte, la table et la colonne. (MAIR-290, [#139](https://github.com/mairie360/Project_API/pull/139))
+
+- Journaux des requêtes : avant, la ligne de requête (query string) et le `Referer` étaient journalisés, donc une valeur refusée comme `?limit=<nom>` ou `?offset=<e-mail>` apparaissait dans les logs. Maintenant seuls l'adresse client, la méthode, le chemin sans query string, le statut, la taille et la durée sont journalisés. Les erreurs de la lib ne reprennent plus la valeur reçue : les erreurs base de données sont décrites par SQLSTATE, contrainte, table et colonne. (MAIR-290, [#139](https://github.com/mairie360/Project_API/pull/139))
 
 #### Technique
-- Matrice d'accès `access-matrix.yaml` couvrant chaque opération de l'OpenAPI, avec un test qui vérifie les refus (401, 403, 404) par rôle et par relation, et ajout de la dev-dependance `yaml_serde` ; aucun changement de la logique d'accès dans les diffs fournis. (MAIR-288, [#148](https://github.com/mairie360/Project_API/pull/148))
-- Image runtime passée en `gcr.io/distroless/cc-debian13`, builder et image de développement sur `rust:1.99-*-trixie`, avec un test `dockerfile_test` qui impose Debian 13. (MAIR-741, [#206](https://github.com/mairie360/Project_API/pull/206))
-- Pins par digest des images de compose et Dockerfile, mises à jour Renovate des digests `rust:1.99` et de `actix-web` 4.18.0, `tokio` 1.54.1, exception d'audit `RUSTSEC-2026-0387` ; ces changements n'ont pas d'effet fonctionnel visible. ([#208](https://github.com/mairie360/Project_API/pull/208), [#203](https://github.com/mairie360/Project_API/pull/203), [#200](https://github.com/mairie360/Project_API/pull/200), [#195](https://github.com/mairie360/Project_API/pull/195), [#201](https://github.com/mairie360/Project_API/pull/201), [#199](https://github.com/mairie360/Project_API/pull/199))
-- Workflows CI : checklist RGPD sur les PR (MAIR-295, [#143](https://github.com/mairie360/Project_API/pull/143)), marqueur de journaux RGPD (`gdpr-marker.yaml`, [#139](https://github.com/mairie360/Project_API/pull/139)), CICD passé de v4.4.0 à v5.2.2 avec `ANTHROPIC_WORKSPACE_ID` ([#210](https://github.com/mairie360/Project_API/pull/210)) et montées de version de la promotion en release ([#192](https://github.com/mairie360/Project_API/pull/192), [#194](https://github.com/mairie360/Project_API/pull/194), [#197](https://github.com/mairie360/Project_API/pull/197)).
+
+- Dépendances et images : `mairie360_api_lib` passe de 4.2.0 à 4.3.0, actix-web à 4.18.0 et tokio à 1.54.1 (sans diff visible). Les images de Docker Compose et des Dockerfile sont épinglées par digest (redis, postgres, nginx, node, curl, k6, newman, ZAP, rust 1.99). Le runtime distroless passe de Debian 12 à Debian 13, avec un builder trixie (MAIR-741, [#206](https://github.com/mairie360/Project_API/pull/206)). Une exception `RUSTSEC-2026-0387` est ajoutée à `audit.toml` (MAIR-290).
+- CI et tests : CICD passe de v4.4.1 à v4.4.2, puis v4.4.3, puis v5.2.2 avec `ANTHROPIC_WORKSPACE_ID` (MAIR-612, MAIR-771, [#210](https://github.com/mairie360/Project_API/pull/210)). Ajout de la checklist RGPD sur les PR (MAIR-295, [#143](https://github.com/mairie360/Project_API/pull/143)), de la matrice d'accès `access-matrix.yaml` et de ses tests (MAIR-288, [#148](https://github.com/mairie360/Project_API/pull/148)), et du test du marqueur RGPD dans les logs (MAIR-290). Les scripts de test signent désormais les jetons EdDSA (MAIR-680).
 
 ## Différence dev → staging (en dev, pas encore en staging)
 
+#### Changements de comportement
+
+- Jetons de session : l'API ne valide plus les sessions avec `JWT_SECRET`, mais avec `JWT_PUBLIC_KEY` (clé publique Ed25519 de Core_API, au format PEM). Les jetons EdDSA signés par Core_API sont acceptés. Sans `JWT_SECRET` défini, tout jeton HS256 est refusé avec `401`. Tant que `JWT_SECRET` est défini, la lib accepte encore les HS256 signés avec lui (transition). Un déploiement doit donc fournir `JWT_PUBLIC_KEY` puis retirer `JWT_SECRET`. (MAIR-680, [#212](https://github.com/mairie360/Project_API/pull/212))
+
 #### Corrections
-- Les journaux des requêtes n'affichent plus la query string ni l'en-tête `Referer` : avant, des valeurs saisies par les agents (par exemple `?limit=<nom>` ou `?offset=<e-mail>`) pouvaient y apparaître en clair ; maintenant seuls l'adresse du client, la méthode, le chemin sans query, le statut, la taille et la durée sont journalisés. (MAIR-290, [#139](https://github.com/mairie360/Project_API/pull/139))
-- Les erreurs de base de données et de désérialisation de `mairie360_api_lib` 4.2.0 ne reprennent plus le message Postgres, `DETAIL` ni la valeur fournie : elles décrivent le SQLSTATE, la contrainte, la table et la colonne. (MAIR-290, [#139](https://github.com/mairie360/Project_API/pull/139))
+
+- Journaux des requêtes : avant, la ligne de requête (query string) et le `Referer` étaient journalisés, donc une valeur refusée comme `?limit=<nom>` ou `?offset=<e-mail>` apparaissait dans les logs. Maintenant seuls l'adresse client, la méthode, le chemin sans query string, le statut, la taille et la durée sont journalisés. Les erreurs de la lib ne reprennent plus la valeur reçue : les erreurs base de données sont décrites par SQLSTATE, contrainte, table et colonne. (MAIR-290, [#139](https://github.com/mairie360/Project_API/pull/139))
 
 #### Technique
-- Matrice d'accès `access-matrix.yaml` couvrant chaque opération de l'OpenAPI, avec un test qui vérifie les refus (401, 403, 404) par rôle et par relation, et ajout de la dev-dependance `yaml_serde` ; aucun changement de la logique d'accès dans les diffs fournis. (MAIR-288, [#148](https://github.com/mairie360/Project_API/pull/148))
-- Image runtime passée en `gcr.io/distroless/cc-debian13`, builder et image de développement sur `rust:1.99-*-trixie`, avec un test `dockerfile_test` qui impose Debian 13. (MAIR-741, [#206](https://github.com/mairie360/Project_API/pull/206))
-- Pins par digest des images de compose et Dockerfile, mises à jour Renovate des digests `rust:1.99` et de `actix-web` 4.18.0, `tokio` 1.54.1, exception d'audit `RUSTSEC-2026-0387` ; ces changements n'ont pas d'effet fonctionnel visible. ([#208](https://github.com/mairie360/Project_API/pull/208), [#203](https://github.com/mairie360/Project_API/pull/203), [#200](https://github.com/mairie360/Project_API/pull/200), [#195](https://github.com/mairie360/Project_API/pull/195), [#201](https://github.com/mairie360/Project_API/pull/201), [#199](https://github.com/mairie360/Project_API/pull/199))
-- Workflows CI : checklist RGPD sur les PR (MAIR-295, [#143](https://github.com/mairie360/Project_API/pull/143)), marqueur de journaux RGPD (`gdpr-marker.yaml`, [#139](https://github.com/mairie360/Project_API/pull/139)), CICD passé de v4.4.0 à v5.2.2 avec `ANTHROPIC_WORKSPACE_ID` ([#210](https://github.com/mairie360/Project_API/pull/210)) et montées de version de la promotion en release ([#192](https://github.com/mairie360/Project_API/pull/192), [#194](https://github.com/mairie360/Project_API/pull/194), [#197](https://github.com/mairie360/Project_API/pull/197)).
+
+- Dépendances et images : `mairie360_api_lib` passe de 4.2.0 à 4.3.0, actix-web à 4.18.0 et tokio à 1.54.1 (sans diff visible). Les images de Docker Compose et des Dockerfile sont épinglées par digest (redis, postgres, nginx, node, curl, k6, newman, ZAP, rust 1.99). Le runtime distroless passe de Debian 12 à Debian 13, avec un builder trixie (MAIR-741, [#206](https://github.com/mairie360/Project_API/pull/206)). Une exception `RUSTSEC-2026-0387` est ajoutée à `audit.toml` (MAIR-290).
+- CI et tests : CICD passe de v4.4.1 à v4.4.2, puis v4.4.3, puis v5.2.2 avec `ANTHROPIC_WORKSPACE_ID` (MAIR-612, MAIR-771, [#210](https://github.com/mairie360/Project_API/pull/210)). Ajout de la checklist RGPD sur les PR (MAIR-295, [#143](https://github.com/mairie360/Project_API/pull/143)), de la matrice d'accès `access-matrix.yaml` et de ses tests (MAIR-288, [#148](https://github.com/mairie360/Project_API/pull/148)), et du test du marqueur RGPD dans les logs (MAIR-290). Les scripts de test signent désormais les jetons EdDSA (MAIR-680).
 
 ## Différence staging → prod (en staging, pas encore en prod)
 
@@ -42,6 +48,7 @@ _Rien._
 <!-- release-journal-history:start -->
 | Date | Environnement | Version | Commit | Run |
 | --- | --- | --- | --- | --- |
+| 2026-11-03 01:37 UTC | dev | — | `4e63d9b` | [run](https://github.com/mairie360/Project_API/actions/runs/41559200343) |
 | 2026-11-03 00:18 UTC | dev | — | `7979c87` | [run](https://github.com/mairie360/Project_API/actions/runs/41550219429) |
 | 2026-11-03 00:07 UTC | dev | — | `06b81b4` | [run](https://github.com/mairie360/Project_API/actions/runs/41548452883) |
 | 2026-11-01 12:34 UTC | dev | — | `26ec88b` | [run](https://github.com/mairie360/Project_API/actions/runs/41306153308) |
