@@ -135,12 +135,11 @@ services:
     environment:
       <<: *common-env
       PUBLIC_URL: http://project.development.mairie360.fr
-      JWT_SECRET: b"secret"
       JWT_TIMEOUT: 3600
-      # Public test value, known to every reader of this repo: mairie360_api_lib refuses to start
-      # with it unless JWT_ALLOW_WEAK_SECRET is set. Dev/test stacks only, never a deployment, where
-      # JWT_SECRET is a random value of at least 32 bytes, distinct per instance (MAIR-428).
-      JWT_ALLOW_WEAK_SECRET: "true"
+      # MAIR-680: Core's public key only, no JWT_SECRET, so every HS256 token is refused. Fresh key
+      # pair per run from the matching *_test.sh script (test_secrets.sh), which also signs the
+      # runners' tokens with it: no key or token is committed.
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?JWT_PUBLIC_KEY must be set, run the matching *_test.sh script}
       # Swagger UI + /api-docs/openapi.json (off by default, so off in production).
       API_DOCS_ENABLED: "true"
     depends_on:
@@ -182,14 +181,17 @@ services:
       - ./load-test.js:/load-test.js:ro
       - ./cicd-repo/tests/k6/coverage.js:/coverage.js:ro
       - openapi-spec:/spec:ro
+      - ${JWT_TOKENS_FILE:?JWT_TOKENS_FILE must be set, run ./performance_test.sh}:/tokens.json:ro
     command: ["run", "/load-test.js"]
     environment:
       - BASE_URL=http://project:3001
       - OPENAPI_SPEC=/spec/openapi.json
       # Load profile of load-test.js: `ci` (default, sized for the CI runner) or `stress` (MAIR-474).
       - K6_PROFILE=${K6_PROFILE:-ci}
-      # Same value as the API's: load-test.js signs the tokens of the seeded non-admin callers.
-      - JWT_SECRET=b"secret"
+      # EdDSA tokens of the Admin and of every seeded caller, signed by performance_test.sh with this
+      # run's key (test_secrets.sh, MAIR-680): k6 cannot sign Ed25519 itself.
+      - JWT=${ADMIN_JWT:?ADMIN_JWT must be set, run ./performance_test.sh}
+      - JWT_TOKENS_FILE=/tokens.json
     depends_on:
       project-ready:
         condition: service_completed_successfully

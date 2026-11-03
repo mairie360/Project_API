@@ -18,6 +18,19 @@ fi
 export IMAGE_REF
 echo "==> API image under test: $IMAGE_REF"
 
+# Fresh Ed25519 key pair for this run: the API gets its public key, the runners tokens signed with
+# it like Core signs them (MAIR-680, test_secrets.sh).
+# shellcheck source=test_secrets.sh
+source "$(dirname "$0")/test_secrets.sh" || exit 1
+# Tokens of the seeded callers of load-test.js (k6 cannot sign Ed25519): the plain users 2 and 3
+# (init-test.sql) and the agents and Responsables of init-perf.sql. Keep the ranges in step with the
+# top of load-test.js.
+JWT_TOKENS_FILE="$(mktemp --suffix=.json)"
+chmod 644 "$JWT_TOKENS_FILE"  # read by the k6 container user
+export JWT_TOKENS_FILE
+echo "==> Signing the k6 callers' tokens..."
+sign_jwt_file "$JWT_TOKENS_FILE" user 7200 2 3 $(seq 100001 102000) $(seq 103001 103100) || exit 1
+
 # Shared CI test files (OpenAPI coverage gate, MAIR-194: ZAP hook and k6 coverage module). CI
 # checks mairie360/CICD out as cicd-repo/; locally it is cloned once at the cicd_version pinned in
 # .github/workflows/cicd.yml (override with CICD_VERSION, e.g. a branch not released yet).
@@ -36,7 +49,7 @@ PERF_CPUS="${PERF_CPUS:-4}"
 CPUS=$(nproc)
 [ "$CPUS" -gt "$PERF_CPUS" ] && CPUS="$PERF_CPUS"
 CPUSET_FILE="$(mktemp --suffix=.yml)"
-trap 'rm -f "$CPUSET_FILE"' EXIT
+trap 'rm -f "$CPUSET_FILE" "$JWT_TOKENS_FILE"' EXIT
 {
     echo "services:"
     for service in $(docker compose -f "$COMPOSE_FILE" config --services); do
