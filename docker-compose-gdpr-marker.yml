@@ -90,7 +90,7 @@ services:
       - backend
 
   redis:
-    image: redis:8.4.0-bookworm
+    image: redis:8.4.0-bookworm@sha256:c22af04bb576503bf16b3e34a1fd2fd82de0f765afd866d2e380145e0af30d78
     container_name: mairie360-redis-project-api-gdpr #change api name
     restart: always
     expose:
@@ -106,7 +106,7 @@ services:
       retries: 5
 
   seeder:
-    image: postgres:18-alpine
+    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
     depends_on:
       liquibase:
         condition: service_completed_successfully
@@ -134,12 +134,11 @@ services:
     environment:
       <<: *common-env
       PUBLIC_URL: http://project.development.mairie360.fr
-      JWT_SECRET: b"secret"
       JWT_TIMEOUT: 3600
-      # Public test value, known to every reader of this repo: mairie360_api_lib refuses to start
-      # with it unless JWT_ALLOW_WEAK_SECRET is set. Dev/test stacks only, never a deployment, where
-      # JWT_SECRET is a random value of at least 32 bytes, distinct per instance (MAIR-428).
-      JWT_ALLOW_WEAK_SECRET: "true"
+      # MAIR-680: Core's public key only, no JWT_SECRET, so every HS256 token is refused. Fresh key
+      # pair per run from the matching *_test.sh script (test_secrets.sh), which also signs the
+      # runners' tokens with it: no key or token is committed.
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?JWT_PUBLIC_KEY must be set, run the matching *_test.sh script}
       # Swagger UI + /api-docs/openapi.json (off by default, so off in production).
       API_DOCS_ENABLED: "true"
     depends_on:
@@ -152,7 +151,7 @@ services:
   # healthcheck: this sidecar polls /ready (Postgres + Redis) and the services that need the API wait for it to
   # complete instead.
   project-ready:
-    image: curlimages/curl:latest
+    image: curlimages/curl:latest@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
     depends_on:
       project:
         condition: service_started
@@ -166,7 +165,7 @@ services:
       - backend
 
   gdpr-marker:
-    image: node:24-bookworm-slim
+    image: node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
     user: "${GDPR_UID:-0}:${GDPR_GID:-0}"
     depends_on:
       project-ready:
