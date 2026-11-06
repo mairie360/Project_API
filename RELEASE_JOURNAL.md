@@ -1,47 +1,72 @@
 # Journal des releases — Project_API
 
-<!-- release-journal-state {"dev": "bd75ffd463e66f39083e836154bc0b95f67d868d", "prod": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "prod_tag": "v1.2.0", "staging": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "updated": {"dev": "2026-11-04 18:27 UTC", "prod": "2026-10-21 09:10 UTC", "staging": "2026-10-21 03:21 UTC"}} -->
+<!-- release-journal-state {"dev": "caf332784c188c0445bb7f46cd22acdffa0e6420", "prod": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "prod_tag": "v1.2.0", "staging": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "updated": {"dev": "2026-11-06 05:18 UTC", "prod": "2026-10-21 09:10 UTC", "staging": "2026-10-21 03:21 UTC"}} -->
 > Tenu à jour par la CI (`mairie360/CICD`, action `release/release-journal`) à chaque passage en dev, staging et prod. Ne pas modifier à la main : le fichier est réécrit au passage suivant.
 
 | Environnement | Version | Commit | Mis à jour |
 | --- | --- | --- | --- |
 | prod | v1.2.0 | `5c1ed53` | 2026-10-21 09:10 UTC |
 | staging | — | `5c1ed53` | 2026-10-21 03:21 UTC |
-| dev | — | `bd75ffd` | 2026-11-04 18:27 UTC |
+| dev | — | `caf3327` | 2026-11-06 05:18 UTC |
 
 ## Ajouté sur main depuis la dernière release prod (v1.2.0)
 
-#### Changements de comportement
-- L'API n'accepte plus les jetons HS256 : elle lit `JWT_PUBLIC_KEY` (clé publique Ed25519 de Core_API) et n'a plus besoin de `JWT_SECRET`. Sans `JWT_SECRET`, tout jeton HS256 reçoit une 401. Les appelants (BFF, scripts) doivent présenter des jetons EdDSA signés par Core_API, et le déploiement doit fournir `JWT_PUBLIC_KEY`. (MAIR-680, [#212](https://github.com/mairie360/Project_API/pull/212))
-- Les journaux de requêtes n'affichent plus la query string ni le `Referer` : seuls l'adresse du client, la méthode, le chemin sans query, le statut, la taille et la durée sont journalisés. Les erreurs de base sont décrites par SQLSTATE, contrainte, table et colonne au lieu du message Postgres. (MAIR-290, [#139](https://github.com/mairie360/Project_API/pull/139))
-
-#### Technique
-- Tests de matrice d'accès : `access-matrix.yaml` décrit l'accès à chaque opération de l'OpenAPI, et un test vérifie que l'API répond comme prévu (MAIR-288, [#148](https://github.com/mairie360/Project_API/pull/148)). Aucun changement de code métier.
-- Image d'exécution passée en distroless Debian 13 et builder `rust:1.99-slim-trixie`, avec un test qui vérifie la version de Debian des images (MAIR-741, [#206](https://github.com/mairie360/Project_API/pull/206)).
-- CI : CICD monté en v5.2.2 puis v5.3.1 (MAIR-771, [#210](https://github.com/mairie360/Project_API/pull/210) ; [#214](https://github.com/mairie360/Project_API/pull/214)), checklist RGPD sur les PR (MAIR-295, [#143](https://github.com/mairie360/Project_API/pull/143)), simulation RGPD (MAIR-497, [#214](https://github.com/mairie360/Project_API/pull/214)), et versions CICD alignées en v4.4.1 à v4.4.3 (MAIR-612, [#192](https://github.com/mairie360/Project_API/pull/192), [#194](https://github.com/mairie360/Project_API/pull/194), [#197](https://github.com/mairie360/Project_API/pull/197)).
-- Mises à jour Renovate : actix-web 4.18.0, actix-http 3.20.0 (dev), log 0.4.35 (dev), tokio 1.54.1, et digests Docker épinglés (rust, redis, postgres, curl, nginx, zap, k6, newman, node).
+- chore(deps): update rust:1.99-trixie docker digest to bc2c4c2 (#220) ([#220](https://github.com/mairie360/Project_API/pull/220))
+- chore(deps): pin node.js to c86ecea (#217) ([#217](https://github.com/mairie360/Project_API/pull/217))
+- feat: MAIR-497 GDPR - Usage simulation and AI review of logs and database before prod ([#214](https://github.com/mairie360/Project_API/pull/214))
+- chore(deps): update rust dependencies (#202) ([#202](https://github.com/mairie360/Project_API/pull/202))
+- chore(deps): update rust:1.99-trixie docker digest to 4c4c8ec (#216) ([#216](https://github.com/mairie360/Project_API/pull/216))
+- fix: MAIR-680 [Audit 23/10] Toutes les APIs et BFFs : remplacer le secret JWT HS256 partagé par 12 services (A1) ([#212](https://github.com/mairie360/Project_API/pull/212))
+- chore(deps): pin dependencies (#208) ([#208](https://github.com/mairie360/Project_API/pull/208))
+- ci: MAIR-771 APIs, BFFs, Database : monter CICD en v5.2.2 pour activer les contrôles RGPD (#210) ([#210](https://github.com/mairie360/Project_API/pull/210))
+- fix: MAIR-741 APIs : passer l'image d'exécution en distroless Debian 13 (CVE-2026-84782) (#206) ([#206](https://github.com/mairie360/Project_API/pull/206))
+- ci: MAIR-295 Ajouter une checklist RGPD aux PR et des rappels d'échéances automatiques (#143) ([#143](https://github.com/mairie360/Project_API/pull/143))
+- feat: MAIR-288 Définir la matrice d'accès des APIs et la vérifier depuis l'OpenAPI (#148) ([#148](https://github.com/mairie360/Project_API/pull/148))
+- chore(deps): update rust:1.99-bookworm docker digest to 9181b56 (#203) ([#203](https://github.com/mairie360/Project_API/pull/203))
+- fix: MAIR-290 Détecter les données personnelles dans les journaux avec un test du marqueur (#139) ([#139](https://github.com/mairie360/Project_API/pull/139))
+- chore(deps): update rust:1.99-bookworm docker digest to 48b7f43 (#200) ([#200](https://github.com/mairie360/Project_API/pull/200))
+- chore(deps): update rust crate actix-web to v4.18.0 (#201) ([#201](https://github.com/mairie360/Project_API/pull/201))
+- chore(deps): update rust crate tokio to v1.54.1 (#199) ([#199](https://github.com/mairie360/Project_API/pull/199))
+- ci: MAIR-612 Release prod: align internal versions and deploy (#197) ([#197](https://github.com/mairie360/Project_API/pull/197))
+- ci: MAIR-612 Release prod: align internal versions and deploy (#194) ([#194](https://github.com/mairie360/Project_API/pull/194))
+- chore(deps): update rust:1.99-bookworm docker digest to 5c1a173 (#195) ([#195](https://github.com/mairie360/Project_API/pull/195))
+- ci: MAIR-612 Release prod: align internal versions and deploy (#192) ([#192](https://github.com/mairie360/Project_API/pull/192))
 
 ## Différence dev → staging (en dev, pas encore en staging)
 
-#### Changements de comportement
-- L'API n'accepte plus les jetons HS256 : elle lit `JWT_PUBLIC_KEY` (clé publique Ed25519 de Core_API) et n'a plus besoin de `JWT_SECRET`. Sans `JWT_SECRET`, tout jeton HS256 reçoit une 401. Les appelants (BFF, scripts) doivent présenter des jetons EdDSA signés par Core_API, et le déploiement doit fournir `JWT_PUBLIC_KEY`. (MAIR-680, [#212](https://github.com/mairie360/Project_API/pull/212))
-- Les journaux de requêtes n'affichent plus la query string ni le `Referer` : seuls l'adresse du client, la méthode, le chemin sans query, le statut, la taille et la durée sont journalisés. Les erreurs de base sont décrites par SQLSTATE, contrainte, table et colonne au lieu du message Postgres. (MAIR-290, [#139](https://github.com/mairie360/Project_API/pull/139))
-
-#### Technique
-- Tests de matrice d'accès : `access-matrix.yaml` décrit l'accès à chaque opération de l'OpenAPI, et un test vérifie que l'API répond comme prévu (MAIR-288, [#148](https://github.com/mairie360/Project_API/pull/148)). Aucun changement de code métier.
-- Image d'exécution passée en distroless Debian 13 et builder `rust:1.99-slim-trixie`, avec un test qui vérifie la version de Debian des images (MAIR-741, [#206](https://github.com/mairie360/Project_API/pull/206)).
-- CI : CICD monté en v5.2.2 puis v5.3.1 (MAIR-771, [#210](https://github.com/mairie360/Project_API/pull/210) ; [#214](https://github.com/mairie360/Project_API/pull/214)), checklist RGPD sur les PR (MAIR-295, [#143](https://github.com/mairie360/Project_API/pull/143)), simulation RGPD (MAIR-497, [#214](https://github.com/mairie360/Project_API/pull/214)), et versions CICD alignées en v4.4.1 à v4.4.3 (MAIR-612, [#192](https://github.com/mairie360/Project_API/pull/192), [#194](https://github.com/mairie360/Project_API/pull/194), [#197](https://github.com/mairie360/Project_API/pull/197)).
-- Mises à jour Renovate : actix-web 4.18.0, actix-http 3.20.0 (dev), log 0.4.35 (dev), tokio 1.54.1, et digests Docker épinglés (rust, redis, postgres, curl, nginx, zap, k6, newman, node).
+- chore(deps): update rust:1.99-trixie docker digest to bc2c4c2 (#220) ([#220](https://github.com/mairie360/Project_API/pull/220))
+- chore(deps): pin node.js to c86ecea (#217) ([#217](https://github.com/mairie360/Project_API/pull/217))
+- feat: MAIR-497 GDPR - Usage simulation and AI review of logs and database before prod ([#214](https://github.com/mairie360/Project_API/pull/214))
+- chore(deps): update rust dependencies (#202) ([#202](https://github.com/mairie360/Project_API/pull/202))
+- chore(deps): update rust:1.99-trixie docker digest to 4c4c8ec (#216) ([#216](https://github.com/mairie360/Project_API/pull/216))
+- fix: MAIR-680 [Audit 23/10] Toutes les APIs et BFFs : remplacer le secret JWT HS256 partagé par 12 services (A1) ([#212](https://github.com/mairie360/Project_API/pull/212))
+- chore(deps): pin dependencies (#208) ([#208](https://github.com/mairie360/Project_API/pull/208))
+- ci: MAIR-771 APIs, BFFs, Database : monter CICD en v5.2.2 pour activer les contrôles RGPD (#210) ([#210](https://github.com/mairie360/Project_API/pull/210))
+- fix: MAIR-741 APIs : passer l'image d'exécution en distroless Debian 13 (CVE-2026-84782) (#206) ([#206](https://github.com/mairie360/Project_API/pull/206))
+- ci: MAIR-295 Ajouter une checklist RGPD aux PR et des rappels d'échéances automatiques (#143) ([#143](https://github.com/mairie360/Project_API/pull/143))
+- feat: MAIR-288 Définir la matrice d'accès des APIs et la vérifier depuis l'OpenAPI (#148) ([#148](https://github.com/mairie360/Project_API/pull/148))
+- chore(deps): update rust:1.99-bookworm docker digest to 9181b56 (#203) ([#203](https://github.com/mairie360/Project_API/pull/203))
+- fix: MAIR-290 Détecter les données personnelles dans les journaux avec un test du marqueur (#139) ([#139](https://github.com/mairie360/Project_API/pull/139))
+- chore(deps): update rust:1.99-bookworm docker digest to 48b7f43 (#200) ([#200](https://github.com/mairie360/Project_API/pull/200))
+- chore(deps): update rust crate actix-web to v4.18.0 (#201) ([#201](https://github.com/mairie360/Project_API/pull/201))
+- chore(deps): update rust crate tokio to v1.54.1 (#199) ([#199](https://github.com/mairie360/Project_API/pull/199))
+- ci: MAIR-612 Release prod: align internal versions and deploy (#197) ([#197](https://github.com/mairie360/Project_API/pull/197))
+- ci: MAIR-612 Release prod: align internal versions and deploy (#194) ([#194](https://github.com/mairie360/Project_API/pull/194))
+- chore(deps): update rust:1.99-bookworm docker digest to 5c1a173 (#195) ([#195](https://github.com/mairie360/Project_API/pull/195))
+- ci: MAIR-612 Release prod: align internal versions and deploy (#192) ([#192](https://github.com/mairie360/Project_API/pull/192))
 
 ## Différence staging → prod (en staging, pas encore en prod)
 
 _Rien._
+
+> Résumé Claude indisponible pour ce passage : listes brutes des commits.
 
 ## Historique des passages
 
 <!-- release-journal-history:start -->
 | Date | Environnement | Version | Commit | Run |
 | --- | --- | --- | --- | --- |
+| 2026-11-06 05:18 UTC | dev | — | `caf3327` | [run](https://github.com/mairie360/Project_API/actions/runs/42166743871) |
 | 2026-11-04 18:27 UTC | dev | — | `bd75ffd` | [run](https://github.com/mairie360/Project_API/actions/runs/41883079528) |
 | 2026-11-04 08:58 UTC | dev | — | `80bfbe8` | [run](https://github.com/mairie360/Project_API/actions/runs/41801599961) |
 | 2026-11-04 01:51 UTC | dev | — | `9dc4965` | [run](https://github.com/mairie360/Project_API/actions/runs/41756068617) |
