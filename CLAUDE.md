@@ -156,7 +156,7 @@ collection-level scripts, identical in every API collection, back it:
   STATUS": "reason"`, `2xx` for the success) is no longer needed. There is none in this API.
 
 A new endpoint therefore fails the integration stack until the collection tests it. The `404` of `GET /api/v1/tasks/`
-(account of the token unknown) uses a token forged for user `2147483647` (`jwt_ghost`).
+(account of the token unknown) uses a token signed by `integration_test.sh` for user `2147483647` (`jwt_ghost`).
 
 `tests/routing_test.rs` needs no Docker: it mounts `endpoints::config` under `/api` in an actix test app and checks that every `/api/v1` operation published by `ApiDoc` (the contract `@mairie360/project-api-openapi` is generated from) hits a real route and has no empty segment. It catches a `scope(...)` that drifts from the `doc.rs` nesting or a `#[utoipa::path]` without the right `path` (utoipa appends it to the nest path, so `#[delete("/")]` needs `path = ""`, `#[patch("/close")]` needs `path = "close"`).
 

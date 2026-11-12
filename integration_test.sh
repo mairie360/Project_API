@@ -31,7 +31,9 @@ JWT_ADMIN="$ADMIN_JWT"
 JWT_AGENT="$(sign_jwt 2 user 3600)" || exit 1
 JWT_FORGED="$(sign_jwt 1 admin 3600 "$(openssl genpkey -algorithm ed25519 2>/dev/null)")" || exit 1
 JWT_EXPIRED="$(sign_jwt 1 admin -3600)" || exit 1
-export JWT_ADMIN JWT_AGENT JWT_FORGED JWT_EXPIRED
+# A user that does not exist (the cross-project task list answers 404 to its token, MAIR-262).
+JWT_GHOST="$(sign_jwt 2147483647 user 3600)" || exit 1
+export JWT_ADMIN JWT_AGENT JWT_FORGED JWT_EXPIRED JWT_GHOST
 
 echo "==> [1/4] Starting the stack and the newman collection..."
 # Fresh database on every run (MAIR-474): a volume left by a previous run would hand the
