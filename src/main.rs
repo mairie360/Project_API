@@ -7,7 +7,7 @@
     clippy::cast_sign_loss
 )]
 
-use actix_web::{middleware, web, App, HttpServer};
+use actix_web::{web, App, HttpServer};
 
 use project_api::database::pg_url::build_pg_url;
 use project_api::endpoints::swagger::{api_docs_enabled, ApiDoc, API_DOCS_ENABLED};
@@ -55,8 +55,8 @@ async fn main() -> std::io::Result<()> {
             // One span per request (MAIR-503), including those refused by `JwtMiddleware`; it
             // continues the `traceparent` of the BFF.
             .wrap(TracingLogger::default())
-            // Every response is JSON or plain text: forbid browsers from sniffing it as HTML.
-            .wrap(middleware::DefaultHeaders::new().add(("X-Content-Type-Options", "nosniff")))
+            // nosniff, and text/plain on the plain-text answers (MAIR-262).
+            .wrap(project_api::endpoints::headers::default_headers())
             // 1. Swagger UI and the OpenAPI document (public), only where explicitly enabled:
             //    dev and test stacks, never the production deployment.
             .configure(|cfg| {

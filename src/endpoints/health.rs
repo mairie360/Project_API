@@ -30,7 +30,7 @@ const REDIS_PROBE_KEY: &str = "readiness-probe";
 )]
 #[get("/health")]
 pub async fn health() -> impl Responder {
-    HttpResponse::Ok().body("OK")
+    HttpResponse::Ok().content_type("text/plain").body("OK")
 }
 
 /// Readiness probe: runs `SELECT 1` on Postgres and a read on Redis, each bounded by
@@ -90,3 +90,20 @@ async fn within_timeout(check: impl Future<Output = bool>) -> bool {
 #[derive(OpenApi)]
 #[openapi(paths(health, ready))]
 pub struct HealthDoc;
+
+#[cfg(test)]
+mod tests {
+    use super::health;
+    use actix_web::{http::header::CONTENT_TYPE, test, App};
+
+    /// MAIR-262: the answer carries the `text/plain` the spec documents (it had no content type).
+    #[actix_web::test]
+    async fn health_answers_ok_as_text_plain() {
+        let app = test::init_service(App::new().service(health)).await;
+        let resp =
+            test::call_service(&app, test::TestRequest::get().uri("/health").to_request()).await;
+        assert!(resp.status().is_success());
+        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/plain");
+        assert_eq!(test::read_body(resp).await, "OK");
+    }
+}
