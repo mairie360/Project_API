@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `project_api` is one microservice in the **mairie360** suite: an Actix-web REST API (port `3001`) that manages projects, their tasks (and task fields) and their user membership. It was scaffolded from a generic "Rust API template" (see `README.md`), so config files still carry `#change api name` / `#change port` placeholders.
 
-Shared infrastructure (DB, Redis, cache-aside, JWT auth, env helpers, test containers) lives in the external crate **`mairie360_api_lib`** (pinned to `4.3.0`) — read its source under `~/.cargo/registry/src/*/mairie360_api_lib-<version>/src/` when an import is unclear. `project_api` has **no direct `sqlx` dependency**; all SQL goes through the library.
+Shared infrastructure (DB, Redis, cache-aside, JWT auth, env helpers, test containers) lives in the external crate **`mairie360_api_lib`** (pinned to `4.3.1`) — read its source under `~/.cargo/registry/src/*/mairie360_api_lib-<version>/src/` when an import is unclear. `project_api` has **no direct `sqlx` dependency**; all SQL goes through the library.
 
-## Data access (`mairie360_api_lib` 4.3.0)
+## Data access (`mairie360_api_lib` 4.3.1)
 
 `AppState` (`mairie360_api_lib::state::AppState`, built once in `main.rs` via `AppState::new(redis_url, pg_url)`) owns a `SmartDatabase` (Postgres + Redis cache-aside) reachable from handlers with `state.get_smart_db()`.
 
@@ -61,7 +61,7 @@ without either variable, with a short or well-known `JWT_SECRET`, or with its co
   To call it, sign a token with the matching private key (in a subshell, so the keys do not stay exported):
 
   ```bash
-  (export JWT_PRIVATE_KEY="$(openssl pkey -inform DER -in ~/.cargo/registry/src/*/mairie360_api_lib-4.3.0/src/test_setup/fixtures/session_test_key.der)"
+  (export JWT_PRIVATE_KEY="$(openssl pkey -inform DER -in ~/.cargo/registry/src/*/mairie360_api_lib-4.3.1/src/test_setup/fixtures/session_test_key.der)"
    export JWT_PUBLIC_KEY="$(printf '%s\n' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
    source ./test_secrets.sh && sign_jwt 1 admin 3600)
   ```
