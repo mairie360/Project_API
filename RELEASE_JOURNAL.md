@@ -1,16 +1,17 @@
 # Journal des releases — Project_API
 
-<!-- release-journal-state {"dev": "5de1a257d79d48106b58d66c55caa4ea23aac6d5", "prod": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "prod_tag": "v1.2.0", "staging": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "updated": {"dev": "2026-11-12 11:53 UTC", "prod": "2026-10-21 09:10 UTC", "staging": "2026-10-21 03:21 UTC"}} -->
+<!-- release-journal-state {"dev": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "prod": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "prod_tag": "v1.2.0", "staging": "5c1ed53c25e52312242ebd2ce8fac9c5fd922ad3", "updated": {"dev": "2026-11-12 12:57 UTC", "prod": "2026-10-21 09:10 UTC", "staging": "2026-10-21 03:21 UTC"}} -->
 > Tenu à jour par la CI (`mairie360/CICD`, action `release/release-journal`) à chaque passage en dev, staging et prod. Ne pas modifier à la main : le fichier est réécrit au passage suivant.
 
 | Environnement | Version | Commit | Mis à jour |
 | --- | --- | --- | --- |
 | prod | v1.2.0 | `5c1ed53` | 2026-10-21 09:10 UTC |
 | staging | — | `5c1ed53` | 2026-10-21 03:21 UTC |
-| dev | — | `5de1a25` | 2026-11-12 11:53 UTC |
+| dev | — | `9a2f251` | 2026-11-12 12:57 UTC |
 
 ## Ajouté sur main depuis la dernière release prod (v1.2.0)
 
+- fix: MAIR-262 Integration tests - API functional tests, BFF business tests and regression tests (#228) ([#228](https://github.com/mairie360/Project_API/pull/228))
 - chore(deps): update gcr.io/distroless/cc-debian13:nonroot docker digest to cc66d22 (#222) ([#222](https://github.com/mairie360/Project_API/pull/222))
 - fix(deps): MAIR-740 APIs: fix the cargo audit RustSec alerts (actix-http, libsqlite3-sys) (#227) ([#227](https://github.com/mairie360/Project_API/pull/227))
 - chore(deps): update rust:1.99-trixie docker digest to 8a4e90c (#221) ([#221](https://github.com/mairie360/Project_API/pull/221))
@@ -37,6 +38,7 @@
 
 ## Différence dev → staging (en dev, pas encore en staging)
 
+- fix: MAIR-262 Integration tests - API functional tests, BFF business tests and regression tests (#228) ([#228](https://github.com/mairie360/Project_API/pull/228))
 - chore(deps): update gcr.io/distroless/cc-debian13:nonroot docker digest to cc66d22 (#222) ([#222](https://github.com/mairie360/Project_API/pull/222))
 - fix(deps): MAIR-740 APIs: fix the cargo audit RustSec alerts (actix-http, libsqlite3-sys) (#227) ([#227](https://github.com/mairie360/Project_API/pull/227))
 - chore(deps): update rust:1.99-trixie docker digest to 8a4e90c (#221) ([#221](https://github.com/mairie360/Project_API/pull/221))
@@ -72,6 +74,7 @@ _Rien._
 <!-- release-journal-history:start -->
 | Date | Environnement | Version | Commit | Run |
 | --- | --- | --- | --- | --- |
+| 2026-11-12 12:57 UTC | dev | — | `9a2f251` | [run](https://github.com/mairie360/Project_API/actions/runs/43220653995) |
 | 2026-11-12 11:53 UTC | dev | — | `5de1a25` | [run](https://github.com/mairie360/Project_API/actions/runs/43211595347) |
 | 2026-11-06 05:18 UTC | dev | — | `caf3327` | [run](https://github.com/mairie360/Project_API/actions/runs/42166743871) |
 | 2026-11-04 18:27 UTC | dev | — | `bd75ffd` | [run](https://github.com/mairie360/Project_API/actions/runs/41883079528) |
