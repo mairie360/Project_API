@@ -24,26 +24,9 @@ x-depends-on: &depends-on
   redis:
     condition: service_healthy
 
-x-healthcheck: &healthcheck
-  test: ["CMD", "curl", "-f", "http://localhost:3001"] #change port
-  interval: 10s
-  timeout: 5s
-  retries: 5
-
-x-service: &service-template
-  image: ghcr.io/mairie360/service_name:latest
-  pull_policy: always
-  restart: always
-  expose:
-    - "3001"
-  networks:
-    - backend
-  healthcheck:
-    <<: *healthcheck
-
 services:
   postgres:
-    image: ${DB_IMAGE:-ghcr.io/mairie360/database:dev-949384c}
+    image: ${DB_IMAGE:-ghcr.io/mairie360/database:3.4.0}
     restart: always
     container_name: mairie360-db-project-api
     environment:
@@ -63,7 +46,7 @@ services:
       retries: 5
 
   liquibase:
-    image: ${LIQUIBASE_IMAGE:-ghcr.io/mairie360/liquibase-migrations:dev-949384c}
+    image: ${LIQUIBASE_IMAGE:-ghcr.io/mairie360/liquibase-migrations:3.4.0}
     container_name: mairie360-liquibase-project-api
     depends_on:
       postgres:

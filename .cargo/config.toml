@@ -16,10 +16,9 @@ cov_test = ["llvm-cov", "--workspace", "--ignore-filename-regex", "main\\.rs|lib
 cov = ["llvm-cov", "--workspace", "--ignore-filename-regex", "main\\.rs|lib\\.rs", "--fail-under-lines", "60", "--codecov", "--output-path", "codecov.json"]
 
 # Version of the ghcr.io/mairie360/database and liquibase-migrations images the tests start
-# (mairie360_api_lib::test_setup), kept equal to the compose files: the latest release of
-# Devops/Database, or its dev tag while a schema change this API needs is not released yet
-# (dev-949384c: the API roles' passwords and grants the tests connect with, MAIR-556, on top of
-# the per-project task statuses and project templates of MAIR-566). An exported
-# TEST_DB_VERSION still wins.
+# (mairie360_api_lib::test_setup), kept equal to the compose files and to every other API: the
+# Database release 3.4.0 (MAIR-243). mairie360_api_lib passes -Dallow_template_admin=true where the
+# migration needs it. An exported TEST_DB_VERSION still wins.
 [env]
-TEST_DB_VERSION = "dev-949384c"
+# renovate: datasource=docker depName=ghcr.io/mairie360/database
+TEST_DB_VERSION = "3.4.0"
