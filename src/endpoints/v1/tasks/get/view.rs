@@ -90,10 +90,10 @@ pub struct TaskListItemView {
     #[schema(example = 87)]
     pub id: u64,
     /// Title of the task.
-    #[schema(example = "Consulter les riverains")]
+    #[schema(example = "Consult the residents")]
     pub title: String,
     /// Description of the task; empty string if it has none — never `null`.
-    #[schema(example = "Réunion publique à organiser avant le 15 octobre")]
+    #[schema(example = "Public meeting to organise before 15 October")]
     pub description: String,
     /// Current status. `Error` flags a stored value the API does not interpret.
     pub status: TaskStatus,
@@ -123,7 +123,7 @@ pub struct TaskListItemView {
     #[schema(example = 12)]
     pub project_id: u64,
     /// Name of the task's project.
-    #[schema(example = "Réfection de la place du marché")]
+    #[schema(example = "Renovation of the market square")]
     pub project_name: String,
 }
 

@@ -127,7 +127,7 @@ pub struct CreateTemplateView {
     #[schema(min_length = 1, max_length = 100, example = "Travaux de voirie")]
     pub name: String,
     /// At most 5000 characters. Optional.
-    #[schema(max_length = 5000, example = "Étude, chantier, réception.")]
+    #[schema(max_length = 5000, example = "Study, works, acceptance.")]
     pub description: Option<String>,
     /// 1 to 30 statuses, in order, at least one of each category.
     pub statuses: Vec<TemplateStatusInputView>,

@@ -130,11 +130,11 @@ pub async fn get_template(
                    created from it can always be started and completed.",
     request_body(content = CreateTemplateView, example = json!({
         "name": "Travaux de voirie",
-        "description": "Étude, chantier, réception.",
+        "description": "Study, works, acceptance.",
         "statuses": [
-            { "name": "Étude", "category": "Todo" },
+            { "name": "Study", "category": "Todo" },
             { "name": "Chantier", "color": "#D97706", "category": "InProgress" },
-            { "name": "Réception", "color": "#16A34A", "category": "Completed" }
+            { "name": "Acceptance", "color": "#16A34A", "category": "Completed" }
         ],
         "custom_fields": []
     })),

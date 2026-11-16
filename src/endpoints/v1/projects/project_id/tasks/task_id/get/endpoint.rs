@@ -88,8 +88,8 @@ async fn trigger_get_task(
             body = TaskView,
             example = json!({
                 "id": 87,
-                "title": "Consulter les riverains",
-                "description": "Réunion publique à organiser avant le 15 octobre",
+                "title": "Consult the residents",
+                "description": "Public meeting to organise before 15 October",
                 "status": "InProgress",
                 "priority": "High",
                 "due_date": "2026-10-15T00:00:00Z",

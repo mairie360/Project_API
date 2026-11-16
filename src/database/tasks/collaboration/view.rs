@@ -217,7 +217,7 @@ pub struct TaskComment {
     #[schema(example = "comment-31")]
     pub id: String,
     /// Text of the comment.
-    #[schema(example = "La réunion publique est calée au 3 octobre.")]
+    #[schema(example = "The public meeting is set for 3 October.")]
     pub message: String,
     /// Author of the comment, taken from the JWT when it was written.
     pub author: CollaborationAuthor,

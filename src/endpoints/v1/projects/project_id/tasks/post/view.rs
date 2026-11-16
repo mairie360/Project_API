@@ -10,16 +10,16 @@ use crate::{
     endpoints::v1::projects::project_id::get::view::{TaskPriority, TaskStatus},
 };
 
-/// Tâche à créer dans le projet du chemin.
+/// Task to create in the project of the path.
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct CreateTaskView {
-    /// Intitulé de la tâche. Obligatoire.
-    #[schema(min_length = 1, max_length = 255, example = "Consulter les riverains")]
+    /// Title of the task. Required.
+    #[schema(min_length = 1, max_length = 255, example = "Consult the residents")]
     name: String,
     /// Description, at most 5000 characters. Optional: stored as an empty string when absent.
     #[schema(
         max_length = 5000,
-        example = "Réunion publique à organiser avant le 15 octobre"
+        example = "Public meeting to organise before 15 October"
     )]
     description: Option<String>,
     /// Due date, optional: an RFC 3339 date-time, or a date alone (`YYYY-MM-DD`) stored as
@@ -34,12 +34,12 @@ pub struct CreateTaskView {
     #[serde(default)]
     #[schema(example = 31)]
     status_id: Option<u64>,
-    /// Priorité initiale. Absente, la base applique sa valeur par défaut.
+    /// Initial priority. When absent, the database applies its default.
     priority: Option<TaskPriority>,
-    /// Identifiant Core API de l'agent à assigner. Facultatif.
+    /// Core API id of the agent to assign. Optional.
     #[schema(example = 42)]
     assigned_to: Option<u64>,
-    /// Champs personnalisés. Obligatoire, quitte à être un tableau vide.
+    /// Custom fields. Required, even if it is an empty array.
     fields: Vec<DynamicTaskField>,
 }
 
@@ -97,17 +97,17 @@ impl CreateTaskView {
     }
 }
 
-/// Tâche créée.
+/// Task created.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct CreateTaskResultView {
-    /// Identifiant attribué à la tâche créée.
+    /// Id assigned to the created task.
     #[schema(example = 77)]
     pub task_id: u64,
-    /// Intitulé enregistré.
-    #[schema(example = "Consulter les riverains")]
+    /// Stored title.
+    #[schema(example = "Consult the residents")]
     pub name: String,
     /// Stored description; empty string if none was sent — never `null`.
-    #[schema(example = "Réunion publique à organiser avant le 15 octobre")]
+    #[schema(example = "Public meeting to organise before 15 October")]
     pub description: String,
 }
 

@@ -81,19 +81,19 @@ async fn trigger_get_tasks(
             example = json!({
                 "tasks": [
                     {
-                        "id": 87, "title": "Consulter les riverains",
-                        "description": "Réunion publique à organiser avant le 15 octobre",
+                        "id": 87, "title": "Consult the residents",
+                        "description": "Public meeting to organise before 15 October",
                         "status": "InProgress", "priority": "High",
                         "due_date": "2026-10-15T00:00:00Z", "archived_at": null,
                         "assigned_to": 42, "fields": [],
-                        "project_id": 12, "project_name": "Réfection de la place du marché"
+                        "project_id": 12, "project_name": "Renovation of the market square"
                     },
                     {
-                        "id": 93, "title": "Numériser les registres de 1950", "description": "",
+                        "id": 93, "title": "Digitise the 1950 registers", "description": "",
                         "status": "Todo", "priority": "Medium",
                         "due_date": null, "archived_at": null,
                         "assigned_to": 42, "fields": [],
-                        "project_id": 18, "project_name": "Numérisation de l'état civil"
+                        "project_id": 18, "project_name": "Digitisation of the civil registry"
                     }
                 ],
                 "total": 2

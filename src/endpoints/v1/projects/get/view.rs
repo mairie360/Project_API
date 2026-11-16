@@ -62,7 +62,7 @@ pub struct GetProjectsQuery {
     offset: Option<u32>,
     /// Keeps the projects whose name or description contains this text, case-insensitive (at most
     /// 255 characters, no control character).
-    #[param(example = "marché")]
+    #[param(example = "market")]
     search: Option<String>,
     /// Keeps the projects with one of these statuses: a comma-separated list of `Todo`, `Active`,
     /// `Review`, `Suspended`, `Completed` and `Error` (a stored status the API does not interpret).
@@ -182,14 +182,14 @@ impl std::fmt::Display for ProjectStatus {
 /// Project, as read by `GET /api/v1/projects/{project_id}/`.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct ProjetView {
-    /// Identifiant du projet, à réutiliser dans `/api/v1/projects/{project_id}/`.
+    /// Id of the project, to reuse in `/api/v1/projects/{project_id}/`.
     #[schema(example = 12)]
     pub id: u64,
     /// Nom du projet.
-    #[schema(example = "Réfection de la place du marché")]
+    #[schema(example = "Renovation of the market square")]
     pub name: String,
-    /// Description du projet. Chaîne vide s'il n'en a pas — jamais `null`.
-    #[schema(example = "Travaux de voirie 2026")]
+    /// Description of the project. Empty string if it has none — never `null`.
+    #[schema(example = "2026 road works")]
     pub description: String,
     /// Current status. `Error` flags a stored value the API does not know; it cannot be assigned.
     pub status: ProjectStatus,
@@ -213,16 +213,16 @@ impl From<ProjectView> for ProjetView {
 /// Project of the list, with the aggregates of its tasks and its first members (MAIR-474).
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct ProjectListItemView {
-    /// Identifiant du projet, à réutiliser dans `/api/v1/projects/{project_id}/`.
+    /// Id of the project, to reuse in `/api/v1/projects/{project_id}/`.
     #[schema(example = 12)]
     pub id: u64,
     /// Nom du projet.
-    #[schema(example = "Réfection de la place du marché")]
+    #[schema(example = "Renovation of the market square")]
     pub name: String,
-    /// Description du projet. Chaîne vide s'il n'en a pas — jamais `null`.
-    #[schema(example = "Travaux de voirie 2026")]
+    /// Description of the project. Empty string if it has none — never `null`.
+    #[schema(example = "2026 road works")]
     pub description: String,
-    /// Statut courant. `Error` signale une valeur en base que l'API ne sait pas interpréter.
+    /// Current status. `Error` flags a stored value the API cannot interpret.
     pub status: ProjectStatus,
     /// Number of tasks of the project.
     #[schema(example = 12)]
@@ -331,7 +331,7 @@ pub struct ProjectsSummaryView {
     pub by_priority: ProjectPriorityCountsView,
 }
 
-/// Projets visibles par l'utilisateur connecté.
+/// Projects visible to the signed-in user.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct GetProjectsResultView {
     /// Projects of the page, newest first. Empty if no visible project matches the filters or the

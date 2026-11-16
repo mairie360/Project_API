@@ -8,22 +8,22 @@ use crate::database::project::access::view::{
     LockProjectQueryView, ProjectAccess, ProjectAccessQueryView,
 };
 
-/// Refus d'accès commun aux opérations sur un projet.
+/// Access refusal shared by the operations on a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessDenied {
-    /// Projet invisible pour l'appelant (ou inexistant), ou tâche absente de ce projet.
+    /// Project the caller cannot see (or that does not exist), or task missing from this project.
     NotFound,
-    /// Projet visible, mais droits insuffisants.
+    /// Visible project, but insufficient rights.
     Forbidden,
     DatabaseError,
 }
 
-/// Ce que l'opération exige de l'appelant.
+/// What the operation requires from the caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Requirement {
     ViewProject,
     ManageProject,
-    /// Gestionnaire du projet ou agent assigné à la tâche.
+    /// Manager of the project or agent assigned to the task.
     ActOnTask,
 }
 
@@ -105,7 +105,7 @@ pub async fn commit(tx: SmartTransaction, operation: &str) -> Result<(), AccessD
     })
 }
 
-/// Création de projet : réservée aux rôles Admin, Maire et Responsable.
+/// Project creation: reserved to the Admin, Maire and Responsable roles.
 pub async fn require_manager_role(
     state: &web::Data<AppState>,
     user_id: u64,

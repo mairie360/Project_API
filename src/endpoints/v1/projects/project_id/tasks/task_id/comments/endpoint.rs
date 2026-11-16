@@ -97,7 +97,7 @@ async fn trigger_add_task_comment(
     request_body(
         content = AddTaskCommentView,
         description = "Text of the comment.",
-        example = json!({ "message": "La réunion publique est calée au 3 octobre." })
+        example = json!({ "message": "The public meeting is set for 3 October." })
     ),
     responses(
         (
@@ -106,7 +106,7 @@ async fn trigger_add_task_comment(
             body = TaskComment,
             example = json!({
                 "id": "comment-31",
-                "message": "La réunion publique est calée au 3 octobre.",
+                "message": "The public meeting is set for 3 October.",
                 "author": { "id": "user-42", "name": "Jean Dupont" },
                 "createdAt": "2026-09-14T09:12:00.000Z"
             })

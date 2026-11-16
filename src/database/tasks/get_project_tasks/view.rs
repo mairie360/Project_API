@@ -105,40 +105,40 @@ impl ApiRequestDto for CountArchivedTasksQueryView {
     }
 }
 
-/// Type d'un champ personnalisé de tâche : `Date`, `Checkbox` ou `Select`.
-/// `Unknown` signale un type stocké en base que l'API ne sait pas interpréter.
+/// Type of a task custom field: `Date`, `Checkbox` or `Select`.
+/// `Unknown` flags a type stored in the database that the API cannot interpret.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, Copy, ToSchema)]
-#[serde(rename_all = "lowercase")] // Magique : transforme "Date" en "date" dans le JSON
+#[serde(rename_all = "lowercase")] // "Date" becomes "date" in the JSON
 pub enum FieldType {
     Date,
     Checkbox,
     Select,
-    #[serde(other)] // Gère les types inconnus proprement (remplace ton "Error")
+    #[serde(other)] // Unknown types land here instead of failing
     Unknown,
 }
 
-// 2. Les options du champ
-/// Valeur proposée par un champ personnalisé, et son état sur la tâche.
+// 2. The options of the field
+/// Value offered by a custom field, and its state on the task.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, ToSchema)]
 pub struct FieldOption {
-    /// Valeur de l'option, de type libre selon le `task_type` du champ.
+    /// Value of the option, free-form according to the field's `task_type`.
     #[schema(example = "Oui")]
     pub option: serde_json::Value,
-    /// `true` si l'option est retenue sur cette tâche.
+    /// `true` if the option is selected on this task.
     #[schema(example = true)]
     pub is_selected: bool,
 }
 
-// 3. Le champ dynamique
-/// Champ personnalisé défini sur le projet, avec ses valeurs pour la tâche.
+// 3. The dynamic field
+/// Custom field defined on the project, with its values for the task.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, ToSchema)]
 pub struct DynamicTaskField {
-    /// Libellé du champ personnalisé, tel que défini sur le projet.
-    #[schema(example = "Budget engagé")]
+    /// Label of the custom field, as defined on the project.
+    #[schema(example = "Committed budget")]
     pub label: String,
-    /// Type du champ. `Unknown` signale un type stocké en base que l'API ne sait pas interpréter.
+    /// Type of the field. `Unknown` flags a type stored in the database that the API cannot interpret.
     pub task_type: FieldType,
-    /// Valeurs proposées et leur état de sélection. Vide pour un champ sans options.
+    /// Offered values and their selection state. Empty for a field without options.
     pub fields_options: Vec<FieldOption>,
 }
 

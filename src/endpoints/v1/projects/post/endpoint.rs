@@ -99,7 +99,7 @@ async fn trigger_create_project(
     responses(
         (
             status = 200,
-            description = "Projet créé. Le corps contient l'identifiant attribué.",
+            description = "Project created. The body holds the assigned id.",
             body = CreateProjectResultView,
             example = json!({ "project_id": 12 })
         ),
@@ -112,21 +112,21 @@ async fn trigger_create_project(
         ),
         (
             status = 401,
-            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
             body = String,
             content_type = "text/plain",
             example = json!("Jeton expiré")
         ),
         (
             status = 403,
-            description = "L'appelant n'a ni le rôle Admin, ni Maire, ni Responsable.",
+            description = "The caller has none of the Admin, Maire and Responsable roles.",
             body = String,
             content_type = "text/plain",
             example = json!("Forbidden.")
         ),
         (
             status = 500,
-            description = "Erreur de base de données.",
+            description = "Database error.",
             body = String,
             content_type = "text/plain",
             example = json!("An error occurred while accessing the database.")
@@ -136,8 +136,8 @@ async fn trigger_create_project(
         content = CreateProjectView,
         description = "Project name; description, group, status and priority are optional.",
         example = json!({
-            "name": "Réfection de la place du marché",
-            "description": "Travaux de voirie 2026",
+            "name": "Renovation of the market square",
+            "description": "2026 road works",
             "group_id": 3,
             "status": "Todo",
             "priority": "High"

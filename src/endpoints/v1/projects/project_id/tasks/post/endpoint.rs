@@ -156,8 +156,8 @@ async fn trigger_create_task(
             body = CreateTaskResultView,
             example = json!({
                 "task_id": 77,
-                "name": "Consulter les riverains",
-                "description": "Réunion publique à organiser avant le 15 octobre"
+                "name": "Consult the residents",
+                "description": "Public meeting to organise before 15 October"
             })
         ),
         (
@@ -200,8 +200,8 @@ async fn trigger_create_task(
         content = CreateTaskView,
         description = "Definition of the task. `fields` is required, even empty.",
         example = json!({
-            "name": "Consulter les riverains",
-            "description": "Réunion publique à organiser avant le 15 octobre",
+            "name": "Consult the residents",
+            "description": "Public meeting to organise before 15 October",
             "due_date": "2026-10-15",
             "status": "Todo",
             "priority": "High",

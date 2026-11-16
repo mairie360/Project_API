@@ -106,21 +106,21 @@ async fn trigger_get_project_users(
         ),
         (
             status = 401,
-            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
             body = String,
             content_type = "text/plain",
             example = json!("Jeton expiré")
         ),
         (
             status = 404,
-            description = "Projet inexistant, ou invisible pour l'appelant — les deux cas sont volontairement indiscernables.",
+            description = "Project that does not exist, or that the caller cannot see — the two cases are indistinguishable on purpose.",
             body = String,
             content_type = "text/plain",
             example = json!("Not found.")
         ),
         (
             status = 500,
-            description = "Erreur de base de données.",
+            description = "Database error.",
             body = String,
             content_type = "text/plain",
             example = json!("An error occurred while accessing the database.")

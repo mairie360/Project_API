@@ -122,7 +122,7 @@ async fn trigger_get_task_collaboration(
                 "comments": [
                     {
                         "id": "comment-31",
-                        "message": "La réunion publique est calée au 3 octobre.",
+                        "message": "The public meeting is set for 3 October.",
                         "author": { "id": "user-42", "name": "Jean Dupont" },
                         "createdAt": "2026-09-14T09:12:00.000Z"
                     }
