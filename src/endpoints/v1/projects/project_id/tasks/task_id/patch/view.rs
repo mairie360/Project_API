@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer};
 use utoipa::ToSchema;
 
-/// Distingue un champ absent (`None`) d'un champ explicitement `null` (`Some(None)`).
+/// Tells an absent field (`None`) from an explicit `null` (`Some(None)`).
 fn deserialize_present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
 where
     D: Deserializer<'de>,
@@ -19,19 +19,19 @@ where
     Option::<T>::deserialize(deserializer).map(Some)
 }
 
-/// Modification partielle d'une tâche : seuls les champs fournis sont mis à jour.
+/// Partial update of a task: only the given fields are updated.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PatchTaskView {
-    /// Nouvel intitulé. Absent pour ne pas y toucher. Interdit à l'agent assigné non gestionnaire.
+    /// New title. Absent to leave it unchanged. Forbidden to an assigned agent who does not manage the project.
     #[schema(
         min_length = 1,
         max_length = 255,
-        example = "Consulter les riverains et les commerçants"
+        example = "Consult the residents and shopkeepers"
     )]
     pub name: Option<String>,
     /// New description, at most 5000 characters; `""` clears it. Absent to leave it unchanged.
     /// Forbidden to an assigned agent who does not manage the project.
-    #[schema(max_length = 5000, example = "Réunion publique avec les riverains")]
+    #[schema(max_length = 5000, example = "Public meeting with the residents")]
     pub description: Option<String>,
     /// New status category, the task taking the first status of it in its project unless it
     /// already is in that category. With `status_id`, the only fields an assigned agent who does not
@@ -42,7 +42,7 @@ pub struct PatchTaskView {
     #[serde(default)]
     #[schema(example = 31)]
     pub status_id: Option<u64>,
-    /// Nouvelle priorité. Interdite à l'agent assigné non gestionnaire.
+    /// New priority. Forbidden to an assigned agent who does not manage the project.
     pub priority: Option<TaskPriority>,
     /// New due date: an RFC 3339 date-time, or a date alone (`YYYY-MM-DD`) stored as midnight UTC
     /// of that day. Absent or `null` to leave it unchanged. Forbidden to an assigned agent who does
@@ -50,7 +50,7 @@ pub struct PatchTaskView {
     #[serde(default, deserialize_with = "deserialize_optional_due_date")]
     #[schema(value_type = Option<String>, example = "2026-10-15")]
     pub due_date: Option<DateTime<Utc>>,
-    /// Absent : assignation conservée ; `null` : assignation retirée.
+    /// Absent: assignment kept; `null`: assignment removed.
     #[serde(default, deserialize_with = "deserialize_present")]
     #[schema(value_type = Option<u64>, nullable, example = 42)]
     pub assigned_to: Option<Option<u64>>,

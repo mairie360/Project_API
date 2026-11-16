@@ -66,20 +66,20 @@ async fn trigger_delete_task(
 #[utoipa::path(
     delete,
     path = "",
-    summary = "Supprimer une tâche",
-    description = "Supprime définitivement une tâche, avec ses commentaires et son historique. \
-                   Réservé aux responsables du projet : un agent assigné à la tâche ne peut pas la \
-                   supprimer, seulement changer son statut.\n\n\
-                   Opération idempotente une fois les droits validés : supprimer une tâche déjà \
-                   absente de la base répond également `204`.",
+    summary = "Delete a task",
+    description = "Deletes a task for good, with its comments and its history. \
+                   Reserved to the managers of the project: an agent assigned to the task cannot \
+                   delete it, only change its status.\n\n\
+                   Idempotent once the rights are checked: deleting a task already \
+                   missing from the database also answers `204`.",
     responses(
         (
             status = 204,
-            description = "Tâche supprimée. Corps vide.",
+            description = "Task deleted. Empty body.",
         ),
         (
             status = 400,
-            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            description = "A URL segment is not an integer, or the JSON body is malformed.",
             body = String,
             content_type = "text/plain",
             example = json!("Path deserialize error: can not parse `abc` to a u64")
@@ -100,7 +100,7 @@ async fn trigger_delete_task(
         ),
         (
             status = 404,
-            description = "Projet ou tâche inexistant, ou projet invisible pour l'appelant. Une tâche appartenant à un autre projet est traitée comme absente.",
+            description = "Project or task that does not exist, or project the caller cannot see. A task belonging to another project is treated as missing.",
             body = String,
             content_type = "text/plain",
             example = json!("Unknown task.")

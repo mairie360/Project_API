@@ -8,20 +8,20 @@ use crate::endpoints::validation::{
     MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
 };
 
-/// Projet à créer ; l'appelant en devient responsable.
+/// Project to create; the caller becomes its manager.
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct CreateProjectView {
-    /// Nom du projet. Obligatoire.
+    /// Name of the project. Required.
     #[schema(
         min_length = 1,
         max_length = 255,
-        example = "Réfection de la place du marché"
+        example = "Renovation of the market square"
     )]
     name: String,
-    /// Description du projet. Facultative.
-    #[schema(max_length = 5000, example = "Travaux de voirie 2026")]
+    /// Description of the project. Optional.
+    #[schema(max_length = 5000, example = "2026 road works")]
     description: Option<String>,
-    /// Groupe Core API dont tous les membres obtiennent l'accès au projet. Facultatif.
+    /// Core API group whose members all get access to the project. Optional.
     #[schema(example = 3)]
     group_id: Option<u64>,
     /// Initial status. Absent or `null` for `Active`; `Error` is refused (`400`).
@@ -83,10 +83,10 @@ impl CreateProjectView {
     }
 }
 
-/// Projet créé.
+/// Project created.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct CreateProjectResultView {
-    /// Identifiant attribué au projet créé.
+    /// Id assigned to the created project.
     #[schema(example = 12)]
     pub project_id: u64,
 }

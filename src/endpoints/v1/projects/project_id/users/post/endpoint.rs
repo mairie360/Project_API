@@ -77,33 +77,33 @@ async fn trigger_add_user_to_project(
         ProjectPathParams,
     ),
     path = "",
-    summary = "Ajouter un membre à un projet",
-    description = "Rattache un utilisateur au projet, qui apparaît dès lors dans ses \
-                   `GET /api/v1/projects/`. Réservé aux responsables du projet.\n\n\
-                   L'identifiant attendu est celui du compte dans Core API, tel que le renvoie son \
-                   annuaire `GET /api/v1/user/`. La réponse a un corps vide.",
+    summary = "Add a member to a project",
+    description = "Adds a user to the project, which then shows up in their \
+                   `GET /api/v1/projects/`. Reserved to the managers of the project.\n\n\
+                   The expected id is the account's id in Core API, as returned by its \
+                   directory `GET /api/v1/user/`. The answer has an empty body.",
     responses(
         (
             status = 200,
-            description = "Utilisateur rattaché au projet. Corps vide.",
+            description = "User added to the project. Empty body.",
         ),
         (
             status = 400,
-            description = "Corps JSON malformé, `project_id` non entier, ou champ `user_id` absent.",
+            description = "Malformed JSON body, `project_id` not an integer, or missing `user_id` field.",
             body = String,
             content_type = "text/plain",
             example = json!("Json deserialize error: missing field `user_id`")
         ),
         (
             status = 401,
-            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
             body = String,
             content_type = "text/plain",
             example = json!("Jeton expiré")
         ),
         (
             status = 403,
-            description = "Projet visible par l'appelant, mais droits insuffisants pour cette opération.",
+            description = "Project visible to the caller, but insufficient rights for this operation.",
             body = String,
             content_type = "text/plain",
             example = json!("Forbidden.")
@@ -124,7 +124,7 @@ async fn trigger_add_user_to_project(
         ),
         (
             status = 500,
-            description = "Erreur de base de données.",
+            description = "Database error.",
             body = String,
             content_type = "text/plain",
             example = json!("An error occurred while accessing the database.")
@@ -132,7 +132,7 @@ async fn trigger_add_user_to_project(
     ),
     request_body(
         content = AddUserToProjectView,
-        description = "Identifiant Core API de l'utilisateur à rattacher.",
+        description = "Core API id of the user to add.",
         example = json!({ "user_id": 42 })
     ),
     security(

@@ -7,18 +7,18 @@ use crate::endpoints::validation::{
     MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
 };
 
-/// Modification partielle d'un projet : seuls les champs fournis sont mis à jour.
+/// Partial update of a project: only the given fields are updated.
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct UpdateProjectView {
-    /// Nouveau nom. Absent ou `null` pour ne pas y toucher ; ne peut pas être réduit à des espaces.
+    /// New name. Absent or `null` to leave it unchanged; cannot be only spaces.
     #[schema(
         min_length = 1,
         max_length = 255,
-        example = "Réfection de la place du marché"
+        example = "Renovation of the market square"
     )]
     pub name: Option<String>,
-    /// Nouvelle description. Absent ou `null` pour ne pas y toucher.
-    #[schema(max_length = 5000, example = "Travaux de voirie 2026, phase 2")]
+    /// New description. Absent or `null` to leave it unchanged.
+    #[schema(max_length = 5000, example = "2026 road works, phase 2")]
     pub description: Option<String>,
     /// New status. `Error` is refused: it is only a fallback on read.
     pub status: Option<ProjectStatus>,

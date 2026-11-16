@@ -112,7 +112,7 @@ async fn trigger_update_project(
     responses(
         (
             status = 204,
-            description = "Projet mis à jour. Corps vide.",
+            description = "Project updated. Empty body.",
         ),
         (
             status = 400,
@@ -123,28 +123,28 @@ async fn trigger_update_project(
         ),
         (
             status = 401,
-            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
             body = String,
             content_type = "text/plain",
             example = json!("Jeton expiré")
         ),
         (
             status = 403,
-            description = "Projet visible par l'appelant, mais droits insuffisants pour cette opération.",
+            description = "Project visible to the caller, but insufficient rights for this operation.",
             body = String,
             content_type = "text/plain",
             example = json!("Forbidden.")
         ),
         (
             status = 404,
-            description = "Projet inexistant, ou invisible pour l'appelant.",
+            description = "Project that does not exist, or that the caller cannot see.",
             body = String,
             content_type = "text/plain",
             example = json!("Unknown project.")
         ),
         (
             status = 500,
-            description = "Erreur de base de données.",
+            description = "Database error.",
             body = String,
             content_type = "text/plain",
             example = json!("An error occurred while accessing the database.")

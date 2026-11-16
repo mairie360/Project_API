@@ -7,19 +7,19 @@ use crate::{
     endpoints::v1::projects::project_id::get::view::{TaskPriority, TaskStatus},
 };
 
-/// Tâche d'un projet.
+/// Task of a project.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct TaskView {
-    /// Identifiant de la tâche.
+    /// Id of the task.
     #[schema(example = 77)]
     pub id: u64,
-    /// Intitulé de la tâche.
-    #[schema(example = "Consulter les riverains")]
+    /// Title of the task.
+    #[schema(example = "Consult the residents")]
     pub title: String,
     /// Description of the task; empty string if it has none — never `null`.
-    #[schema(example = "Réunion publique à organiser avant le 15 octobre")]
+    #[schema(example = "Public meeting to organise before 15 October")]
     pub description: String,
-    /// Statut courant. `Error` signale une valeur en base que l'API ne sait pas interpréter.
+    /// Current status. `Error` flags a stored value the API cannot interpret.
     pub status: TaskStatus,
     /// Id of the task's status among its project's statuses (`GET /api/v1/projects/{project_id}/statuses/`,
     /// MAIR-566); `status` is its category.
@@ -29,19 +29,19 @@ pub struct TaskView {
     /// while its status is being deleted.
     #[schema(example = "En cours")]
     pub status_name: Option<String>,
-    /// Priorité. `Error` signale une valeur en base que l'API ne sait pas interpréter.
+    /// Priority. `Error` flags a stored value the API cannot interpret.
     pub priority: TaskPriority,
-    /// Échéance, ou `null` si la tâche n'en a pas.
+    /// Due date, or `null` if the task has none.
     #[schema(value_type = Option<String>, format = DateTime, example = "2026-10-15T00:00:00Z")]
     pub due_date: Option<DateTime<Utc>>,
     /// When the task was archived (MAIR-502: a task is archived as soon as it is `Completed`, and
     /// back when it is reopened), or `null` while it is active.
     #[schema(value_type = Option<String>, format = DateTime, example = json!(null))]
     pub archived_at: Option<DateTime<Utc>>,
-    /// Identifiant Core API de l'agent assigné, ou `null` si la tâche n'est assignée à personne.
+    /// Core API id of the assigned agent, or `null` if the task is assigned to nobody.
     #[schema(example = 42)]
     pub assigned_to: Option<u64>,
-    /// Champs personnalisés définis sur le projet. Vide s'il n'y en a aucun.
+    /// Custom fields defined on the project. Empty if there are none.
     pub fields: Vec<DynamicTaskField>,
 }
 

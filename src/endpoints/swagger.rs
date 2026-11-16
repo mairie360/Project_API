@@ -3,42 +3,41 @@ use crate::endpoints::v1::doc::V1Doc;
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
-// Dans votre ApiDoc principale
+// Root ApiDoc
 #[derive(OpenApi)]
 #[openapi(
     info(
         title = "Project API — Mairie 360",
         version = "1.0.0",
         description = "\
-API de gestion de projets de la plateforme **Mairie 360** : projets, tâches, champs \
-personnalisés, commentaires, historique et membres. Elle ne détient ni les comptes ni les rôles, \
-qui vivent dans Core API.
+Project management API of the **Mairie 360** platform: projects, tasks, custom fields, \
+comments, history and members. It holds neither the accounts nor the roles, which live in \
+Core API.
 
-## Authentification
+## Authentication
 
-Toutes les routes sous `/api` sont protégées par `JwtMiddleware`. Le jeton s'obtient auprès de \
-Core API (`POST /api/v1/auth/login`) et se présente ici dans l'en-tête `Authorization` \
-(`Bearer <jwt>`).
+Every route under `/api` is protected by `JwtMiddleware`. The token is obtained from Core API \
+(`POST /api/v1/auth/login`) and sent here in the `Authorization` header (`Bearer <jwt>`).
 
-## Droits d'accès
+## Access rights
 
-Chaque opération sur un projet vérifie les droits de l'appelant avant d'agir, ce qui donne la \
-grille suivante :
+Every operation on a project checks the caller's rights before acting, which gives the \
+following grid:
 
-| Exigence | Qui passe | Opérations |
+| Requirement | Who passes | Operations |
 | --- | --- | --- |
-| Voir le projet | tout membre du projet | lectures de projet, de tâches et de membres |
-| Gérer le projet | responsable du projet | création, modification, clôture, suppression, gestion des tâches et des membres |
-| Agir sur la tâche | responsable du projet, ou agent assigné à la tâche | collaboration, commentaires, historique, changement de statut |
+| View the project | any member of the project | reads of the project, its tasks and members |
+| Manage the project | manager of the project | creation, update, closing, deletion, management of the tasks and members |
+| Act on the task | manager of the project, or agent assigned to the task | collaboration, comments, history, status change |
 
-La création de projet est réservée aux rôles Admin, Maire et Responsable.
+Creating a project is reserved to the Admin, Maire and Responsable roles.
 
 Project templates (`/api/v1/project-templates/`, MAIR-566) are read by any signed-in user and \
 managed by the Admin and Responsable roles.
 
-Un projet invisible pour l'appelant est traité comme **inexistant** : la réponse est `404` et non \
-`403`, pour ne pas révéler son existence. Le `403` n'apparaît que sur un projet que l'appelant \
-peut voir mais pas modifier.
+A project the caller cannot see is treated as **non-existent**: the answer is `404`, not \
+`403`, so that its existence is not revealed. `403` only shows up on a project the caller can \
+see but not change.
 
 ## Error format
 
@@ -56,22 +55,22 @@ validation rules (length, control characters); the body names the first invalid 
 | `500` | Database or Redis failure. |
 ",
         contact(
-            name = "Équipe Mairie 360",
+            name = "Mairie 360 team",
             url = "https://github.com/mairie360"
         ),
         license(
-            name = "Propriétaire",
+            name = "Proprietary",
             identifier = "LicenseRef-mairie360-proprietary"
         )
     ),
     servers(
-        (url = "http://localhost:3001", description = "Développement local (cargo run)"),
-        (url = "http://development.mairie360.fr", description = "Pile Docker de développement (nginx)")
+        (url = "http://localhost:3001", description = "Local development (cargo run)"),
+        (url = "http://development.mairie360.fr", description = "Development Docker stack (nginx)")
     ),
     tags(
-        (name = "Projects", description = "Cycle de vie des projets : création, consultation, modification, clôture et suppression."),
+        (name = "Projects", description = "Life cycle of the projects: creation, reading, update, closing and deletion."),
         (name = "Tasks", description = "Tasks of a project, their custom fields, comments and history, and the tasks visible to the caller across every project (`GET /api/v1/tasks/`)."),
-        (name = "Users", description = "Membres d'un projet : consultation, rattachement et retrait."),
+        (name = "Users", description = "Members of a project: listing, adding and removing."),
         (name = "Statuses", description = "Task statuses of a project (MAIR-566): its Kanban columns, each in one of the categories `Todo`, `InProgress`, `Completed`."),
         (name = "Templates", description = "Project templates (MAIR-566): the statuses and custom fields copied into a project created from one. Managed by Admin and Responsable."),
         (name = "probes", description = "Unauthenticated liveness (`/health`) and readiness (`/ready`) probes, used by Docker and Kubernetes.")
@@ -98,7 +97,7 @@ impl Modify for SecurityAddon {
                 Http::builder()
                     .scheme(HttpAuthScheme::Bearer)
                     .bearer_format("JWT")
-                    .description(Some("JWT émis par Core API (`POST /api/v1/auth/login`)."))
+                    .description(Some("JWT issued by Core API (`POST /api/v1/auth/login`)."))
                     .build(),
             ),
         )

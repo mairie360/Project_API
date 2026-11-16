@@ -1,15 +1,15 @@
 pub mod delete;
 pub mod doc;
 
-/// Paramètres de chemin des routes d'un membre de projet.
+/// Path parameters of the routes of a project member.
 #[derive(serde::Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
 #[into_params(parameter_in = Path)]
 pub struct ProjectUserPathParams {
-    /// Identifiant du projet.
+    /// Id of the project.
     #[param(example = 12)]
     #[schema(example = 12)]
     project_id: u64,
-    /// Identifiant de l'utilisateur membre du projet.
+    /// Id of the user, member of the project.
     #[param(example = 42)]
     #[schema(example = 42)]
     user_id: u64,

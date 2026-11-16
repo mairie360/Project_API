@@ -65,48 +65,48 @@ async fn trigger_delete_project(
 #[utoipa::path(
     delete,
     path = "",
-    summary = "Supprimer un projet",
-    description = "Supprime définitivement un projet, ses tâches et les rattachements de ses \
-                   membres. Réservé aux responsables du projet. Pour archiver sans détruire, \
-                   préférer `PATCH /api/v1/projects/{project_id}/close`.\n\n\
-                   Opération idempotente une fois les droits validés : la suppression d'un projet \
-                   déjà absent de la base répond également `204`.",
+    summary = "Delete a project",
+    description = "Deletes a project for good, with its tasks and its members' memberships. \
+                   Reserved to the managers of the project. To archive without destroying, \
+                   prefer `PATCH /api/v1/projects/{project_id}/close`.\n\n\
+                   Idempotent once the rights are checked: deleting a project already \
+                   missing from the database also answers `204`.",
     responses(
         (
             status = 204,
-            description = "Projet supprimé. Corps vide.",
+            description = "Project deleted. Empty body.",
         ),
         (
             status = 400,
-            description = "Un segment de l'URL n'est pas un entier, ou le corps JSON est malformé.",
+            description = "A URL segment is not an integer, or the JSON body is malformed.",
             body = String,
             content_type = "text/plain",
             example = json!("Path deserialize error: can not parse `abc` to a u64")
         ),
         (
             status = 401,
-            description = "En-tête `Authorization` absent, JWT invalide ou expiré, ou session révoquée.",
+            description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
             body = String,
             content_type = "text/plain",
             example = json!("Jeton expiré")
         ),
         (
             status = 403,
-            description = "Projet visible par l'appelant, mais droits insuffisants pour cette opération.",
+            description = "Project visible to the caller, but insufficient rights for this operation.",
             body = String,
             content_type = "text/plain",
             example = json!("Forbidden.")
         ),
         (
             status = 404,
-            description = "Projet inexistant, ou invisible pour l'appelant — les deux cas sont volontairement indiscernables.",
+            description = "Project that does not exist, or that the caller cannot see — the two cases are indistinguishable on purpose.",
             body = String,
             content_type = "text/plain",
             example = json!("Not found.")
         ),
         (
             status = 500,
-            description = "Erreur de base de données.",
+            description = "Database error.",
             body = String,
             content_type = "text/plain",
             example = json!("An error occurred while accessing the database.")

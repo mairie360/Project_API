@@ -94,15 +94,15 @@ async fn trigger_get_project_tasks(
                 "tasks": [
                     {
                         "id": 77,
-                        "title": "Consulter les riverains",
-                        "description": "Réunion publique à organiser avant le 15 octobre",
+                        "title": "Consult the residents",
+                        "description": "Public meeting to organise before 15 October",
                         "status": "InProgress",
                         "priority": "High",
                         "due_date": "2026-10-15T00:00:00Z",
                         "archived_at": null,
                         "assigned_to": 42,
                         "fields": [
-                            { "label": "Date de la réunion", "task_type": "date", "fields_options": [] }
+                            { "label": "Meeting date", "task_type": "date", "fields_options": [] }
                         ]
                     }
                 ],

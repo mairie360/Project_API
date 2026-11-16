@@ -5,15 +5,15 @@ pub mod doc;
 pub mod get;
 pub mod patch;
 
-/// Paramètres de chemin des routes d'une tâche.
+/// Path parameters of the routes of a task.
 #[derive(serde::Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
 #[into_params(parameter_in = Path)]
 pub struct TaskPathParams {
-    /// Identifiant du projet.
+    /// Id of the project.
     #[param(example = 12)]
     #[schema(example = 12)]
     project_id: u64,
-    /// Identifiant de la tâche, rattachée au projet du chemin.
+    /// Id of the task, belonging to the project of the path.
     #[param(example = 87)]
     #[schema(example = 87)]
     task_id: u64,

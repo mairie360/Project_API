@@ -1,6 +1,6 @@
 use mairie360_api_lib::database::db_interface::{id_to_sql, ApiRequestDto, QueryParam};
 
-/// Droits de l'utilisateur sur un projet (et éventuellement une tâche de ce projet), en une requête.
+/// Rights of the user on a project (and possibly on a task of that project), in one query.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProjectAccessQueryView {
     params: Vec<QueryParam>,
@@ -48,12 +48,12 @@ pub struct ProjectAccess {
 }
 
 impl ProjectAccess {
-    /// Admin, Maire ou Responsable qui voit le projet.
+    /// Admin, Maire or Responsable who sees the project.
     pub fn can_manage(&self) -> bool {
         self.visible && self.manager_role
     }
 
-    /// Gestionnaire du projet ou agent assigné à la tâche.
+    /// Manager of the project or agent assigned to the task.
     pub fn can_act_on_task(&self) -> bool {
         self.can_manage() || (self.visible && self.assigned)
     }

@@ -94,14 +94,14 @@ async fn trigger_get_projects(
             example = json!({
                 "projects": [
                     {
-                        "id": 12, "name": "Réfection de la place du marché", "description": "Travaux de voirie 2026",
+                        "id": 12, "name": "Renovation of the market square", "description": "2026 road works",
                         "status": "Active", "tasks_total": 12, "tasks_completed": 4, "priority": "High",
                         "due_date": "2026-10-15T00:00:00Z",
                         "members": [{ "id": 42, "name": "Jean Dupont" }, { "id": 57, "name": "Marie Durand" }],
                         "members_total": 2
                     },
                     {
-                        "id": 18, "name": "Numérisation de l'état civil", "description": "", "status": "Completed",
+                        "id": 18, "name": "Digitisation of the civil registry", "description": "", "status": "Completed",
                         "tasks_total": 0, "tasks_completed": 0, "priority": "Medium", "due_date": null,
                         "members": [], "members_total": 0
                     }

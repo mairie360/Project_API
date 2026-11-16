@@ -124,10 +124,10 @@ fn check_fields(fields: &[DynamicTaskField]) -> Result<(), ValidationError> {
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct CreateTemplateView {
     /// 1 to 100 characters, not blank, no control character; unique whatever the case.
-    #[schema(min_length = 1, max_length = 100, example = "Travaux de voirie")]
+    #[schema(min_length = 1, max_length = 100, example = "Road works")]
     pub name: String,
     /// At most 5000 characters. Optional.
-    #[schema(max_length = 5000, example = "Étude, chantier, réception.")]
+    #[schema(max_length = 5000, example = "Study, works, acceptance.")]
     pub description: Option<String>,
     /// 1 to 30 statuses, in order, at least one of each category.
     pub statuses: Vec<TemplateStatusInputView>,
@@ -158,7 +158,7 @@ pub struct CreateTemplateResultView {
 /// from it keep their statuses.
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct PatchTemplateView {
-    #[schema(min_length = 1, max_length = 100, example = "Travaux de voirie")]
+    #[schema(min_length = 1, max_length = 100, example = "Road works")]
     pub name: Option<String>,
     /// `""` clears it.
     #[schema(max_length = 5000)]
