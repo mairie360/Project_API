@@ -27,7 +27,7 @@ x-depends-on: &depends-on
 
 services:
   postgres:
-    image: ${DB_IMAGE:-ghcr.io/mairie360/database:3.4.0}
+    image: ${DB_IMAGE:-ghcr.io/mairie360/database:${UPSTREAM_TAG:-dev}}
     restart: always
     container_name: mairie360-db-project-api
     environment:
@@ -47,7 +47,7 @@ services:
       retries: 5
 
   liquibase:
-    image: ${LIQUIBASE_IMAGE:-ghcr.io/mairie360/liquibase-migrations:3.4.0}
+    image: ${LIQUIBASE_IMAGE:-ghcr.io/mairie360/liquibase-migrations:${UPSTREAM_TAG:-dev}}
     container_name: mairie360-liquibase-project-api
     depends_on:
       postgres:
