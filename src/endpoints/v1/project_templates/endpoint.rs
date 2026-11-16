@@ -129,11 +129,11 @@ pub async fn get_template(
                    categories (`Todo`, `InProgress`, `Completed`), so that a task of a project \
                    created from it can always be started and completed.",
     request_body(content = CreateTemplateView, example = json!({
-        "name": "Travaux de voirie",
+        "name": "Road works",
         "description": "Study, works, acceptance.",
         "statuses": [
             { "name": "Study", "category": "Todo" },
-            { "name": "Chantier", "color": "#D97706", "category": "InProgress" },
+            { "name": "On site", "color": "#D97706", "category": "InProgress" },
             { "name": "Acceptance", "color": "#16A34A", "category": "Completed" }
         ],
         "custom_fields": []
@@ -193,7 +193,7 @@ pub async fn create_template(
                    and `custom_fields` replace the whole list. Reserved to the Admin and \
                    Responsable roles. The projects already created from the template keep their \
                    statuses. The response has an empty body.",
-    request_body(content = PatchTemplateView, example = json!({ "name": "Voirie" })),
+    request_body(content = PatchTemplateView, example = json!({ "name": "Roads" })),
     responses(
         (status = 204, description = "Template updated. Empty body."),
         (status = 400, description = "A URL segment is not an integer, malformed JSON body, or a field breaking the rules of the creation.",

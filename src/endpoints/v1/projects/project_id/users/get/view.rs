@@ -3,7 +3,7 @@ use utoipa::ToSchema;
 
 use crate::database::users::get_project_users::view::ProjectMemberRow;
 
-/// Membre d'un projet.
+/// Member of a project.
 #[derive(Debug, serde::Serialize, ToSchema)]
 pub struct User {
     /// Core API id of the member.

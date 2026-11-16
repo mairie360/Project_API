@@ -122,7 +122,7 @@ pub enum FieldType {
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, ToSchema)]
 pub struct FieldOption {
     /// Value of the option, free-form according to the field's `task_type`.
-    #[schema(example = "Oui")]
+    #[schema(example = "Yes")]
     pub option: serde_json::Value,
     /// `true` if the option is selected on this task.
     #[schema(example = true)]

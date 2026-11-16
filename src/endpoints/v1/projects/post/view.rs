@@ -18,7 +18,7 @@ pub struct CreateProjectView {
         example = "Renovation of the market square"
     )]
     name: String,
-    /// Description du projet. Facultative.
+    /// Description of the project. Optional.
     #[schema(max_length = 5000, example = "2026 road works")]
     description: Option<String>,
     /// Core API group whose members all get access to the project. Optional.

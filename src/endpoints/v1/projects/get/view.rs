@@ -185,7 +185,7 @@ pub struct ProjetView {
     /// Id of the project, to reuse in `/api/v1/projects/{project_id}/`.
     #[schema(example = 12)]
     pub id: u64,
-    /// Nom du projet.
+    /// Name of the project.
     #[schema(example = "Renovation of the market square")]
     pub name: String,
     /// Description of the project. Empty string if it has none — never `null`.
@@ -216,7 +216,7 @@ pub struct ProjectListItemView {
     /// Id of the project, to reuse in `/api/v1/projects/{project_id}/`.
     #[schema(example = 12)]
     pub id: u64,
-    /// Nom du projet.
+    /// Name of the project.
     #[schema(example = "Renovation of the market square")]
     pub name: String,
     /// Description of the project. Empty string if it has none — never `null`.
