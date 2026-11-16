@@ -1,16 +1,17 @@
 # Journal des releases — Project_API
 
-<!-- release-journal-state {"dev": "f7e58eee40d10ba7985e3f7ece8015fe1d6d8a7c", "prod": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "prod_tag": "v1.3.0", "staging": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "updated": {"dev": "2026-11-16 17:25 UTC", "prod": "2026-11-12 23:53 UTC", "staging": "2026-11-12 18:51 UTC"}} -->
+<!-- release-journal-state {"dev": "e94e1905a7fd9a8adad083e285f3493238003926", "prod": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "prod_tag": "v1.3.0", "staging": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "updated": {"dev": "2026-11-16 23:11 UTC", "prod": "2026-11-12 23:53 UTC", "staging": "2026-11-12 18:51 UTC"}} -->
 > Tenu à jour par la CI (`mairie360/CICD`, action `release/release-journal`) à chaque passage en dev, staging et prod. Ne pas modifier à la main : le fichier est réécrit au passage suivant.
 
 | Environnement | Version | Commit | Mis à jour |
 | --- | --- | --- | --- |
 | prod | v1.3.0 | `9a2f251` | 2026-11-12 23:53 UTC |
 | staging | — | `9a2f251` | 2026-11-12 18:51 UTC |
-| dev | — | `f7e58ee` | 2026-11-16 17:25 UTC |
+| dev | — | `e94e190` | 2026-11-16 23:11 UTC |
 
 ## Ajouté sur main depuis la dernière release prod (v1.3.0)
 
+- chore(deps): update rust crate mairie360_api_lib to v4.4.0 (#223) ([#223](https://github.com/mairie360/Project_API/pull/223))
 - fix: MAIR-247 Translate the APIs' OpenAPI descriptions and messages into English (#235) ([#235](https://github.com/mairie360/Project_API/pull/235))
 - chore(deps): MAIR-243 Bump quinn-udp to the patched 0.5.16 (RUSTSEC-2026-0538) (#237) ([#237](https://github.com/mairie360/Project_API/pull/237))
 - docs: MAIR-245 Rewrite the APIs' README and API.md (#225) ([#225](https://github.com/mairie360/Project_API/pull/225))
@@ -18,6 +19,7 @@
 
 ## Différence dev → staging (en dev, pas encore en staging)
 
+- chore(deps): update rust crate mairie360_api_lib to v4.4.0 (#223) ([#223](https://github.com/mairie360/Project_API/pull/223))
 - fix: MAIR-247 Translate the APIs' OpenAPI descriptions and messages into English (#235) ([#235](https://github.com/mairie360/Project_API/pull/235))
 - chore(deps): MAIR-243 Bump quinn-udp to the patched 0.5.16 (RUSTSEC-2026-0538) (#237) ([#237](https://github.com/mairie360/Project_API/pull/237))
 - docs: MAIR-245 Rewrite the APIs' README and API.md (#225) ([#225](https://github.com/mairie360/Project_API/pull/225))
@@ -34,6 +36,7 @@ _Rien._
 <!-- release-journal-history:start -->
 | Date | Environnement | Version | Commit | Run |
 | --- | --- | --- | --- | --- |
+| 2026-11-16 23:11 UTC | dev | — | `e94e190` | [run](https://github.com/mairie360/Project_API/actions/runs/43974717439) |
 | 2026-11-16 17:25 UTC | dev | — | `f7e58ee` | [run](https://github.com/mairie360/Project_API/actions/runs/43916523400) |
 | 2026-11-16 16:53 UTC | dev | — | `b3db42d` | [run](https://github.com/mairie360/Project_API/actions/runs/43909810524) |
 | 2026-11-16 16:38 UTC | dev | — | `0f74ec0` | [run](https://github.com/mairie360/Project_API/actions/runs/43905338259) |
