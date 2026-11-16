@@ -79,9 +79,9 @@ async fn trigger_add_user_to_project(
     path = "",
     summary = "Add a member to a project",
     description = "Adds a user to the project, which then shows up in their \
-               `GET /api/v1/projects/`. Reserved to the managers of the project.\n\n\
-               The expected id is the account's id in Core API, as returned by its \
-               directory `GET /api/v1/user/`. The answer has an empty body.",
+                   `GET /api/v1/projects/`. Reserved to the managers of the project.\n\n\
+                   The expected id is the account's id in Core API, as returned by its \
+                   directory `GET /api/v1/user/`. The answer has an empty body.",
     responses(
         (
             status = 200,

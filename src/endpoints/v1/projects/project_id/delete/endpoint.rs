@@ -67,10 +67,10 @@ async fn trigger_delete_project(
     path = "",
     summary = "Delete a project",
     description = "Deletes a project for good, with its tasks and its members' memberships. \
-               Reserved to the managers of the project. To archive without destroying, \
-               prefer `PATCH /api/v1/projects/{project_id}/close`.\n\n\
-               Idempotent once the rights are checked: deleting a project already \
-               missing from the database also answers `204`.",
+                   Reserved to the managers of the project. To archive without destroying, \
+                   prefer `PATCH /api/v1/projects/{project_id}/close`.\n\n\
+                   Idempotent once the rights are checked: deleting a project already \
+                   missing from the database also answers `204`.",
     responses(
         (
             status = 204,

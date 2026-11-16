@@ -73,11 +73,11 @@ async fn trigger_close_project(
     path = "close",
     summary = "Close a project",
     description = "Sets the project status to `Completed`. Shortcut for \
-               `PATCH /api/v1/projects/{project_id}/` with `{\"status\": \"Completed\"}`, \
-               reserved to the managers of the project.\n\n\
-               Idempotent: closing a project already closed also answers `200`. \
-               The answer has an empty body. To reopen a project, use the `PATCH` \
-               with another status.",
+                   `PATCH /api/v1/projects/{project_id}/` with `{\"status\": \"Completed\"}`, \
+                   reserved to the managers of the project.\n\n\
+                   Idempotent: closing a project already closed also answers `200`. \
+                   The answer has an empty body. To reopen a project, use the `PATCH` \
+                   with another status.",
     responses(
         (
             status = 200,

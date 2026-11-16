@@ -68,10 +68,10 @@ async fn trigger_delete_task(
     path = "",
     summary = "Delete a task",
     description = "Deletes a task for good, with its comments and its history. \
-               Reserved to the managers of the project: an agent assigned to the task cannot \
-               delete it, only change its status.\n\n\
-               Idempotent once the rights are checked: deleting a task already \
-               missing from the database also answers `204`.",
+                   Reserved to the managers of the project: an agent assigned to the task cannot \
+                   delete it, only change its status.\n\n\
+                   Idempotent once the rights are checked: deleting a task already \
+                   missing from the database also answers `204`.",
     responses(
         (
             status = 204,
