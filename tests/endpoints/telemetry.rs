@@ -11,7 +11,6 @@ use mairie360_api_lib::logging::telemetry::opentelemetry_sdk::trace::{
     InMemorySpanExporter, SdkTracerProvider, SimpleSpanProcessor, SpanData,
 };
 use mairie360_api_lib::logging::telemetry::{trace_layer, tracer_provider, TracingLogger};
-use serial_test::serial;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::layer::SubscriberExt;
 
@@ -70,7 +69,6 @@ fn attribute<'a>(span: &'a SpanData, key: &str) -> Option<&'a Value> {
 }
 
 #[actix_web::test]
-#[serial]
 async fn a_request_is_exported_as_a_span_with_its_sql() {
     let (exporter, provider, _guard) = in_memory_tracing();
     let ctx = TestContext::new().await;
@@ -124,7 +122,6 @@ async fn a_request_is_exported_as_a_span_with_its_sql() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn a_refused_request_still_gets_its_span() {
     let (exporter, provider, _guard) = in_memory_tracing();
     let ctx = TestContext::new().await;

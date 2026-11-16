@@ -2,7 +2,6 @@
 //! Responsable.
 
 use serde_json::{json, Value};
-use serial_test::serial;
 
 use super::access::scenario;
 use super::{delete, get, json, patch, post, status, TestContext};
@@ -43,7 +42,6 @@ fn template_id(templates: &Value, name: &str) -> u64 {
 }
 
 #[actix_web::test]
-#[serial]
 async fn mair_566_a_project_gets_a_copy_of_the_statuses_of_its_template() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -116,7 +114,6 @@ async fn mair_566_a_project_gets_a_copy_of_the_statuses_of_its_template() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn mair_566_a_task_moves_between_the_statuses_of_its_own_project() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -251,7 +248,6 @@ async fn mair_566_a_task_moves_between_the_statuses_of_its_own_project() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn mair_566_the_project_managers_manage_its_statuses() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -355,7 +351,6 @@ async fn mair_566_the_project_managers_manage_its_statuses() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn mair_566_templates_are_managed_by_admin_and_responsable_only() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);

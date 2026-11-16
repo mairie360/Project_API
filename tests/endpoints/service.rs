@@ -6,7 +6,6 @@ use mairie360_api_lib::state::AppState;
 use mairie360_api_lib::test_setup::db_setup::start_postgres_container;
 use mairie360_api_lib::test_setup::redis_setup::start_redis_container;
 use project_api::endpoints::health;
-use serial_test::serial;
 
 use super::{get, status, TestContext};
 use crate::common::project_db_url;
@@ -36,7 +35,6 @@ async fn ready(state: AppState) -> (u16, String) {
 }
 
 #[actix_web::test]
-#[serial]
 async fn ready_when_postgres_and_redis_answer() {
     let (_redis, redis) = start_redis_container().await;
     let state = AppState::new(redis.url.clone(), project_db_url().await).await;
@@ -47,7 +45,6 @@ async fn ready_when_postgres_and_redis_answer() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn not_ready_without_redis() {
     let state = AppState::new(UNREACHABLE_REDIS.to_string(), project_db_url().await).await;
 
@@ -57,7 +54,6 @@ async fn not_ready_without_redis() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn not_ready_without_postgres() {
     // `AppState::new` panics without Postgres, so the state is built on a dedicated database
     // that is stopped afterwards (the shared one is used by the other tests).
@@ -76,7 +72,6 @@ async fn not_ready_without_postgres() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn probes_are_not_mounted_under_api() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);

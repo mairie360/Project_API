@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `project_api` is one microservice in the **mairie360** suite: an Actix-web REST API (port `3001`) that manages projects, their tasks (and task fields) and their user membership. It was scaffolded from a generic "Rust API template" (see `README.md`), so config files still carry `#change api name` / `#change port` placeholders.
 
-Shared infrastructure (DB, Redis, cache-aside, JWT auth, env helpers, test containers) lives in the external crate **`mairie360_api_lib`** (pinned to `4.3.1`) — read its source under `~/.cargo/registry/src/*/mairie360_api_lib-<version>/src/` when an import is unclear. `project_api` has **no direct `sqlx` dependency**; all SQL goes through the library.
+Shared infrastructure (DB, Redis, cache-aside, JWT auth, env helpers, test containers) lives in the external crate **`mairie360_api_lib`** (pinned to `4.4.0`) — read its source under `~/.cargo/registry/src/*/mairie360_api_lib-<version>/src/` when an import is unclear. `project_api` has **no direct `sqlx` dependency**; all SQL goes through the library.
 
-## Data access (`mairie360_api_lib` 4.3.1)
+## Data access (`mairie360_api_lib` 4.4.0)
 
 `AppState` (`mairie360_api_lib::state::AppState`, built once in `main.rs` via `AppState::new(redis_url, pg_url)`) owns a `SmartDatabase` (Postgres + Redis cache-aside) reachable from handlers with `state.get_smart_db()`.
 
@@ -61,7 +61,7 @@ without either variable, with a short or well-known `JWT_SECRET`, or with its co
   To call it, sign a token with the matching private key (in a subshell, so the keys do not stay exported):
 
   ```bash
-  (export JWT_PRIVATE_KEY="$(openssl pkey -inform DER -in ~/.cargo/registry/src/*/mairie360_api_lib-4.3.1/src/test_setup/fixtures/session_test_key.der)"
+  (export JWT_PRIVATE_KEY="$(openssl pkey -inform DER -in ~/.cargo/registry/src/*/mairie360_api_lib-4.4.0/src/test_setup/fixtures/session_test_key.der)"
    export JWT_PUBLIC_KEY="$(printf '%s\n' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
    source ./test_secrets.sh && sign_jwt 1 admin 3600)
   ```
@@ -161,6 +161,16 @@ A new endpoint therefore fails the integration stack until the collection tests 
 `tests/routing_test.rs` needs no Docker: it mounts `endpoints::config` under `/api` in an actix test app and checks that every `/api/v1` operation published by `ApiDoc` (the contract `@mairie360/project-api-openapi` is generated from) hits a real route and has no empty segment. It catches a `scope(...)` that drifts from the `doc.rs` nesting or a `#[utoipa::path]` without the right `path` (utoipa appends it to the nest path, so `#[delete("/")]` needs `path = ""`, `#[patch("/close")]` needs `path = "close"`).
 
 Integration tests (`tests/queries/`) require a **running Docker daemon and network access to ghcr.io**: the lib's `test_setup::queries_setup::get_shared_db()` starts a `ghcr.io/mairie360/database` Postgres container (published on a random host port, image tag from `TEST_DB_VERSION` in `.cargo/config.toml`), runs Liquibase migrations against it, truncates + seeds it once per test run, and hands back its **superuser** URL, used by the fixtures only (`tests/common::fixtures_db()`, behind every helper of `tests/common/fixtures.rs`). Everything that runs Project_API's code connects as the `project_api` role, like in staging (MAIR-556): `tests/common::get_smart_db()` (query views) and `TestContext` (`AppState::new(…, project_db_url().await)`, endpoints), both through `get_shared_db_as("project_api")`. A query outside the grants of Database's `api_grants.sql` then fails the test with `permission denied` (SQLSTATE `42501`): add the grant there, never connect the code under test as the superuser. `tests/queries/db_role.rs` checks both sides. The compose stacks connect `project` as `project_api` too (`-Dproject_api_password` passed to Liquibase); postgres, liquibase and the seeder keep the superuser. Real Redis is not needed — no query view sets a `cache_key`, and a failed read-cache invalidation is only logged. Tests drive the query views through `execute` / `fetch_*` and hit real SQL — there is no compile-time query checking.
+
+Tests run in parallel (MAIR-1002): there is no `#[serial]`. The tests share the seeded database of
+`get_shared_db()` and keep to rows of their own (unique markers). A test that depends on, or changes, what the
+others see (a count of rows of a table, a sequence reset, anything that reads every row) takes a database of its
+own with `mairie360_api_lib::test_setup::isolated::isolated_db()`: a copy of the seeded template (about 0.2 s),
+dropped when the guard is dropped, whose URLs are `db.url()` (superuser, fixtures) and `db.url_as("<role>")`.
+`isolated_redis()` gives a Redis client with its own key prefix on one container shared by the process. Only a
+test that sets a process environment variable keeps `#[serial(<group>)]`. The dependencies are compiled with
+`opt-level = 3` (`[profile.dev.package."*"]`): the code of the crate stays in debug, which is what the coverage
+measures, while argon2 and the TLS stack no longer dominate the run.
 
 Handler tests (`tests/endpoints/`, MAIR-419) run in the same binary and database: `init_app!` mounts the real
 `/api` scope behind `JwtMiddleware`, `jwt_for(user_id)` signs EdDSA tokens like Core with the lib's test key pair
