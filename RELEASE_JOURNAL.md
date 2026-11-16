@@ -1,22 +1,24 @@
 # Journal des releases — Project_API
 
-<!-- release-journal-state {"dev": "b3db42d2a6dfa99aff1d95f7ef69b0c2f638741b", "prod": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "prod_tag": "v1.3.0", "staging": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "updated": {"dev": "2026-11-16 16:53 UTC", "prod": "2026-11-12 23:53 UTC", "staging": "2026-11-12 18:51 UTC"}} -->
+<!-- release-journal-state {"dev": "f7e58eee40d10ba7985e3f7ece8015fe1d6d8a7c", "prod": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "prod_tag": "v1.3.0", "staging": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "updated": {"dev": "2026-11-16 17:25 UTC", "prod": "2026-11-12 23:53 UTC", "staging": "2026-11-12 18:51 UTC"}} -->
 > Tenu à jour par la CI (`mairie360/CICD`, action `release/release-journal`) à chaque passage en dev, staging et prod. Ne pas modifier à la main : le fichier est réécrit au passage suivant.
 
 | Environnement | Version | Commit | Mis à jour |
 | --- | --- | --- | --- |
 | prod | v1.3.0 | `9a2f251` | 2026-11-12 23:53 UTC |
 | staging | — | `9a2f251` | 2026-11-12 18:51 UTC |
-| dev | — | `b3db42d` | 2026-11-16 16:53 UTC |
+| dev | — | `f7e58ee` | 2026-11-16 17:25 UTC |
 
 ## Ajouté sur main depuis la dernière release prod (v1.3.0)
 
+- fix: MAIR-247 Translate the APIs' OpenAPI descriptions and messages into English (#235) ([#235](https://github.com/mairie360/Project_API/pull/235))
 - chore(deps): MAIR-243 Bump quinn-udp to the patched 0.5.16 (RUSTSEC-2026-0538) (#237) ([#237](https://github.com/mairie360/Project_API/pull/237))
 - docs: MAIR-245 Rewrite the APIs' README and API.md (#225) ([#225](https://github.com/mairie360/Project_API/pull/225))
 - chore: MAIR-243 Align the test Database version on the 3.4.0 release (#231) ([#231](https://github.com/mairie360/Project_API/pull/231))
 
 ## Différence dev → staging (en dev, pas encore en staging)
 
+- fix: MAIR-247 Translate the APIs' OpenAPI descriptions and messages into English (#235) ([#235](https://github.com/mairie360/Project_API/pull/235))
 - chore(deps): MAIR-243 Bump quinn-udp to the patched 0.5.16 (RUSTSEC-2026-0538) (#237) ([#237](https://github.com/mairie360/Project_API/pull/237))
 - docs: MAIR-245 Rewrite the APIs' README and API.md (#225) ([#225](https://github.com/mairie360/Project_API/pull/225))
 - chore: MAIR-243 Align the test Database version on the 3.4.0 release (#231) ([#231](https://github.com/mairie360/Project_API/pull/231))
@@ -32,6 +34,7 @@ _Rien._
 <!-- release-journal-history:start -->
 | Date | Environnement | Version | Commit | Run |
 | --- | --- | --- | --- | --- |
+| 2026-11-16 17:25 UTC | dev | — | `f7e58ee` | [run](https://github.com/mairie360/Project_API/actions/runs/43916523400) |
 | 2026-11-16 16:53 UTC | dev | — | `b3db42d` | [run](https://github.com/mairie360/Project_API/actions/runs/43909810524) |
 | 2026-11-16 16:38 UTC | dev | — | `0f74ec0` | [run](https://github.com/mairie360/Project_API/actions/runs/43905338259) |
 | 2026-11-12 23:53 UTC | prod | v1.3.0 | `9a2f251` | [run](https://github.com/mairie360/Project_API/actions/runs/43330537528) |
