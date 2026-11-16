@@ -23,7 +23,7 @@ x-common-env: &common-env
 
 services:
   postgres:
-    image: ${DB_IMAGE:-ghcr.io/mairie360/database:dev-949384c}
+    image: ${DB_IMAGE:-ghcr.io/mairie360/database:3.4.0}
     restart: always
     container_name: mairie360-db-project-api-integration
     environment:
@@ -43,7 +43,7 @@ services:
       retries: 5
 
   liquibase:
-    image: ${LIQUIBASE_IMAGE:-ghcr.io/mairie360/liquibase-migrations:dev-949384c}
+    image: ${LIQUIBASE_IMAGE:-ghcr.io/mairie360/liquibase-migrations:3.4.0}
     container_name: mairie360-liquibase-project-api-integration
     depends_on:
       postgres:
