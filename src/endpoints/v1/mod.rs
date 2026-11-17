@@ -1,4 +1,5 @@
 pub mod doc;
+pub mod project_groups;
 pub mod project_templates;
 pub mod projects;
 pub mod tasks;
@@ -8,6 +9,7 @@ pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
         actix_web::web::scope("/v1")
             .configure(projects::config)
             .configure(project_templates::config)
+            .configure(project_groups::config)
             .configure(tasks::config),
     );
 }

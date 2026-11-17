@@ -189,6 +189,9 @@ pub struct ProjectView {
     members: Vec<ProjectMemberRow>,
     #[serde(default)]
     members_total: i64,
+    /// Group linked to the project; only read by the project detail.
+    #[serde(default)]
+    group: Option<crate::database::project::group::view::GroupRow>,
 }
 
 fn default_priority() -> String {
@@ -208,7 +211,12 @@ impl ProjectView {
             due_date: None,
             members: Vec::new(),
             members_total: 0,
+            group: None,
         }
+    }
+
+    pub fn group(&self) -> Option<&crate::database::project::group::view::GroupRow> {
+        self.group.as_ref()
     }
 
     pub fn id(&self) -> i32 {

@@ -6,18 +6,22 @@ use mairie360_api_lib::state::AppState;
 
 use crate::endpoints::db_error::log_db_error;
 
+use crate::database::project::group::view::{LinkableGroupQueryView, SetProjectGroupQueryView};
 use crate::database::project::update::view::UpdateProjectQueryView;
 use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::get::view::stored_priority;
 use crate::endpoints::v1::projects::project_id::patch::view::UpdateProjectView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 use crate::endpoints::validation::ValidatedJson;
+use mairie360_api_lib::error::ApiLibError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UpdateProjectError {
     Forbidden,
     BadRequest,
     NotFound,
+    /// `group_id` names no group, or a group the caller may not link.
+    UnknownGroup,
     DatabaseError,
 }
 
@@ -27,6 +31,7 @@ impl std::fmt::Display for UpdateProjectError {
             UpdateProjectError::Forbidden => write!(f, "Forbidden."),
             UpdateProjectError::BadRequest => write!(f, "Bad request."),
             UpdateProjectError::NotFound => write!(f, "Unknown project."),
+            UpdateProjectError::UnknownGroup => write!(f, "Unknown group."),
             UpdateProjectError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
@@ -39,7 +44,9 @@ impl ResponseError for UpdateProjectError {
         match self {
             UpdateProjectError::Forbidden => StatusCode::FORBIDDEN,
             UpdateProjectError::BadRequest => StatusCode::BAD_REQUEST,
-            UpdateProjectError::NotFound => StatusCode::NOT_FOUND,
+            UpdateProjectError::NotFound | UpdateProjectError::UnknownGroup => {
+                StatusCode::NOT_FOUND
+            }
             UpdateProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -51,6 +58,7 @@ impl ResponseError for UpdateProjectError {
 
 async fn trigger_update_project(
     tx: &mut SmartTransaction,
+    user_id: u64,
     project_id: u64,
     view: UpdateProjectView,
 ) -> Result<(), UpdateProjectError> {
@@ -81,11 +89,39 @@ async fn trigger_update_project(
         UpdateProjectError::DatabaseError
     })?;
 
-    if updated {
-        Ok(())
-    } else {
-        Err(UpdateProjectError::NotFound)
+    if !updated {
+        return Err(UpdateProjectError::NotFound);
     }
+    if let Some(group_id) = view.group_id {
+        set_project_group(tx, user_id, project_id, group_id).await?;
+    }
+    Ok(())
+}
+
+/// Replaces the group linked to the project, or removes it with `None`. A group that does not
+/// exist or that the caller may not link answers `404` and rolls the whole update back.
+async fn set_project_group(
+    tx: &mut SmartTransaction,
+    user_id: u64,
+    project_id: u64,
+    group_id: Option<u64>,
+) -> Result<(), UpdateProjectError> {
+    let database_error = |e: ApiLibError| {
+        log_db_error("projects/project_id/patch", &e);
+        UpdateProjectError::DatabaseError
+    };
+    if let Some(group_id) = group_id {
+        let linkable: bool = tx
+            .fetch_scalar(&LinkableGroupQueryView::new(user_id, group_id))
+            .await
+            .map_err(database_error)?;
+        if !linkable {
+            return Err(UpdateProjectError::UnknownGroup);
+        }
+    }
+    tx.execute(&SetProjectGroupQueryView::new(project_id, group_id))
+        .await
+        .map_err(database_error)
 }
 
 #[utoipa::path(
@@ -95,19 +131,26 @@ async fn trigger_update_project(
     ),
     path = "",
     summary = "Update a project",
-    description = "Updates the name, the description, the status or the priority of a project. \
+    description = "Updates the name, the description, the status, the priority or the group of a \
+                   project. \
                    Partial update: a missing or `null` field is kept. Restricted to the managers \
                    of the project.\n\n\
                    A `name` made of spaces only is refused in `400`, and so is the `Error` status \
                    or priority, which is only a fallback on read and cannot be assigned. The \
                    priority is stored as given (MAIR-558), `Urgent` as `High`; it does not follow \
                    the tasks.\n\n\
+                   `group_id` replaces the group linked to the project (`null` removes it): its \
+                   current and future members see the project with the rights of a project \
+                   member, the members of the former group lose it unless they are members of \
+                   the project. The caller may link one of their own groups; Admin and Maire may \
+                   link any group (`GET /api/v1/project-groups/`). Any other id answers `404` and \
+                   changes nothing.\n\n\
                    The response has an empty body; read the project back with \
                    `GET /api/v1/projects/{project_id}/`.",
     request_body(
         content = UpdateProjectView,
         description = "Fields to change, all optional.",
-        example = json!({ "status": "Review", "priority": "High" })
+        example = json!({ "status": "Review", "priority": "High", "group_id": 3 })
     ),
     responses(
         (
@@ -137,7 +180,7 @@ async fn trigger_update_project(
         ),
         (
             status = 404,
-            description = "Project that does not exist, or that the caller cannot see.",
+            description = "Project that does not exist or that the caller cannot see (`Unknown project.`), or `group_id` naming no group or a group the caller may not link (`Unknown group.`). Nothing is changed.",
             body = String,
             content_type = "text/plain",
             example = json!("Unknown project.")
@@ -170,7 +213,13 @@ pub async fn update_project(
         Requirement::ManageProject,
     )
     .await?;
-    trigger_update_project(&mut tx, params.project_id(), view.into_inner()).await?;
+    trigger_update_project(
+        &mut tx,
+        auth_user.id,
+        params.project_id(),
+        view.into_inner(),
+    )
+    .await?;
     commit(tx, "projects/project_id/patch").await?;
     Ok(HttpResponse::NoContent().finish())
 }

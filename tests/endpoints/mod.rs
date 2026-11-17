@@ -8,6 +8,7 @@ pub mod access_matrix;
 pub mod flows;
 pub mod mair_534_negative_cases;
 pub mod mair_680_session_keys;
+pub mod mair_683_project_groups;
 pub mod read_cache;
 pub mod service;
 pub mod statuses;
