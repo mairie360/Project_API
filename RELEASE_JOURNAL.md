@@ -1,16 +1,18 @@
 # Journal des releases — Project_API
 
-<!-- release-journal-state {"dev": "2b349037cd57f186b586fe8f01d21924e0f68be3", "prod": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "prod_tag": "v1.3.0", "staging": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "updated": {"dev": "2026-11-17 01:14 UTC", "prod": "2026-11-12 23:53 UTC", "staging": "2026-11-12 18:51 UTC"}} -->
+<!-- release-journal-state {"dev": "b0588a069806de8077ced1b7ab7ddf2a734893e6", "prod": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "prod_tag": "v1.3.0", "staging": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "updated": {"dev": "2026-11-17 15:51 UTC", "prod": "2026-11-12 23:53 UTC", "staging": "2026-11-12 18:51 UTC"}} -->
 > Tenu à jour par la CI (`mairie360/CICD`, action `release/release-journal`) à chaque passage en dev, staging et prod. Ne pas modifier à la main : le fichier est réécrit au passage suivant.
 
 | Environnement | Version | Commit | Mis à jour |
 | --- | --- | --- | --- |
 | prod | v1.3.0 | `9a2f251` | 2026-11-12 23:53 UTC |
 | staging | — | `9a2f251` | 2026-11-12 18:51 UTC |
-| dev | — | `2b34903` | 2026-11-17 01:14 UTC |
+| dev | — | `b0588a0` | 2026-11-17 15:51 UTC |
 
 ## Ajouté sur main depuis la dernière release prod (v1.3.0)
 
+- ci: MAIR-1008 Nightly rehearsal of the promotion gates (#241) ([#241](https://github.com/mairie360/Project_API/pull/241))
+- feat: MAIR-998 Test stacks follow the moving upstream tag of the stage (#243) ([#243](https://github.com/mairie360/Project_API/pull/243))
 - test: MAIR-1002 Speed up the APIs' CI tests (Rust cache, one database per test, optimized dependencies) ([#244](https://github.com/mairie360/Project_API/pull/244))
 - chore(deps): update rust crate mairie360_api_lib to v4.4.0 (#223) ([#223](https://github.com/mairie360/Project_API/pull/223))
 - fix: MAIR-247 Translate the APIs' OpenAPI descriptions and messages into English (#235) ([#235](https://github.com/mairie360/Project_API/pull/235))
@@ -20,6 +22,8 @@
 
 ## Différence dev → staging (en dev, pas encore en staging)
 
+- ci: MAIR-1008 Nightly rehearsal of the promotion gates (#241) ([#241](https://github.com/mairie360/Project_API/pull/241))
+- feat: MAIR-998 Test stacks follow the moving upstream tag of the stage (#243) ([#243](https://github.com/mairie360/Project_API/pull/243))
 - test: MAIR-1002 Speed up the APIs' CI tests (Rust cache, one database per test, optimized dependencies) ([#244](https://github.com/mairie360/Project_API/pull/244))
 - chore(deps): update rust crate mairie360_api_lib to v4.4.0 (#223) ([#223](https://github.com/mairie360/Project_API/pull/223))
 - fix: MAIR-247 Translate the APIs' OpenAPI descriptions and messages into English (#235) ([#235](https://github.com/mairie360/Project_API/pull/235))
@@ -38,6 +42,7 @@ _Rien._
 <!-- release-journal-history:start -->
 | Date | Environnement | Version | Commit | Run |
 | --- | --- | --- | --- | --- |
+| 2026-11-17 15:51 UTC | dev | — | `b0588a0` | [run](https://github.com/mairie360/Project_API/actions/runs/44117298529) |
 | 2026-11-17 01:14 UTC | dev | — | `2b34903` | [run](https://github.com/mairie360/Project_API/actions/runs/43990173013) |
 | 2026-11-16 23:11 UTC | dev | — | `e94e190` | [run](https://github.com/mairie360/Project_API/actions/runs/43974717439) |
 | 2026-11-16 17:25 UTC | dev | — | `f7e58ee` | [run](https://github.com/mairie360/Project_API/actions/runs/43916523400) |
