@@ -162,17 +162,16 @@ A new endpoint therefore fails the integration stack until the collection tests 
 
 Integration tests (`tests/queries/`) require a **running Docker daemon and network access to ghcr.io**: the lib's `test_setup::queries_setup::get_shared_db()` starts a `ghcr.io/mairie360/database` Postgres container (published on a random host port, image tag from `TEST_DB_VERSION` in `.cargo/config.toml`), runs Liquibase migrations against it, truncates + seeds it once per test run, and hands back its **superuser** URL, used by the fixtures only (`tests/common::fixtures_db()`, behind every helper of `tests/common/fixtures.rs`). Everything that runs Project_API's code connects as the `project_api` role, like in staging (MAIR-556): `tests/common::get_smart_db()` (query views) and `TestContext` (`AppState::new(…, project_db_url().await)`, endpoints), both through `get_shared_db_as("project_api")`. A query outside the grants of Database's `api_grants.sql` then fails the test with `permission denied` (SQLSTATE `42501`): add the grant there, never connect the code under test as the superuser. `tests/queries/db_role.rs` checks both sides. The compose stacks connect `project` as `project_api` too (`-Dproject_api_password` passed to Liquibase); postgres, liquibase and the seeder keep the superuser. Real Redis is not needed — no query view sets a `cache_key`, and a failed read-cache invalidation is only logged. Tests drive the query views through `execute` / `fetch_*` and hit real SQL — there is no compile-time query checking.
 
-Tests run in parallel (MAIR-1002): there is no `#[serial]`. The tests share the seeded database of
-`get_shared_db()` and keep to rows of their own (unique markers). A test that depends on, or changes, what the
-others see (a count of rows of a table, a sequence reset, anything that reads every row) takes a database of its
-own with `mairie360_api_lib::test_setup::isolated::isolated_db()`: a copy of the seeded template (about 0.2 s),
-dropped when the guard is dropped, whose URLs are `db.url()` (superuser, fixtures) and `db.url_as("<role>")`.
-`isolated_redis()` gives a Redis client with its own key prefix on one container shared by the process. A test
-that sets a process environment variable after startup takes a named `#[serial(<group>)]` (add the `serial_test`
-dev-dependency; none needs it today: the JWT environment is set once through `set_jwt_env()`, which every test that
-builds an `AppState` calls first). The dependencies are compiled with
-`opt-level = 3` (`[profile.dev.package."*"]`): the code of the crate stays in debug, which is what the coverage
-measures, while argon2 and the TLS stack no longer dominate the run.
+Tests run in parallel (MAIR-1002): there is no `#[serial]`. Every test gets a database of its own: the first helper
+it calls (`tests/common::own_db()`, behind `project_db_url()`, `get_smart_db()` and `fixtures_db()`) creates a copy of
+the seeded template with `mairie360_api_lib::test_setup::isolated::isolated_db()` (about 0.2 s) for the thread of the
+test, and the end of the test drops it. A test reads and writes freely without reaching another one; the seeded ids
+are the same in every copy. Never connect to `get_shared_db()` from a test. `isolated_redis()` gives a Redis client
+with its own key prefix on one container shared by the process. A test that sets a process environment variable after
+startup takes a named `#[serial(<group>)]` (add the `serial_test` dev-dependency; none needs it today: the JWT
+environment is set once through `set_jwt_env()`, which every test that builds an `AppState` calls first). The
+dependencies are compiled with `opt-level = 3` (`[profile.dev.package."*"]`): the code of the crate stays in debug,
+which is what the coverage measures, while argon2 and the TLS stack no longer dominate the run.
 
 Handler tests (`tests/endpoints/`, MAIR-419) run in the same binary and database: `init_app!` mounts the real
 `/api` scope behind `JwtMiddleware`, `jwt_for(user_id)` signs EdDSA tokens like Core with the lib's test key pair
