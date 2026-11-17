@@ -36,7 +36,7 @@ name: project-api-gdpr-sim
 services:
   postgres:
     image: ${DB_IMAGE:-ghcr.io/mairie360/database:${UPSTREAM_TAG:-dev}}
-    pull_policy: always
+    pull_policy: ${UPSTREAM_PULL_POLICY:-always}
     restart: always
     container_name: mairie360-db-project-api-sim
     environment:
@@ -57,7 +57,7 @@ services:
 
   liquibase:
     image: ${LIQUIBASE_IMAGE:-ghcr.io/mairie360/liquibase-migrations:${UPSTREAM_TAG:-dev}}
-    pull_policy: always
+    pull_policy: ${UPSTREAM_PULL_POLICY:-always}
     container_name: mairie360-liquibase-project-api-sim
     depends_on:
       postgres:
