@@ -24,6 +24,7 @@ x-common-env: &common-env
 services:
   postgres:
     image: ${DB_IMAGE:-ghcr.io/mairie360/database:${UPSTREAM_TAG:-dev}}
+    pull_policy: always
     restart: always
     container_name: mairie360-db-project-api-integration
     environment:
@@ -44,6 +45,7 @@ services:
 
   liquibase:
     image: ${LIQUIBASE_IMAGE:-ghcr.io/mairie360/liquibase-migrations:${UPSTREAM_TAG:-dev}}
+    pull_policy: always
     container_name: mairie360-liquibase-project-api-integration
     depends_on:
       postgres:

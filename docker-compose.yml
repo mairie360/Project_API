@@ -33,6 +33,7 @@ x-depends-on: &depends-on
 services:
   postgres:
     image: ghcr.io/mairie360/database:${UPSTREAM_TAG:-dev}
+    pull_policy: always
     restart: always
     container_name: mairie360-db-project-api
     environment:
@@ -53,6 +54,7 @@ services:
 
   liquibase:
     image: ghcr.io/mairie360/liquibase-migrations:${UPSTREAM_TAG:-dev}
+    pull_policy: always
     container_name: mairie360-liquibase-project-api
     depends_on:
       postgres:
