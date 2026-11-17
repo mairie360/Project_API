@@ -3,7 +3,29 @@ pub mod fixtures;
 use mairie360_api_lib::database::db_interface::Database;
 use mairie360_api_lib::redis::redis_interface::Redis;
 use mairie360_api_lib::smart_db::SmartDatabase;
-use mairie360_api_lib::test_setup::queries_setup::{get_shared_db, get_shared_db_as};
+use mairie360_api_lib::test_setup::isolated::{isolated_db, IsolatedDb};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+thread_local! {
+    /// The database of the test running on this thread (MAIR-1002). libtest runs every test on a
+    /// thread of its own and the tests run on one thread (`#[tokio::test]`, `#[actix_web::test]`),
+    /// so the first helper a test calls creates its database and the end of the thread drops it.
+    static OWN_DB: RefCell<Option<Rc<IsolatedDb>>> = const { RefCell::new(None) };
+}
+
+/// The database of the calling test: a copy of the seeded template, created on the first call and
+/// dropped when the test ends. No test reads what another one writes. Every helper below goes
+/// through it, so the fixtures, the `AppState` and the query views of a test see the same rows.
+pub async fn own_db() -> Rc<IsolatedDb> {
+    if let Some(db) = OWN_DB.with(|cell| cell.borrow().clone()) {
+        return db;
+    }
+    let db = Rc::new(isolated_db().await);
+    // Two overlapping first calls both create a database: keep the first one stored and drop the
+    // other, so every caller of the test sees the same rows.
+    OWN_DB.with(|cell| cell.borrow_mut().get_or_insert(db).clone())
+}
 
 /// Postgres role Project_API connects with in every deployment (Database `api_roles.sql`,
 /// MAIR-114).
@@ -14,26 +36,25 @@ pub const PROJECT_DB_ROLE: &str = "project_api";
 /// logged by the lib).
 const TEST_REDIS_URL: &str = "redis://127.0.0.1:6379";
 
-/// URL of the shared test database as [`PROJECT_DB_ROLE`] (MAIR-556): the application code under
-/// test (`AppState`, query views) goes through it, so a query the role is not granted fails here
-/// with `permission denied` instead of in staging. The fixtures keep the superuser URL of
-/// `get_shared_db()` (see [`fixtures_db`]).
+/// URL of the database of the calling test as [`PROJECT_DB_ROLE`] (MAIR-556): the application code
+/// under test (`AppState`, query views) goes through it, so a query the role is not granted fails
+/// here with `permission denied` instead of in staging. The fixtures keep the superuser URL (see
+/// [`fixtures_db`]).
 pub async fn project_db_url() -> String {
-    get_shared_db_as(PROJECT_DB_ROLE).await
+    own_db().await.url_as(PROJECT_DB_ROLE)
 }
 
-/// `SmartDatabase` on the shared test database, connected as [`PROJECT_DB_ROLE`]: the one every
+/// `SmartDatabase` on the database of the calling test, connected as [`PROJECT_DB_ROLE`]: the one every
 /// query view under test runs through.
 pub async fn get_smart_db() -> SmartDatabase {
     smart_db(&project_db_url().await).await
 }
 
-/// `SmartDatabase` on the shared test database as the **superuser**, for the test set-up only
+/// `SmartDatabase` on the database of the calling test as the **superuser**, for the test set-up only
 /// (users, roles, groups, statistics...): those tables are outside Project_API's grants. Never
 /// run the code under test through it.
 pub async fn fixtures_db() -> SmartDatabase {
-    let (_container, url) = get_shared_db().await;
-    smart_db(url).await
+    smart_db(&own_db().await.url()).await
 }
 
 async fn smart_db(url: &str) -> SmartDatabase {

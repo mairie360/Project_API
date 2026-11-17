@@ -3,7 +3,6 @@
 
 use actix_web::test::TestRequest;
 use serde_json::{json, Value};
-use serial_test::serial;
 
 use super::access::scenario;
 use super::{get, json, patch, post, status, TestContext};
@@ -21,7 +20,6 @@ fn task_ids(page: &Value) -> Vec<u64> {
 /// The pending tasks of an assignee come with their project, in one call, due date first; the
 /// same query by someone who does not see the project lists nothing.
 #[actix_web::test]
-#[serial]
 async fn the_pending_tasks_of_a_user_are_read_in_one_call() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -92,7 +90,6 @@ async fn the_pending_tasks_of_a_user_are_read_in_one_call() {
 /// A completed task is archived (MAIR-502): out of the default list, listed with `archived_at`
 /// when `status` includes `Completed`.
 #[actix_web::test]
-#[serial]
 async fn archived_tasks_are_only_listed_when_completed_is_asked() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -118,7 +115,6 @@ async fn archived_tasks_are_only_listed_when_completed_is_asked() {
 
 /// Admin and Maire see the tasks of every project; a plain agent only those of their projects.
 #[actix_web::test]
-#[serial]
 async fn admin_and_maire_see_the_tasks_of_every_project() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -136,7 +132,6 @@ async fn admin_and_maire_see_the_tasks_of_every_project() {
 /// Invalid filters are refused with a `400` naming the parameter, before any query; no token is a
 /// `401`.
 #[actix_web::test]
-#[serial]
 async fn the_tasks_list_refuses_invalid_filters_and_anonymous_callers() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);

@@ -6,7 +6,6 @@ use mairie360_api_lib::state::AppState;
 use mairie360_api_lib::test_setup::db_setup::start_postgres_container;
 use mairie360_api_lib::test_setup::redis_setup::start_redis_container;
 use project_api::endpoints::health;
-use serial_test::serial;
 
 use super::{get, status, TestContext};
 use crate::common::project_db_url;
@@ -36,8 +35,9 @@ async fn ready(state: AppState) -> (u16, String) {
 }
 
 #[actix_web::test]
-#[serial]
 async fn ready_when_postgres_and_redis_answer() {
+    // `AppState::new` checks the JWT configuration: set it first (the tests run in parallel).
+    super::set_jwt_env();
     let (_redis, redis) = start_redis_container().await;
     let state = AppState::new(redis.url.clone(), project_db_url().await).await;
 
@@ -47,8 +47,9 @@ async fn ready_when_postgres_and_redis_answer() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn not_ready_without_redis() {
+    // `AppState::new` checks the JWT configuration: set it first (the tests run in parallel).
+    super::set_jwt_env();
     let state = AppState::new(UNREACHABLE_REDIS.to_string(), project_db_url().await).await;
 
     let (code, body) = ready(state).await;
@@ -57,8 +58,9 @@ async fn not_ready_without_redis() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn not_ready_without_postgres() {
+    // `AppState::new` checks the JWT configuration: set it first (the tests run in parallel).
+    super::set_jwt_env();
     // `AppState::new` panics without Postgres, so the state is built on a dedicated database
     // that is stopped afterwards (the shared one is used by the other tests).
     let (postgres, db) = start_postgres_container().await;
@@ -76,7 +78,6 @@ async fn not_ready_without_postgres() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn probes_are_not_mounted_under_api() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);

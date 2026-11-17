@@ -3,7 +3,6 @@
 
 use actix_web::test::TestRequest;
 use serde_json::json;
-use serial_test::serial;
 
 use actix_web::body::MessageBody;
 
@@ -85,7 +84,6 @@ pub async fn scenario<B: MessageBody>(ctx: &TestContext, app: &impl TestApp<B>) 
 }
 
 #[actix_web::test]
-#[serial]
 async fn requests_without_a_valid_jwt_are_rejected() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -106,7 +104,6 @@ async fn requests_without_a_valid_jwt_are_rejected() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn only_managers_can_create_a_project() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -125,7 +122,6 @@ async fn only_managers_can_create_a_project() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn an_outsider_can_neither_see_nor_change_the_project() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -185,7 +181,6 @@ async fn an_outsider_can_neither_see_nor_change_the_project() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn a_member_without_manager_role_can_only_read() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -237,7 +232,6 @@ async fn a_member_without_manager_role_can_only_read() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn the_assignee_may_only_change_the_status_of_their_task() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -263,7 +257,6 @@ async fn the_assignee_may_only_change_the_status_of_their_task() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn a_task_is_only_reachable_through_its_own_project() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -314,7 +307,6 @@ async fn a_task_is_only_reachable_through_its_own_project() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn a_task_cannot_be_assigned_outside_the_project() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -331,7 +323,6 @@ async fn a_task_cannot_be_assigned_outside_the_project() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn invalid_path_segments_and_bodies_are_rejected() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -368,7 +359,6 @@ async fn invalid_path_segments_and_bodies_are_rejected() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn ids_beyond_int4_do_not_alias_existing_rows() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);

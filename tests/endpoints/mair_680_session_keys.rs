@@ -7,7 +7,6 @@ use actix_web::test::TestRequest;
 use jsonwebtoken::{encode, EncodingKey, Header};
 use mairie360_api_lib::jwt_manager::Claims;
 use serde_json::json;
-use serial_test::serial;
 
 use super::{delete, get, json, now, post, status, TestContext};
 use crate::init_app;
@@ -23,7 +22,6 @@ fn hs256_token(user_id: u64, secret: &[u8]) -> String {
 }
 
 #[actix_web::test]
-#[serial]
 async fn mair_680_runs_without_jwt_secret() {
     let _ctx = TestContext::new().await;
     assert!(std::env::var_os("JWT_SECRET").is_none());
@@ -32,7 +30,6 @@ async fn mair_680_runs_without_jwt_secret() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn mair_680_eddsa_token_signed_with_core_key_is_accepted() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -42,7 +39,6 @@ async fn mair_680_eddsa_token_signed_with_core_key_is_accepted() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn mair_680_hs256_token_is_refused_without_jwt_secret() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -67,7 +63,6 @@ async fn mair_680_hs256_token_is_refused_without_jwt_secret() {
 /// Business journey with Core's tokens: an administrator creates a project, reads it back and
 /// deletes it; the same administrator's HS256 token is refused on that project at every step.
 #[actix_web::test]
-#[serial]
 async fn mair_680_admin_manages_a_project_with_core_tokens_only() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);

@@ -4,7 +4,6 @@
 
 use actix_web::body::MessageBody;
 use serde_json::{json, Value};
-use serial_test::serial;
 
 use super::{delete, get, json, patch, post, status, TestApp, TestContext};
 use crate::common::fixtures::{fixture, unique_suffix};
@@ -30,7 +29,6 @@ async fn rename_in_database(project_id: u64, title: &str) {
 /// A second read is served from Redis: a change made behind the API's back stays invisible until a
 /// write through the API invalidates the entry.
 #[actix_web::test]
-#[serial]
 async fn the_projects_list_is_served_from_the_cache_until_a_write() {
     let ctx = TestContext::with_redis().await;
     let app = init_app!(ctx);
@@ -75,7 +73,6 @@ async fn the_projects_list_is_served_from_the_cache_until_a_write() {
 
 /// After each write family (project, task, membership), the next read of a cached page shows it.
 #[actix_web::test]
-#[serial]
 async fn every_write_shown_by_the_list_invalidates_its_cache() {
     let ctx = TestContext::with_redis().await;
     let app = init_app!(ctx);
@@ -181,7 +178,6 @@ async fn every_write_shown_by_the_list_invalidates_its_cache() {
 /// Two callers asking the same query string get their own entry: the first one's page is never
 /// served to the second, whichever reads first.
 #[actix_web::test]
-#[serial]
 async fn two_callers_with_the_same_query_never_share_an_entry() {
     let ctx = TestContext::with_redis().await;
     let app = init_app!(ctx);

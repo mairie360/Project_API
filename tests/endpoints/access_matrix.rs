@@ -12,7 +12,6 @@ use actix_web::test::TestRequest;
 use project_api::endpoints::swagger::ApiDoc;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use serial_test::serial;
 use utoipa::OpenApi;
 
 use super::{as_user, get, json, post, status, TestApp, TestContext};
@@ -249,7 +248,6 @@ fn request(spec: &Value, name: &str, f: &Fixtures) -> TestRequest {
 }
 
 #[actix_web::test]
-#[serial]
 async fn every_role_and_relation_gets_what_the_matrix_says() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);

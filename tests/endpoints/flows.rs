@@ -1,14 +1,12 @@
 //! Allowed paths: a manager runs a project from creation to deletion through every route.
 
 use serde_json::json;
-use serial_test::serial;
 
 use super::access::scenario;
 use super::{delete, get, json, patch, post, status, TestContext};
 use crate::init_app;
 
 #[actix_web::test]
-#[serial]
 async fn a_manager_runs_a_project_end_to_end() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -111,7 +109,6 @@ async fn a_manager_runs_a_project_end_to_end() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn removing_a_member_unassigns_their_tasks_in_the_same_write() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -141,7 +138,6 @@ async fn removing_a_member_unassigns_their_tasks_in_the_same_write() {
 /// instead of `Active` and the highest priority of the tasks; a PATCH of the priority is kept, and
 /// the list filters and counts both.
 #[actix_web::test]
-#[serial]
 async fn mair_558_a_project_keeps_the_status_and_the_priority_it_was_given() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -232,7 +228,6 @@ async fn mair_558_a_project_keeps_the_status_and_the_priority_it_was_given() {
 /// A date picker sends the due date alone (`2026-11-05`): task creation and update accept it as
 /// midnight UTC of that day, instead of answering `400` (MAIR-559).
 #[actix_web::test]
-#[serial]
 async fn mair_559_a_task_due_date_may_be_a_date_alone() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -284,7 +279,6 @@ async fn mair_559_a_task_due_date_may_be_a_date_alone() {
 
 /// Invalid filters of the list are refused with a `400` naming the parameter, before any query.
 #[actix_web::test]
-#[serial]
 async fn the_projects_list_refuses_invalid_filters() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -321,7 +315,6 @@ async fn the_projects_list_refuses_invalid_filters() {
 /// One task read alone (MAIR-474): whoever sees the project sees it; a task of another project, an unknown
 /// task or a project out of sight answer 404.
 #[actix_web::test]
-#[serial]
 async fn a_task_is_read_alone_by_whoever_sees_its_project() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -360,7 +353,6 @@ async fn a_task_is_read_alone_by_whoever_sees_its_project() {
 /// the task list, is counted in `tasks_archived` and listed by `…/archived-tasks/`; reopened, it
 /// comes back.
 #[actix_web::test]
-#[serial]
 async fn a_completed_task_moves_to_the_archived_tasks_and_back_when_reopened() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);

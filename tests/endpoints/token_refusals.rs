@@ -14,7 +14,6 @@ use actix_web::test::TestRequest;
 use jsonwebtoken::{encode, EncodingKey, Header};
 use mairie360_api_lib::jwt_manager::{Claims, SESSION_JWT_ISSUER};
 use project_api::endpoints::swagger::ApiDoc;
-use serial_test::serial;
 use utoipa::OpenApi;
 
 use super::{
@@ -152,7 +151,6 @@ fn refused_headers(user_id: u64) -> Vec<(&'static str, String)> {
 }
 
 #[actix_web::test]
-#[serial]
 async fn every_secured_operation_refuses_a_missing_or_forged_token() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -182,7 +180,6 @@ async fn every_secured_operation_refuses_a_missing_or_forged_token() {
 }
 
 #[actix_web::test]
-#[serial]
 async fn every_secured_operation_refuses_an_unknown_or_archived_account() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
@@ -207,7 +204,6 @@ async fn every_secured_operation_refuses_an_unknown_or_archived_account() {
 /// Control of the sweeps: a genuine token of an active account passes the authentication of every
 /// operation (whatever the handler answers next), so their `401`s come from the token alone.
 #[actix_web::test]
-#[serial]
 async fn a_genuine_token_passes_the_authentication_of_every_operation() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
