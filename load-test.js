@@ -134,8 +134,11 @@ function fixture(method, path, body) {
   return res;
 }
 
+// Group 3 of init-test.sql: every project needs a group, and the Admin may link any.
+const GROUP_ID = 3;
+
 function createProject(name) {
-  return fixture('POST', '/api/v1/projects/', { name, description: 'k6 fixture' }).json('project_id');
+  return fixture('POST', '/api/v1/projects/', { name, description: 'k6 fixture', group_id: GROUP_ID }).json('project_id');
 }
 
 function deleteProject(projectId) {
@@ -302,6 +305,15 @@ const readHandlers = {
       'list project groups gives the Admin every group': (r) => caller !== 0 || r.json('groups').length > 0,
     });
   },
+  // Projects without a group, for the Admin and Maire only: a Responsable gets 403.
+  'GET /api/v1/project-groups/projects-without-group/': ({ request }) => {
+    const admin = randomInt(2) === 0;
+    const res = admin ? request() : request({ headers: bearer(randomManager()) });
+    check(res, {
+      'projects without group 200 for the Admin': (r) => !admin || (r.status === 200 && Array.isArray(r.json('projects'))),
+      'projects without group 403 for a Responsable': (r) => admin || r.status === 403,
+    });
+  },
   // Project templates (MAIR-566), read by anyone signed in: the Admin, a Responsable or an agent.
   'GET /api/v1/project-templates/': ({ request }) => {
     const caller = randomInt(3);
@@ -352,7 +364,7 @@ const writeHandlers = {
 
   // Projects: create → patch → close → delete.
   'POST /api/v1/projects/': ({ request }) => {
-    const res = request({ body: { name: 'k6 create project', description: 'Load test' } });
+    const res = request({ body: { name: 'k6 create project', description: 'Load test', group_id: GROUP_ID } });
     check(res, { 'create project 200': (r) => r.status === 200 });
     if (res.status === 200) deleteProject(res.json('project_id'));
   },

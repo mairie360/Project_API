@@ -106,6 +106,10 @@ operations:
     note: "lists only the tasks of the projects the caller sees"
 
   GET /api/v1/project-groups/: {access: authenticated, roles: [Admin, Maire, Responsable, User, Guest]}
+  GET /api/v1/project-groups/projects-without-group/:
+    access: authenticated
+    roles: [Admin, Maire]
+    note: "administration page: the projects left without a group after a group deletion in Core API"
   GET /api/v1/project-templates/: {access: authenticated, roles: [Admin, Maire, Responsable, User, Guest]}
   GET /api/v1/project-templates/{template_id}/: {access: authenticated, roles: [Admin, Maire, Responsable, User, Guest]}
   POST /api/v1/project-templates/:

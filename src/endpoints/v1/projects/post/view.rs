@@ -4,7 +4,7 @@ use crate::endpoints::v1::projects::get::view::ProjectStatus;
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
 
 use crate::endpoints::validation::{
-    check_description, check_label, check_optional, Validate, ValidationError,
+    check_description, check_label, check_optional, check_required, Validate, ValidationError,
     MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
 };
 
@@ -21,9 +21,10 @@ pub struct CreateProjectView {
     /// Description of the project. Optional.
     #[schema(max_length = 5000, example = "2026 road works")]
     description: Option<String>,
-    /// Core API group whose current and future members all get access to the project. Optional.
-    /// One of the caller's groups, any group for Admin and Maire (`GET /api/v1/project-groups/`).
-    #[schema(example = 3)]
+    /// Core API group whose current and future members all get access to the project. Required:
+    /// every project has a group. One of the caller's groups, any group for Admin and Maire
+    /// (`GET /api/v1/project-groups/`).
+    #[schema(required = true, value_type = u64, example = 3)]
     group_id: Option<u64>,
     /// Initial status. Absent or `null` for `Active`; `Error` is refused (`400`).
     #[serde(default)]
@@ -95,8 +96,34 @@ pub struct CreateProjectResultView {
 impl Validate for CreateProjectView {
     fn validate(&self) -> Result<(), ValidationError> {
         check_label("name", &self.name, MAX_TITLE_LENGTH)?;
+        check_required("group_id", self.group_id)?;
         check_optional(self.description.as_deref(), |description| {
             check_description("description", description, MAX_DESCRIPTION_LENGTH)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(body: serde_json::Value) -> CreateProjectView {
+        serde_json::from_value(body).unwrap()
+    }
+
+    #[test]
+    fn mair_683_a_project_without_group_is_refused() {
+        for body in [
+            serde_json::json!({ "name": "Roads" }),
+            serde_json::json!({ "name": "Roads", "group_id": null }),
+        ] {
+            assert_eq!(
+                parse(body).validate().unwrap_err().to_string(),
+                "Invalid `group_id`: is required"
+            );
+        }
+        assert!(parse(serde_json::json!({ "name": "Roads", "group_id": 3 }))
+            .validate()
+            .is_ok());
     }
 }

@@ -1361,7 +1361,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Projet interdit\",\n  \"description\": \"Un agent sans rôle gestionnaire\"\n}",
+              "raw": "{\n  \"name\": \"Projet interdit\",\n  \"description\": \"Un agent sans rôle gestionnaire\",\n  \"group_id\": 3\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1414,7 +1414,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"description\": \"Sans nom\"\n}",
+              "raw": "{\n  \"description\": \"Sans nom\",\n  \"group_id\": 3\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1467,7 +1467,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Réfection de la place du marché (newman)\",\n  \"description\": \"Travaux de voirie 2026\",\n  \"status\": \"Todo\",\n  \"priority\": \"High\"\n}",
+              "raw": "{\n  \"name\": \"Réfection de la place du marché (newman)\",\n  \"description\": \"Travaux de voirie 2026\",\n  \"status\": \"Todo\",\n  \"priority\": \"High\",\n  \"group_id\": 3\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2187,7 +2187,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Rénovation de l'école (newman)\",\n  \"template_id\": {{template_id}}\n}"
+              "raw": "{\n  \"name\": \"Rénovation de l'école (newman)\",\n  \"template_id\": {{template_id}},\n  \"group_id\": 3\n}"
             }
           }
         },
@@ -2355,6 +2355,62 @@
                   "});",
                   "pm.test(\"The agent's group is offered\", function () {",
                   "    pm.expect(pm.response.json().groups.map(g => g.id)).to.include(Number(pm.environment.get(\"group_id\")));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "MAIR-683 Creating a project without a group answers 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Projet sans groupe (newman)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test(\"The body names group_id\", function () {",
+                  "    pm.expect(pm.response.text()).to.eql('Invalid `group_id`: is required');",
                   "});"
                 ]
               }
@@ -2720,7 +2776,7 @@
           "response": []
         },
         {
-          "name": "MAIR-683 Remove the group of the project",
+          "name": "MAIR-683 Removing the group of the project answers 400",
           "request": {
             "method": "PATCH",
             "header": [
@@ -2764,8 +2820,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status is 204\", function () {",
-                  "    pm.response.to.have.status(204);",
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test(\"The body names group_id\", function () {",
+                  "    pm.expect(pm.response.text()).to.eql('Invalid `group_id`: is required');",
                   "});"
                 ]
               }
@@ -2774,7 +2833,7 @@
           "response": []
         },
         {
-          "name": "MAIR-683 The former group member no longer sees the project",
+          "name": "MAIR-683 The group member still sees the project",
           "request": {
             "method": "GET",
             "header": [
@@ -2804,8 +2863,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status is 404\", function () {",
-                  "    pm.response.to.have.status(404);",
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"The project kept its group\", function () {",
+                  "    pm.expect(String(pm.response.json().project.group.id)).to.eql(pm.environment.get('group_id'));",
                   "});"
                 ]
               }
@@ -2900,6 +2962,95 @@
                 "exec": [
                   "pm.test(\"Status is 200\", function () {",
                   "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "MAIR-683 The Admin lists the projects without a group",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-groups/projects-without-group/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-groups",
+                "projects-without-group",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Projects without a group, never the group project\", function () {",
+                  "    const projects = pm.response.json().projects;",
+                  "    pm.expect(projects).to.be.an('array').that.is.not.empty;",
+                  "    projects.forEach((project) => {",
+                  "        pm.expect(project.id).to.be.a('number');",
+                  "        pm.expect(project.name).to.be.a('string');",
+                  "    });",
+                  "    pm.expect(projects.map((project) => String(project.id))).to.not.include(pm.environment.get('group_project_id'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "MAIR-683 An agent cannot list the projects without a group",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-groups/projects-without-group/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-groups",
+                "projects-without-group",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
                   "});"
                 ]
               }

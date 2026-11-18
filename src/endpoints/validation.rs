@@ -76,6 +76,14 @@ fn check_no_control(field: &str, value: &str) -> Result<(), ValidationError> {
 /// # Errors
 ///
 /// Returns a [`ValidationError`] naming `field` when one of the rules is broken.
+/// Refuses a required value that is absent or `null`.
+pub fn check_required<T>(field: &str, value: Option<T>) -> Result<(), ValidationError> {
+    match value {
+        Some(_) => Ok(()),
+        None => Err(ValidationError::new(field, "is required")),
+    }
+}
+
 pub fn check_label(field: &str, value: &str, max: usize) -> Result<(), ValidationError> {
     if value.trim().is_empty() {
         return Err(ValidationError::new(field, "must not be empty"));

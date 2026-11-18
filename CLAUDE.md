@@ -219,11 +219,12 @@ Resources: `project`, `tasks` (+ `tasks/fields`), `users` (project membership). 
 `project_visible_to_user_sql!` fragment (`src/database/project/mod.rs`): Admin/Maire see everything, a Responsable
 also sees projects owned by or shared with a member of one of their groups, everyone else sees projects they own
 or are a member of. Whatever the role, a project linked to one of the caller's groups (Database `project_groups`,
-`database::project::group`) is visible too, with the rights of a project member. `group_id` links it at creation
-(same `INSERT` statement) and `PATCH /projects/{id}/` replaces it (`null` removes it, absent keeps it, one group per
-project); the group must be one of the caller's, any group for Admin/Maire (`LinkableGroupQueryView`, `404 Unknown
+`database::project::group`) is visible too, with the rights of a project member. `group_id` is required at creation
+(`400` without it, linked in the same `INSERT` statement) and `PATCH /projects/{id}/` replaces it (absent keeps it,
+`null` answers `400`: a project always keeps a group, one group per project); the group must be one of the caller's, any group for Admin/Maire (`LinkableGroupQueryView`, `404 Unknown
 group.` otherwise). `GET /project-groups/` lists the groups the caller may link, and the project detail carries
-`group` (`{id, name}` or `null`). A project that is not visible answers 404. Every operation under `/projects/{project_id}` calls
+`group` (`{id, name}`, `null` only when its group was deleted in Core API, which cascades on
+`project_groups`). `GET /project-groups/projects-without-group/` lists those projects for Admin/Maire (`403` otherwise). A project that is not visible answers 404. Every operation under `/projects/{project_id}` calls
 `endpoints/v1/projects/access.rs::require_access` (one `ProjectAccessQueryView` query): reads need visibility;
 writes on the project, its tasks and members need visibility plus the Admin/Maire/Responsable role (403
 otherwise); task collaboration and `PATCH` on a task are also open to the task's assignee, who may only change
