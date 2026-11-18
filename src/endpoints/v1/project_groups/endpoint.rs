@@ -49,7 +49,7 @@ impl ResponseError for GetProjectGroupsError {
                    the list is empty for a caller without group.",
     responses(
         (status = 200, description = "The groups the caller may link.", body = GetProjectGroupsResultView,
-         example = json!({ "groups": [ { "id": 5, "name": "Espaces verts" }, { "id": 3, "name": "Voirie" } ] })),
+         example = json!({ "groups": [ { "id": 5, "name": "Green spaces" }, { "id": 3, "name": "Roads" } ] })),
         (status = 401, description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
          body = String, content_type = "text/plain", example = json!("Jeton expiré")),
         (status = 500, description = "Database error.", body = String, content_type = "text/plain",

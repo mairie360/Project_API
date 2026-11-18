@@ -207,7 +207,7 @@ pub struct ProjectGroupView {
     #[schema(example = 3)]
     pub id: u64,
     /// Name of the group.
-    #[schema(example = "Voirie")]
+    #[schema(example = "Roads")]
     pub name: String,
 }
 
