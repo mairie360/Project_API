@@ -1,16 +1,17 @@
 # Journal des releases — Project_API
 
-<!-- release-journal-state {"dev": "5aecd8c271cd43ce4caf93ed735c9b302cbe5a9f", "prod": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "prod_tag": "v1.3.0", "staging": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "updated": {"dev": "2026-11-17 17:05 UTC", "prod": "2026-11-12 23:53 UTC", "staging": "2026-11-12 18:51 UTC"}} -->
+<!-- release-journal-state {"dev": "79e3561b88a04e9f659dd82a73913de01fe8c927", "prod": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "prod_tag": "v1.3.0", "staging": "9a2f2514d59dd69f6c98a9ecb13cbd048df21c4f", "updated": {"dev": "2026-11-18 01:48 UTC", "prod": "2026-11-12 23:53 UTC", "staging": "2026-11-12 18:51 UTC"}} -->
 > Tenu à jour par la CI (`mairie360/CICD`, action `release/release-journal`) à chaque passage en dev, staging et prod. Ne pas modifier à la main : le fichier est réécrit au passage suivant.
 
 | Environnement | Version | Commit | Mis à jour |
 | --- | --- | --- | --- |
 | prod | v1.3.0 | `9a2f251` | 2026-11-12 23:53 UTC |
 | staging | — | `9a2f251` | 2026-11-12 18:51 UTC |
-| dev | — | `5aecd8c` | 2026-11-17 17:05 UTC |
+| dev | — | `79e3561` | 2026-11-18 01:48 UTC |
 
 ## Ajouté sur main depuis la dernière release prod (v1.3.0)
 
+- feat: MAIR-683 Link a group to a project (#248) ([#248](https://github.com/mairie360/Project_API/pull/248))
 - test: MAIR-534 Add the missing business negative cases of the APIs ([#246](https://github.com/mairie360/Project_API/pull/246))
 - ci: MAIR-1008 Nightly rehearsal of the promotion gates (#241) ([#241](https://github.com/mairie360/Project_API/pull/241))
 - feat: MAIR-998 Test stacks follow the moving upstream tag of the stage (#243) ([#243](https://github.com/mairie360/Project_API/pull/243))
@@ -23,6 +24,7 @@
 
 ## Différence dev → staging (en dev, pas encore en staging)
 
+- feat: MAIR-683 Link a group to a project (#248) ([#248](https://github.com/mairie360/Project_API/pull/248))
 - test: MAIR-534 Add the missing business negative cases of the APIs ([#246](https://github.com/mairie360/Project_API/pull/246))
 - ci: MAIR-1008 Nightly rehearsal of the promotion gates (#241) ([#241](https://github.com/mairie360/Project_API/pull/241))
 - feat: MAIR-998 Test stacks follow the moving upstream tag of the stage (#243) ([#243](https://github.com/mairie360/Project_API/pull/243))
@@ -44,6 +46,7 @@ _Rien._
 <!-- release-journal-history:start -->
 | Date | Environnement | Version | Commit | Run |
 | --- | --- | --- | --- | --- |
+| 2026-11-18 01:48 UTC | dev | — | `79e3561` | [run](https://github.com/mairie360/Project_API/actions/runs/44217900401) |
 | 2026-11-17 17:05 UTC | dev | — | `5aecd8c` | [run](https://github.com/mairie360/Project_API/actions/runs/44131763659) |
 | 2026-11-17 15:51 UTC | dev | — | `b0588a0` | [run](https://github.com/mairie360/Project_API/actions/runs/44117298529) |
 | 2026-11-17 01:14 UTC | dev | — | `2b34903` | [run](https://github.com/mairie360/Project_API/actions/runs/43990173013) |
