@@ -133,13 +133,14 @@ async fn set_project_group(
     summary = "Update a project",
     description = "Updates the name, the description, the status, the priority or the group of a \
                    project. \
-                   Partial update: a missing field is kept, and so is a `null` one except \
-                   `group_id` (see below). Restricted to the managers of the project.\n\n\
+                   Partial update: a missing or `null` field is kept, except `group_id`, which \
+                   cannot be `null` (see below). Restricted to the managers of the project.\n\n\
                    A `name` made of spaces only is refused in `400`, and so is the `Error` status \
                    or priority, which is only a fallback on read and cannot be assigned. The \
                    priority is stored as given (MAIR-558), `Urgent` as `High`; it does not follow \
                    the tasks.\n\n\
-                   `group_id` replaces the group linked to the project (`null` removes it): its \
+                   `group_id` replaces the group linked to the project; `null` is refused in \
+                   `400`, since every project keeps a group. The new group's \
                    current and future members see the project with the rights of a project \
                    member, the members of the former group lose it unless they are members of \
                    the project. The caller may link one of their own groups; Admin and Maire may \
@@ -159,7 +160,7 @@ async fn set_project_group(
         ),
         (
             status = 400,
-            description = "Malformed JSON body, `project_id` not an integer, `name` empty, `status` or `priority` not one of the enum values, `Error` status or priority, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs.",
+            description = "Malformed JSON body, `project_id` not an integer, `name` empty, `status` or `priority` not one of the enum values, `Error` status or priority, `group_id` set to `null`, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs.",
             body = String,
             content_type = "text/plain",
             example = json!("Invalid `name`: must be at most 255 characters")

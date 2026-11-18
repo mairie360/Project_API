@@ -119,11 +119,12 @@ async fn trigger_create_project(
     summary = "Create a project",
     description = "Creates a project the caller becomes responsible for. Restricted to the Admin, \
                    Maire and Responsable roles: an agent without one of them gets `403`.\n\n\
-                   Attaching a `group_id` gives every current and future member of that group, as \
+                   `group_id` is required (`400` without it): every project has a group. It \
+                   gives every current and future member of that group, as \
                    Core API defines it, access to the project right away, with the rights of a \
                    project member. The caller may link one of their own groups; Admin and Maire \
                    may link any group (`GET /api/v1/project-groups/` lists them). Any other id \
-                   answers `404` and creates nothing. Change or remove the group later with \
+                   answers `404` and creates nothing. Change the group later with \
                    `PATCH /api/v1/projects/{project_id}/`.\n\n\
                    `status` and `priority` are stored as given (MAIR-558): a project created \
                    `Todo` / `High` is read back `Todo` / `High`. Without them the project is \
@@ -143,7 +144,7 @@ async fn trigger_create_project(
         ),
         (
             status = 400,
-            description = "Malformed JSON body, missing `name`, `status` or `priority` not one of the enum values, `Error` as `status` or `priority`, `template_id` that matches no project template, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs. The body names the first invalid field, except for `Error` (`Bad request.`).",
+            description = "Malformed JSON body, missing `name` or `group_id`, `status` or `priority` not one of the enum values, `Error` as `status` or `priority`, `template_id` that matches no project template, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs. The body names the first invalid field, except for `Error` (`Bad request.`).",
             body = String,
             content_type = "text/plain",
             example = json!("Invalid `name`: must not contain control characters")
@@ -179,7 +180,7 @@ async fn trigger_create_project(
     ),
     request_body(
         content = CreateProjectView,
-        description = "Project name; description, group, status and priority are optional.",
+        description = "Project name and group; description, status, priority and template are optional.",
         example = json!({
             "name": "Renovation of the market square",
             "description": "2026 road works",

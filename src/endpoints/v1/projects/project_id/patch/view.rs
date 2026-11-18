@@ -3,7 +3,7 @@ use utoipa::ToSchema;
 use crate::endpoints::v1::projects::get::view::ProjectStatus;
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
 use crate::endpoints::validation::{
-    check_description, check_label, check_optional, Validate, ValidationError,
+    check_description, check_label, check_optional, check_required, Validate, ValidationError,
     MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
 };
 
@@ -25,10 +25,11 @@ pub struct UpdateProjectView {
     /// New priority. Absent or `null` to keep it; `Urgent` is stored `High`, `Error` is refused.
     #[serde(default)]
     pub priority: Option<TaskPriority>,
-    /// Group linked to the project: absent to keep it, `null` to remove it, an id to replace it.
-    /// One of the caller's groups, any group for Admin and Maire (`GET /api/v1/project-groups/`).
+    /// Group linked to the project: absent to keep it, an id to replace it. `null` is refused
+    /// (`400`): a project always keeps a group. One of the caller's groups, any group for Admin
+    /// and Maire (`GET /api/v1/project-groups/`).
     #[serde(default, deserialize_with = "present")]
-    #[schema(value_type = Option<u64>, nullable = true, example = 3)]
+    #[schema(value_type = Option<u64>, nullable = false, example = 3)]
     pub group_id: Option<Option<u64>>,
 }
 
@@ -46,8 +47,37 @@ impl Validate for UpdateProjectView {
         check_optional(self.name.as_deref(), |name| {
             check_label("name", name.trim(), MAX_TITLE_LENGTH)
         })?;
+        if let Some(group_id) = self.group_id {
+            check_required("group_id", group_id)?;
+        }
         check_optional(self.description.as_deref(), |description| {
             check_description("description", description, MAX_DESCRIPTION_LENGTH)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(body: serde_json::Value) -> UpdateProjectView {
+        serde_json::from_value(body).unwrap()
+    }
+
+    #[test]
+    fn mair_683_removing_the_group_is_refused_but_changing_or_keeping_it_is_not() {
+        assert_eq!(
+            parse(serde_json::json!({ "group_id": null }))
+                .validate()
+                .unwrap_err()
+                .to_string(),
+            "Invalid `group_id`: is required"
+        );
+        assert!(parse(serde_json::json!({ "group_id": 5 }))
+            .validate()
+            .is_ok());
+        assert!(parse(serde_json::json!({ "name": "Square" }))
+            .validate()
+            .is_ok());
     }
 }

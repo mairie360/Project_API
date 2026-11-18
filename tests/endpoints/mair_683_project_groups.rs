@@ -5,7 +5,7 @@
 
 use serde_json::{json, Value};
 
-use super::{get, json, patch, post, status, TestContext};
+use super::{get, json, patch, personal_group, post, post_as_is, status, TestContext};
 use crate::common::fixtures::create_group;
 use crate::init_app;
 
@@ -127,7 +127,7 @@ async fn mair_683_unknown_or_foreign_group_is_refused_and_nothing_is_created() {
 }
 
 #[actix_web::test]
-async fn mair_683_changing_or_removing_the_group_moves_the_visibility() {
+async fn mair_683_changing_the_group_moves_the_visibility_and_null_is_refused() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
     let manager = ctx.user("SwitchManager", Some("Responsable")).await;
@@ -188,14 +188,134 @@ async fn mair_683_changing_or_removing_the_group_moves_the_visibility() {
     assert_eq!(status(&app, get(&uri, roads)).await, 404);
     assert_eq!(status(&app, get(&uri, parks)).await, 200);
 
-    // `null` removes it.
+    // `null` is refused: a project keeps a group, and the other fields of the body are not saved.
     assert_eq!(
-        status(&app, patch(&uri, manager, json!({ "group_id": null }))).await,
+        status(
+            &app,
+            patch(
+                &uri,
+                manager,
+                json!({ "name": "Square 4", "group_id": null })
+            )
+        )
+        .await,
+        400
+    );
+    assert_eq!(status(&app, get(&uri, parks)).await, 200);
+    let detail = json(&app, get(&uri, manager)).await;
+    assert_eq!(detail["project"]["name"], "Square 2");
+    assert_eq!(detail["project"]["group"]["id"], parks_group);
+}
+
+#[actix_web::test]
+async fn mair_683_a_project_cannot_be_created_without_a_group() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let manager = ctx.user("NoGroupManager", Some("Responsable")).await;
+    let before = json(&app, get("/api/v1/projects/", manager)).await["total"].clone();
+
+    for body in [
+        json!({ "name": "Without group" }),
+        json!({ "name": "Null group", "group_id": null }),
+    ] {
+        let response = actix_web::test::call_service(
+            &app,
+            post_as_is("/api/v1/projects/", manager, body).to_request(),
+        )
+        .await;
+        assert_eq!(response.status().as_u16(), 400);
+        let text = actix_web::test::read_body(response).await;
+        assert_eq!(text, "Invalid `group_id`: is required");
+    }
+
+    let after = json(&app, get("/api/v1/projects/", manager)).await["total"].clone();
+    assert_eq!(before, after);
+}
+
+#[actix_web::test]
+async fn mair_683_projects_without_group_are_listed_for_admin_and_maire_only() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let admin = ctx.user("OrphanAdmin", Some("Admin")).await;
+    let maire = ctx.user("OrphanMaire", Some("Maire")).await;
+    let manager = ctx.user("OrphanManager", Some("Responsable")).await;
+    let agent = ctx.user("OrphanAgent", Some("User")).await;
+    let doomed = create_group(manager, &[manager]).await;
+
+    let create = |name: &str, group: u64| {
+        post(
+            "/api/v1/projects/",
+            manager,
+            json!({ "name": name, "group_id": group }),
+        )
+    };
+    let orphan = json(&app, create("Orphan", doomed)).await["project_id"]
+        .as_u64()
+        .unwrap();
+    let linked = json(&app, create("Linked", personal_group(manager))).await["project_id"]
+        .as_u64()
+        .unwrap();
+
+    // The group is deleted in Core API: the link goes with it and the project has no group.
+    delete_group(doomed).await;
+
+    for caller in [admin, maire] {
+        let list = json(
+            &app,
+            get("/api/v1/project-groups/projects-without-group/", caller),
+        )
+        .await;
+        let ids = project_ids(&list);
+        assert!(ids.contains(&orphan));
+        assert!(!ids.contains(&linked));
+        let row = list["projects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|project| project["id"] == orphan)
+            .unwrap();
+        assert_eq!(row["name"], "Orphan");
+        assert!(row["created_at"].is_string());
+    }
+    for caller in [manager, agent] {
+        assert_eq!(
+            status(
+                &app,
+                get("/api/v1/project-groups/projects-without-group/", caller)
+            )
+            .await,
+            403
+        );
+    }
+
+    // Its manager picks a new group: it leaves the list.
+    assert_eq!(
+        status(
+            &app,
+            patch(
+                &format!("/api/v1/projects/{orphan}/"),
+                manager,
+                json!({ "group_id": personal_group(manager) })
+            )
+        )
+        .await,
         204
     );
-    assert_eq!(status(&app, get(&uri, parks)).await, 404);
-    let detail = json(&app, get(&uri, manager)).await;
-    assert!(detail["project"]["group"].is_null());
+    let list = json(
+        &app,
+        get("/api/v1/project-groups/projects-without-group/", admin),
+    )
+    .await;
+    assert!(!project_ids(&list).contains(&orphan));
+}
+
+async fn delete_group(group: u64) {
+    use crate::common::fixtures::fixture;
+    crate::common::fixtures_db()
+        .await
+        .execute(fixture(format!("DELETE FROM groups WHERE id = {group}")))
+        .await
+        .unwrap();
 }
 
 async fn create_group_member(group: u64, user: u64) {

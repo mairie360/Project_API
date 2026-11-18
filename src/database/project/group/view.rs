@@ -120,3 +120,46 @@ impl ApiRequestDto for SetProjectGroupQueryView {
         crate::database::project::PROJECTS_READ_CACHES
     }
 }
+
+/// A project linked to no group, as read by [`ListProjectsWithoutGroupQueryView`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectWithoutGroupRow {
+    pub id: i32,
+    pub name: String,
+    /// Creation date (ISO 8601), `None` for a project created before the dates were stored.
+    pub created_at: Option<String>,
+}
+
+/// The projects linked to no group (created before the groups, or whose group was deleted in Core
+/// API), newest first. One row: a JSON array of [`ProjectWithoutGroupRow`], or JSON `null` when
+/// user `user_id` is neither Admin nor Maire.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ListProjectsWithoutGroupQueryView {
+    params: Vec<QueryParam>,
+}
+
+impl ListProjectsWithoutGroupQueryView {
+    pub fn new(user_id: u64) -> Self {
+        Self {
+            params: vec![QueryParam::I32(id_to_sql(user_id))],
+        }
+    }
+}
+
+impl ApiRequestDto for ListProjectsWithoutGroupQueryView {
+    fn query_sql(&self) -> &'static str {
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id \
+                    WHERE ur.user_id = $1 AND r.name IN ('Admin', 'Maire')) \
+            THEN COALESCE((SELECT jsonb_agg(jsonb_build_object('id', p.id, 'name', p.title, \
+                    'created_at', p.created_at) ORDER BY p.created_at DESC NULLS LAST, p.id DESC) \
+                FROM projects p \
+                WHERE NOT EXISTS (SELECT 1 FROM project_groups pg WHERE pg.project_id = p.id)), \
+                '[]'::jsonb) \
+            ELSE 'null'::jsonb \
+         END"
+    }
+
+    fn query_params(&self) -> &[QueryParam] {
+        &self.params
+    }
+}

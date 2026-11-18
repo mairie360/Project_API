@@ -212,7 +212,8 @@ async fn fixtures<B: MessageBody>(
 
 /// The request of one operation on the fixtures: path parameters, and the example body of the
 /// spec, made valid for the fixtures (no foreign ids).
-fn request(spec: &Value, name: &str, f: &Fixtures) -> TestRequest {
+/// The request of operation `name`; a project creation links the caller's personal group.
+fn request(spec: &Value, name: &str, f: &Fixtures, caller: Option<u64>) -> TestRequest {
     let (method, path) = name.split_once(' ').unwrap();
     let uri = path
         .replace("{project_id}", &f.project.to_string())
@@ -224,7 +225,10 @@ fn request(spec: &Value, name: &str, f: &Fixtures) -> TestRequest {
         ["application/json"]["example"]
         .clone();
     let body = match name {
-        "POST /api/v1/projects/" => Some(json!({ "name": "Projet de la matrice" })),
+        "POST /api/v1/projects/" => Some(json!({
+            "name": "Projet de la matrice",
+            "group_id": caller.map_or(1, super::personal_group),
+        })),
         "POST /api/v1/projects/{project_id}/tasks/" => {
             Some(json!({ "name": "Nouvelle tâche", "fields": [] }))
         }
@@ -266,6 +270,8 @@ async fn every_role_and_relation_gets_what_the_matrix_says() {
     create_group(people.owner, &[people.owner, people.group_responsable]).await;
     // Users of each role with no relation to the projects (the schema also gives every account
     // the Guest role).
+    // The seeded Admin was not created by `ctx.user`: give it its personal group too.
+    crate::common::fixtures::create_personal_group(ADMIN_ID).await;
     let mut callers: Vec<(String, u64)> = vec![("Admin".to_string(), ADMIN_ID)];
     for role in &ROLES[1..] {
         let id = ctx
@@ -283,7 +289,7 @@ async fn every_role_and_relation_gets_what_the_matrix_says() {
             continue;
         }
         let f = fixtures(&ctx, &app, &people).await;
-        let anonymous = status(&app, request(&spec, name, &f)).await;
+        let anonymous = status(&app, request(&spec, name, &f, None)).await;
         if anonymous != 401 {
             failures.push(format!(
                 "{name}: got {anonymous} without a session, expected 401"
@@ -328,7 +334,7 @@ async fn every_role_and_relation_gets_what_the_matrix_says() {
                 // The extra member is already in: add another fresh account instead.
                 f.extra = ctx.user("Joiner", Some("User")).await;
             }
-            let got = status(&app, as_user(request(&spec, name, &f), user)).await;
+            let got = status(&app, as_user(request(&spec, name, &f, Some(user)), user)).await;
             let refused = got == 401 || got == 403 || got == 404;
             if allowed && (refused || got >= 500) {
                 failures.push(format!(

@@ -140,9 +140,33 @@ impl TestContext {
         self.state.get_smart_db()
     }
 
+    /// Creates a user and their personal group: every project needs a group, so [`post`] links
+    /// the projects a test creates without `group_id` to the creator's personal group.
     pub async fn user(&self, name: &str, role: Option<&str>) -> u64 {
-        create_user(name, role).await
+        let user = create_user(name, role).await;
+        crate::common::fixtures::create_personal_group(user).await;
+        user
     }
+}
+
+/// Personal group of `user_id` (see [`TestContext::user`]).
+pub fn personal_group(user_id: u64) -> u64 {
+    crate::common::fixtures::personal_group_id(user_id)
+}
+
+/// Adds the creator's personal group to a project creation sent without `group_id`.
+fn with_default_group(uri: &str, user_id: u64, mut body: serde_json::Value) -> serde_json::Value {
+    if uri == "/api/v1/projects/" {
+        if let Some(fields) = body.as_object_mut() {
+            if !fields.contains_key("group_id") {
+                fields.insert(
+                    "group_id".into(),
+                    serde_json::json!(personal_group(user_id)),
+                );
+            }
+        }
+    }
+    body
 }
 
 /// Builds the app exactly like `main.rs` mounts `/api`.
@@ -217,7 +241,14 @@ pub fn delete(uri: &str, user_id: u64) -> TestRequest {
     as_user(TestRequest::delete().uri(uri), user_id)
 }
 
+/// `POST` as `user_id`. A project creation without `group_id` gets the creator's personal group;
+/// send the request with [`post_as_is`] to test a body without one.
 pub fn post(uri: &str, user_id: u64, body: serde_json::Value) -> TestRequest {
+    post_as_is(uri, user_id, with_default_group(uri, user_id, body))
+}
+
+/// `POST` as `user_id` with the body exactly as given.
+pub fn post_as_is(uri: &str, user_id: u64, body: serde_json::Value) -> TestRequest {
     as_user(TestRequest::post().uri(uri).set_json(body), user_id)
 }
 
