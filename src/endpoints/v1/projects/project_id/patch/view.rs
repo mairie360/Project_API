@@ -29,7 +29,7 @@ pub struct UpdateProjectView {
     /// (`400`): a project always keeps a group. One of the caller's groups, any group for Admin
     /// and Maire (`GET /api/v1/project-groups/`).
     #[serde(default, deserialize_with = "present")]
-    #[schema(value_type = Option<u64>, example = 3)]
+    #[schema(value_type = Option<u64>, nullable = false, example = 3)]
     pub group_id: Option<Option<u64>>,
 }
 

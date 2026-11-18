@@ -74,6 +74,9 @@ pub async fn create_user(first_name: &str, role: Option<&str>) -> u64 {
 
 /// Group whose only member is `member`, owned by a shared fixture user: a group owner cannot be
 /// archived (`groups.owner_id` is `ON DELETE RESTRICT`), and the tests archive their users.
+///
+/// Its id is [`personal_group_id`] of `member`: each test has its own database, where user ids
+/// repeat, so the id is derived from the user instead of being remembered.
 pub async fn create_personal_group(member: u64) -> u64 {
     let db = fixtures_db().await;
     db.execute(fixture_sql(format!(
@@ -85,9 +88,10 @@ pub async fn create_personal_group(member: u64) -> u64 {
     .unwrap();
     let id: i32 = db
         .fetch_scalar(&fixture_sql(format!(
-            "INSERT INTO groups (owner_id, name) \
-             SELECT id, 'Personnel {}' FROM users WHERE email = 'groups.owner@project-api.test' \
+            "INSERT INTO groups (id, owner_id, name) \
+             SELECT {}, id, 'Personnel {}' FROM users WHERE email = 'groups.owner@project-api.test' \
              RETURNING id",
+            personal_group_id(member),
             unique_suffix()
         )))
         .await
@@ -98,6 +102,12 @@ pub async fn create_personal_group(member: u64) -> u64 {
     .await
     .unwrap();
     id as u64
+}
+
+/// Id of the personal group of user `user_id` (see [`create_personal_group`]): far above the ids
+/// the `groups` sequence hands out during a test.
+pub fn personal_group_id(user_id: u64) -> u64 {
+    1_000_000_000 + user_id
 }
 
 /// Archives a user: its tokens stay well signed but no longer designate an active account.

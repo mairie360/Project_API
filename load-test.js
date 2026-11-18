@@ -305,12 +305,15 @@ const readHandlers = {
       'list project groups gives the Admin every group': (r) => caller !== 0 || r.json('groups').length > 0,
     });
   },
-  // Projects without a group, for the Admin and Maire only: a Responsable gets 403.
+  // Projects without a group, for the Admin and Maire only: a Responsable gets 403, which must not count as a
+  // failed request. The seeded projects have no group, so the Admin's list is never empty.
   'GET /api/v1/project-groups/projects-without-group/': ({ request }) => {
     const admin = randomInt(2) === 0;
-    const res = admin ? request() : request({ headers: bearer(randomManager()) });
+    const res = admin
+      ? request()
+      : request({ headers: bearer(randomManager()), params: { responseCallback: http.expectedStatuses(403) } });
     check(res, {
-      'projects without group 200 for the Admin': (r) => !admin || (r.status === 200 && Array.isArray(r.json('projects'))),
+      'projects without group 200 for the Admin': (r) => !admin || (r.status === 200 && r.json('projects').length > 0),
       'projects without group 403 for a Responsable': (r) => admin || r.status === 403,
     });
   },

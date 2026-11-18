@@ -144,22 +144,14 @@ impl TestContext {
     /// the projects a test creates without `group_id` to the creator's personal group.
     pub async fn user(&self, name: &str, role: Option<&str>) -> u64 {
         let user = create_user(name, role).await;
-        let group = crate::common::fixtures::create_personal_group(user).await;
-        personal_groups().lock().unwrap().insert(user, group);
+        crate::common::fixtures::create_personal_group(user).await;
         user
     }
 }
 
-/// Personal group of each user created by [`TestContext::user`].
-fn personal_groups() -> &'static std::sync::Mutex<std::collections::HashMap<u64, u64>> {
-    static GROUPS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u64, u64>>> =
-        std::sync::OnceLock::new();
-    GROUPS.get_or_init(Default::default)
-}
-
 /// Personal group of `user_id` (see [`TestContext::user`]).
 pub fn personal_group(user_id: u64) -> u64 {
-    personal_groups().lock().unwrap()[&user_id]
+    crate::common::fixtures::personal_group_id(user_id)
 }
 
 /// Adds the creator's personal group to a project creation sent without `group_id`.
@@ -167,9 +159,10 @@ fn with_default_group(uri: &str, user_id: u64, mut body: serde_json::Value) -> s
     if uri == "/api/v1/projects/" {
         if let Some(fields) = body.as_object_mut() {
             if !fields.contains_key("group_id") {
-                if let Some(group) = personal_groups().lock().unwrap().get(&user_id) {
-                    fields.insert("group_id".into(), serde_json::json!(group));
-                }
+                fields.insert(
+                    "group_id".into(),
+                    serde_json::json!(personal_group(user_id)),
+                );
             }
         }
     }

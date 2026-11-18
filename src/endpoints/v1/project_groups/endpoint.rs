@@ -142,7 +142,8 @@ impl ResponseError for GetProjectsWithoutGroupError {
     get,
     path = "/projects-without-group/",
     summary = "List the projects linked to no group",
-    description = "Every project must have a group, but a project created before the groups, or \
+    description = "Every project must have a group, but a project created before groups were \
+                   required, or \
                    whose group was deleted in Core API, has none until a manager picks one with \
                    `PATCH /api/v1/projects/{project_id}/`. Lists those projects, newest first, \
                    for the administration page. Restricted to the Admin and Maire roles (`403` \
