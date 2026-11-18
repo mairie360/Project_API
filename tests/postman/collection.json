@@ -1361,7 +1361,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Projet interdit\",\n  \"description\": \"Un agent sans rôle gestionnaire\",\n  \"group_id\": 3\n}",
+              "raw": "{\n  \"name\": \"Projet interdit\",\n  \"description\": \"Un agent sans rôle gestionnaire\",\n  \"group_id\": 4\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1414,7 +1414,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"description\": \"Sans nom\",\n  \"group_id\": 3\n}",
+              "raw": "{\n  \"description\": \"Sans nom\",\n  \"group_id\": 4\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1467,7 +1467,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Réfection de la place du marché (newman)\",\n  \"description\": \"Travaux de voirie 2026\",\n  \"status\": \"Todo\",\n  \"priority\": \"High\",\n  \"group_id\": 3\n}",
+              "raw": "{\n  \"name\": \"Réfection de la place du marché (newman)\",\n  \"description\": \"Travaux de voirie 2026\",\n  \"status\": \"Todo\",\n  \"priority\": \"High\",\n  \"group_id\": 4\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2187,7 +2187,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Rénovation de l'école (newman)\",\n  \"template_id\": {{template_id}},\n  \"group_id\": 3\n}"
+              "raw": "{\n  \"name\": \"Rénovation de l'école (newman)\",\n  \"template_id\": {{template_id}},\n  \"group_id\": 4\n}"
             }
           }
         },

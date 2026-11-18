@@ -14,7 +14,7 @@ steps:
       method: POST
       path: /api/v1/projects/
       headers: {Authorization: "Bearer {{env.ADMIN_JWT}}"}
-      json: {name: "Visit {{marker.first_name}} {{marker.last_name}}", description: "Contact {{marker.email}}, {{marker.phone}}", group_id: 3}
+      json: {name: "Visit {{marker.first_name}} {{marker.last_name}}", description: "Contact {{marker.email}}, {{marker.phone}}", group_id: 4}
     capture:
       project_id: body.project_id
   - name: create a project without a name (deliberate error)

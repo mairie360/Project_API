@@ -134,8 +134,8 @@ function fixture(method, path, body) {
   return res;
 }
 
-// Group 3 of init-test.sql: every project needs a group, and the Admin may link any.
-const GROUP_ID = 3;
+// Group 4 of init-test.sql, the Admin alone: every project needs a group.
+const GROUP_ID = 4;
 
 function createProject(name) {
   return fixture('POST', '/api/v1/projects/', { name, description: 'k6 fixture', group_id: GROUP_ID }).json('project_id');

@@ -49,6 +49,15 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO group_members (group_id, user_id) VALUES (3, 1), (3, 2)
 ON CONFLICT DO NOTHING;
 
+-- Group 4: the administrator alone. Every project needs a group: the other newman folders, k6 and
+-- the GDPR journey link their projects to it, so that the agent gets no access through them.
+INSERT INTO groups (id, owner_id, name, description)
+VALUES (4, 1, 'Administration', 'Administrateur seul')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO group_members (group_id, user_id) VALUES (4, 1)
+ON CONFLICT DO NOTHING;
+
 -- Explicit ids do not advance the SERIAL sequence: move it past the fixtures so users created
 -- later (Core_API, other fixtures) do not collide with them.
 SELECT setval(pg_get_serial_sequence('users', 'id'), GREATEST((SELECT MAX(id) FROM users), 1));
