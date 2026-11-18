@@ -75,3 +75,22 @@ pub async fn get_project_groups(
         groups: rows.iter().map(Into::into).collect(),
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mair_683_a_database_error_answers_500_without_its_detail() {
+        let error = GetProjectGroupsError::DatabaseError;
+        assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            error.to_string(),
+            "An error occurred while accessing the database."
+        );
+        assert_eq!(
+            error.error_response().status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+}
