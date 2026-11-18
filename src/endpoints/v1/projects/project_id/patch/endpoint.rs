@@ -133,8 +133,8 @@ async fn set_project_group(
     summary = "Update a project",
     description = "Updates the name, the description, the status, the priority or the group of a \
                    project. \
-                   Partial update: a missing or `null` field is kept. Restricted to the managers \
-                   of the project.\n\n\
+                   Partial update: a missing field is kept, and so is a `null` one except \
+                   `group_id` (see below). Restricted to the managers of the project.\n\n\
                    A `name` made of spaces only is refused in `400`, and so is the `Error` status \
                    or priority, which is only a fallback on read and cannot be assigned. The \
                    priority is stored as given (MAIR-558), `Urgent` as `High`; it does not follow \
