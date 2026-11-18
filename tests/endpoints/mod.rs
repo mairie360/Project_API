@@ -144,7 +144,7 @@ impl TestContext {
     /// the projects a test creates without `group_id` to the creator's personal group.
     pub async fn user(&self, name: &str, role: Option<&str>) -> u64 {
         let user = create_user(name, role).await;
-        let group = crate::common::fixtures::create_group(user, &[user]).await;
+        let group = crate::common::fixtures::create_personal_group(user).await;
         personal_groups().lock().unwrap().insert(user, group);
         user
     }

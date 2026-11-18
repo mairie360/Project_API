@@ -72,6 +72,34 @@ pub async fn create_user(first_name: &str, role: Option<&str>) -> u64 {
     id as u64
 }
 
+/// Group whose only member is `member`, owned by a shared fixture user: a group owner cannot be
+/// archived (`groups.owner_id` is `ON DELETE RESTRICT`), and the tests archive their users.
+pub async fn create_personal_group(member: u64) -> u64 {
+    let db = fixtures_db().await;
+    db.execute(fixture_sql(format!(
+        "INSERT INTO users (first_name, last_name, email, password) \
+         VALUES ('Groups', 'Owner', 'groups.owner@project-api.test', '{FIXTURE_PASSWORD_HASH}') \
+         ON CONFLICT DO NOTHING"
+    )))
+    .await
+    .unwrap();
+    let id: i32 = db
+        .fetch_scalar(&fixture_sql(format!(
+            "INSERT INTO groups (owner_id, name) \
+             SELECT id, 'Personnel {}' FROM users WHERE email = 'groups.owner@project-api.test' \
+             RETURNING id",
+            unique_suffix()
+        )))
+        .await
+        .unwrap();
+    db.execute(fixture_sql(format!(
+        "INSERT INTO group_members (group_id, user_id) VALUES ({id}, {member})"
+    )))
+    .await
+    .unwrap();
+    id as u64
+}
+
 /// Archives a user: its tokens stay well signed but no longer designate an active account.
 pub async fn archive_user(user_id: u64) {
     let db = fixtures_db().await;

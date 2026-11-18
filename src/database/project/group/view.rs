@@ -131,8 +131,8 @@ pub struct ProjectWithoutGroupRow {
 }
 
 /// The projects linked to no group (created before the groups, or whose group was deleted in Core
-/// API), newest first. One row: a JSON array of [`ProjectWithoutGroupRow`], or `NULL` when user
-/// `user_id` is neither Admin nor Maire.
+/// API), newest first. One row: a JSON array of [`ProjectWithoutGroupRow`], or JSON `null` when
+/// user `user_id` is neither Admin nor Maire.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ListProjectsWithoutGroupQueryView {
     params: Vec<QueryParam>,
@@ -155,6 +155,7 @@ impl ApiRequestDto for ListProjectsWithoutGroupQueryView {
                 FROM projects p \
                 WHERE NOT EXISTS (SELECT 1 FROM project_groups pg WHERE pg.project_id = p.id)), \
                 '[]'::jsonb) \
+            ELSE 'null'::jsonb \
          END"
     }
 
