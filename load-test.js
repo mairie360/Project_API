@@ -293,6 +293,15 @@ const readHandlers = {
           && Date.parse(task.due_date) <= Date.parse(dueBefore) && task.project_name),
     });
   },
+  // Groups a project can be linked to: every group for the Admin, their own for a Responsable or an agent.
+  'GET /api/v1/project-groups/': ({ request }) => {
+    const caller = randomInt(3);
+    const res = caller === 0 ? request() : request({ headers: bearer(caller === 1 ? randomManager() : randomAgent()) });
+    check(res, {
+      'list project groups 200': (r) => r.status === 200 && Array.isArray(r.json('groups')),
+      'list project groups gives the Admin every group': (r) => caller !== 0 || r.json('groups').length > 0,
+    });
+  },
   // Project templates (MAIR-566), read by anyone signed in: the Admin, a Responsable or an agent.
   'GET /api/v1/project-templates/': ({ request }) => {
     const caller = randomInt(3);

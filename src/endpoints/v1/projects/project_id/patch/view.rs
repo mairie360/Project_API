@@ -25,6 +25,20 @@ pub struct UpdateProjectView {
     /// New priority. Absent or `null` to keep it; `Urgent` is stored `High`, `Error` is refused.
     #[serde(default)]
     pub priority: Option<TaskPriority>,
+    /// Group linked to the project: absent to keep it, `null` to remove it, an id to replace it.
+    /// One of the caller's groups, any group for Admin and Maire (`GET /api/v1/project-groups/`).
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<u64>, nullable = true, example = 3)]
+    pub group_id: Option<Option<u64>>,
+}
+
+/// Tells a field given `null` (`Some(None)`) from an absent one (`None`, through `default`).
+fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    serde::Deserialize::deserialize(deserializer).map(Some)
 }
 
 impl Validate for UpdateProjectView {

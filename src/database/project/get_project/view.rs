@@ -2,7 +2,8 @@ use mairie360_api_lib::database::db_interface::{
     id_from_sql, id_to_sql, ApiRequestDto, QueryParam,
 };
 
-/// The project `project_id` if the user can see it (no row otherwise, or if it does not exist).
+/// The project `project_id` with its linked group if the user can see it (no row otherwise, or if
+/// it does not exist).
 /// The rows are `get_projects::view::ProjectView`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GetVisibleProjectQueryView {
@@ -32,7 +33,10 @@ impl ApiRequestDto for GetVisibleProjectQueryView {
     fn query_sql(&self) -> &'static str {
         concat!(
             "SELECT to_jsonb(t) FROM ( \
-                SELECT p.id, p.title, p.description, p.status, p.priority \
+                SELECT p.id, p.title, p.description, p.status, p.priority, \
+                    (SELECT jsonb_build_object('id', g.id, 'name', g.name) \
+                     FROM project_groups pg JOIN groups g ON g.id = pg.group_id \
+                     WHERE pg.project_id = p.id ORDER BY pg.linked_at, g.id LIMIT 1) AS \"group\" \
                 FROM projects p \
                 WHERE p.id = $2 AND ",
             crate::project_visible_to_user_sql!(),

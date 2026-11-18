@@ -229,6 +229,10 @@ fn request(spec: &Value, name: &str, f: &Fixtures) -> TestRequest {
             Some(json!({ "name": "Nouvelle tâche", "fields": [] }))
         }
         "POST /api/v1/projects/{project_id}/users/" => Some(json!({ "user_id": f.extra })),
+        // The example links group 3, which the callers of the matrix may not link.
+        "PATCH /api/v1/projects/{project_id}/" => {
+            Some(json!({ "status": "Review", "priority": "High" }))
+        }
         _ if example.is_null() => None,
         _ => Some(example),
     };

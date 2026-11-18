@@ -38,13 +38,18 @@ fn create_project_view_accessors() {
     assert_eq!(view.owner_id(), 42);
     // Status and priority (MAIR-558), empty for the table defaults; no template (MAIR-566), the
     // default one.
-    assert_eq!(view.query_params().len(), 6);
+    assert_eq!(view.query_params().len(), 7);
     assert_eq!(view.query_params()[3].as_text(), "");
     assert_eq!(view.query_params()[4].as_text(), "");
     assert_eq!(view.query_params()[5].as_option_i32(), None);
     let view = view.with_template(Some(4));
     assert_eq!(view.query_params()[5].as_option_i32(), Some(4));
     assert!(view.query_sql().contains("INSERT INTO projects"));
+    // The linked group goes with the creation, in the same statement.
+    assert_eq!(view.query_params()[6].as_option_i32(), None);
+    let view = view.with_group(Some(3));
+    assert_eq!(view.query_params()[6].as_option_i32(), Some(3));
+    assert!(view.query_sql().contains("INSERT INTO project_groups"));
 
     let view = view
         .with_status(ProjectStatus::Todo)
@@ -541,6 +546,12 @@ fn writes_shown_by_the_projects_list_invalidate_its_read_cache() {
         (
             "update project",
             caches(UpdateProjectQueryView::new(1, Some("Titre"), None, None)),
+        ),
+        (
+            "set project group",
+            caches(
+                project_api::database::project::group::view::SetProjectGroupQueryView::new(1, None),
+            ),
         ),
         (
             "close project",

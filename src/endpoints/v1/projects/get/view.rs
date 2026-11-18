@@ -196,6 +196,28 @@ pub struct ProjetView {
     /// Priority chosen at the creation of the project or by a PATCH; `Medium` when none was
     /// given. Never `Urgent`: an `Urgent` priority is stored `High` (MAIR-558).
     pub priority: TaskPriority,
+    /// Group linked to the project, whose members all see it; `null` when none is linked.
+    pub group: Option<ProjectGroupView>,
+}
+
+/// A Core API group, as linked to a project or offered by `GET /api/v1/project-groups/`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct ProjectGroupView {
+    /// Id of the group, to send as `group_id` when creating or updating a project.
+    #[schema(example = 3)]
+    pub id: u64,
+    /// Name of the group.
+    #[schema(example = "Roads")]
+    pub name: String,
+}
+
+impl From<&crate::database::project::group::view::GroupRow> for ProjectGroupView {
+    fn from(row: &crate::database::project::group::view::GroupRow) -> Self {
+        Self {
+            id: id_from_sql(row.id),
+            name: row.name.clone(),
+        }
+    }
 }
 
 impl From<ProjectView> for ProjetView {
@@ -206,6 +228,7 @@ impl From<ProjectView> for ProjetView {
             description: value.description().unwrap_or_default().to_string(),
             status: value.status().to_string().into(),
             priority: value.priority().to_string().into(),
+            group: value.group().map(Into::into),
         }
     }
 }

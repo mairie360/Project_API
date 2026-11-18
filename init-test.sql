@@ -40,8 +40,18 @@ INSERT INTO tasks (id, project_id, title, status, priority, due_date, assigned_t
 VALUES (87, 12, 'Consulter les riverains', 'in_progress', 'high', '2026-10-15', 42)
 ON CONFLICT (id) DO NOTHING;
 
+-- Group 3 is the `group_id` example of the spec: ZAP links projects to it. Agent 2 is a member, so
+-- the newman journey checks that a project linked to the group becomes visible to them.
+INSERT INTO groups (id, owner_id, name, description)
+VALUES (3, 1, 'Voirie', 'Agents de la voirie')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO group_members (group_id, user_id) VALUES (3, 1), (3, 2)
+ON CONFLICT DO NOTHING;
+
 -- Explicit ids do not advance the SERIAL sequence: move it past the fixtures so users created
 -- later (Core_API, other fixtures) do not collide with them.
 SELECT setval(pg_get_serial_sequence('users', 'id'), GREATEST((SELECT MAX(id) FROM users), 1));
 SELECT setval(pg_get_serial_sequence('projects', 'id'), GREATEST((SELECT MAX(id) FROM projects), 1));
 SELECT setval(pg_get_serial_sequence('tasks', 'id'), GREATEST((SELECT MAX(id) FROM tasks), 1));
+SELECT setval(pg_get_serial_sequence('groups', 'id'), GREATEST((SELECT MAX(id) FROM groups), 1));

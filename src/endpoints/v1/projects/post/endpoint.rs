@@ -4,7 +4,8 @@ use mairie360_api_lib::database::db_interface::id_from_sql;
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
-use crate::endpoints::db_error::{classify_db_error, DbFailure};
+use crate::database::project::group::view::LinkableGroupQueryView;
+use crate::endpoints::db_error::{classify_db_error, log_db_error, DbFailure};
 
 use crate::database::project::create::view::CreateProjectQueryView;
 use crate::endpoints::v1::projects::access::{require_manager_role, AccessDenied};
@@ -18,6 +19,8 @@ pub enum CreateProjectError {
     BadRequest,
     NotFound,
     UnknownTemplate,
+    /// `group_id` names no group, or a group the caller may not link.
+    UnknownGroup,
     DatabaseError,
 }
 
@@ -30,6 +33,7 @@ impl std::fmt::Display for CreateProjectError {
             CreateProjectError::UnknownTemplate => {
                 write!(f, "`template_id` does not match any project template.")
             }
+            CreateProjectError::UnknownGroup => write!(f, "Unknown group."),
             CreateProjectError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
@@ -42,7 +46,9 @@ impl ResponseError for CreateProjectError {
         match self {
             CreateProjectError::Forbidden => StatusCode::FORBIDDEN,
             CreateProjectError::BadRequest => StatusCode::BAD_REQUEST,
-            CreateProjectError::NotFound => StatusCode::NOT_FOUND,
+            CreateProjectError::NotFound | CreateProjectError::UnknownGroup => {
+                StatusCode::NOT_FOUND
+            }
             CreateProjectError::UnknownTemplate => StatusCode::BAD_REQUEST,
             CreateProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -50,6 +56,29 @@ impl ResponseError for CreateProjectError {
 
     fn error_response(&self) -> HttpResponse {
         HttpResponse::build(self.status_code()).body(self.to_string())
+    }
+}
+
+/// Refuses a group that does not exist or that the caller may not link (not one of their groups,
+/// unless they are Admin or Maire) with `404`, so that the existence of other groups is not
+/// revealed.
+async fn require_linkable_group(
+    state: &web::Data<AppState>,
+    user_id: u64,
+    group_id: u64,
+) -> Result<(), CreateProjectError> {
+    let linkable: bool = state
+        .get_smart_db()
+        .fetch_scalar(&LinkableGroupQueryView::new(user_id, group_id))
+        .await
+        .map_err(|e| {
+            log_db_error("projects/post", &e);
+            CreateProjectError::DatabaseError
+        })?;
+    if linkable {
+        Ok(())
+    } else {
+        Err(CreateProjectError::UnknownGroup)
     }
 }
 
@@ -66,7 +95,12 @@ async fn trigger_create_project(
         query_view = query_view
             .with_priority(stored_priority(priority).ok_or(CreateProjectError::BadRequest)?);
     }
-    let view = query_view.with_template(view.template_id());
+    if let Some(group_id) = view.group_id() {
+        require_linkable_group(&state, user_id, group_id).await?;
+    }
+    let view = query_view
+        .with_template(view.template_id())
+        .with_group(view.group_id());
     let result: i32 = state
         .get_smart_db()
         .fetch_scalar::<i32, _>(&view)
@@ -85,8 +119,12 @@ async fn trigger_create_project(
     summary = "Create a project",
     description = "Creates a project the caller becomes responsible for. Restricted to the Admin, \
                    Maire and Responsable roles: an agent without one of them gets `403`.\n\n\
-                   Attaching a `group_id` gives every member of that group, as Core API defines \
-                   it, access to the project right away.\n\n\
+                   Attaching a `group_id` gives every current and future member of that group, as \
+                   Core API defines it, access to the project right away, with the rights of a \
+                   project member. The caller may link one of their own groups; Admin and Maire \
+                   may link any group (`GET /api/v1/project-groups/` lists them). Any other id \
+                   answers `404` and creates nothing. Change or remove the group later with \
+                   `PATCH /api/v1/projects/{project_id}/`.\n\n\
                    `status` and `priority` are stored as given (MAIR-558): a project created \
                    `Todo` / `High` is read back `Todo` / `High`. Without them the project is \
                    `Active` / `Medium`. `Urgent` is stored `High`; `Error` is refused in `400` for \
@@ -123,6 +161,13 @@ async fn trigger_create_project(
             body = String,
             content_type = "text/plain",
             example = json!("Forbidden.")
+        ),
+        (
+            status = 404,
+            description = "`group_id` names no group, or a group the caller may not link (not one of their groups, unless they are Admin or Maire). Nothing is created.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Unknown group.")
         ),
         (
             status = 500,

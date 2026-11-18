@@ -21,7 +21,8 @@ pub struct CreateProjectView {
     /// Description of the project. Optional.
     #[schema(max_length = 5000, example = "2026 road works")]
     description: Option<String>,
-    /// Core API group whose members all get access to the project. Optional.
+    /// Core API group whose current and future members all get access to the project. Optional.
+    /// One of the caller's groups, any group for Admin and Maire (`GET /api/v1/project-groups/`).
     #[schema(example = 3)]
     group_id: Option<u64>,
     /// Initial status. Absent or `null` for `Active`; `Error` is refused (`400`).

@@ -35,6 +35,10 @@ Creating a project is reserved to the Admin, Maire and Responsable roles.
 Project templates (`/api/v1/project-templates/`, MAIR-566) are read by any signed-in user and \
 managed by the Admin and Responsable roles.
 
+A project linked to a group (`group_id`) is visible to every current and future member of that \
+group, with the rights of a project member. `/api/v1/project-groups/` lists the groups the caller \
+may link: their own groups, every group for the Admin and Maire roles.
+
 A project the caller cannot see is treated as **non-existent**: the answer is `404`, not \
 `403`, so that its existence is not revealed. `403` only shows up on a project the caller can \
 see but not change.
