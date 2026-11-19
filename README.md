@@ -16,7 +16,7 @@ There is no hand-written endpoint list: the OpenAPI document is generated from t
 - Probes, outside `/api`: `GET /health` (liveness) and `GET /ready` (readiness: Postgres and Redis).
 - Every route under `/api` requires `Authorization: Bearer <session JWT>`.
 
-No rate limiting in this API (the ingress / BFF layer does it).
+Every route under `/api` is rate limited per user by `mairie360_api_lib` (`RATE_LIMIT_PER_SECOND`, default 20, `0` disables it; `RATE_LIMIT_BURST`, default 50; `RATE_LIMIT_TRUST_FORWARDED` for anonymous callers behind a proxy). The counters are kept per instance of the API. Over the limit: `429` with `Retry-After`.
 
 ## Environment variables
 

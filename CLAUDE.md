@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `project_api` is one microservice in the **mairie360** suite: an Actix-web REST API (port `3001`) that manages projects, their tasks (and task fields) and their user membership. It was scaffolded from a generic "Rust API template" (see `README.md`), so config files still carry `#change api name` / `#change port` placeholders.
 
-Shared infrastructure (DB, Redis, cache-aside, JWT auth, env helpers, test containers) lives in the external crate **`mairie360_api_lib`** (pinned to `4.4.0`) — read its source under `~/.cargo/registry/src/*/mairie360_api_lib-<version>/src/` when an import is unclear. `project_api` has **no direct `sqlx` dependency**; all SQL goes through the library.
+Shared infrastructure (DB, Redis, cache-aside, JWT auth, env helpers, test containers) lives in the external crate **`mairie360_api_lib`** (pinned to `4.5.0`) — read its source under `~/.cargo/registry/src/*/mairie360_api_lib-<version>/src/` when an import is unclear. `project_api` has **no direct `sqlx` dependency**; all SQL goes through the library.
 
-## Data access (`mairie360_api_lib` 4.4.0)
+## Data access (`mairie360_api_lib` 4.5.0)
 
 `AppState` (`mairie360_api_lib::state::AppState`, built once in `main.rs` via `AppState::new(redis_url, pg_url)`) owns a `SmartDatabase` (Postgres + Redis cache-aside) reachable from handlers with `state.get_smart_db()`.
 
@@ -61,7 +61,7 @@ without either variable, with a short or well-known `JWT_SECRET`, or with its co
   To call it, sign a token with the matching private key (in a subshell, so the keys do not stay exported):
 
   ```bash
-  (export JWT_PRIVATE_KEY="$(openssl pkey -inform DER -in ~/.cargo/registry/src/*/mairie360_api_lib-4.4.0/src/test_setup/fixtures/session_test_key.der)"
+  (export JWT_PRIVATE_KEY="$(openssl pkey -inform DER -in ~/.cargo/registry/src/*/mairie360_api_lib-4.5.0/src/test_setup/fixtures/session_test_key.der)"
    export JWT_PUBLIC_KEY="$(printf '%s\n' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
    source ./test_secrets.sh && sign_jwt 1 admin 3600)
   ```
@@ -292,8 +292,7 @@ List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/
 `GET …/users/` — MAIR-425; the members embedded in `GET /projects/{id}/` are the first 100 + `users_total`)
 take `limit` (default 100, clamped to 1–500) / `offset` (`endpoints::pagination::PageParams`) and return a
 total; their query views select `paged_rows_sql!` over rows numbered `rn` and are read with
-`fetch_one::<PagedRows<T>, _>`. Rate limiting is not done here (same rule as `API_template`): every call comes
-from a BFF, so it belongs to the ingress / BFF layer. Database errors are logged with `endpoints::db_error::log_db_error` before
+`fetch_one::<PagedRows<T>, _>`. Every `/api` call is limited per user by the lib's `rate_limit_middleware` (wrapped before `JwtMiddleware` in `main.rs`, so the token is checked first): `RATE_LIMIT_PER_SECOND` (default 20, `0` disables it), `RATE_LIMIT_BURST` (default 50), `429` with `Retry-After`; the counters are per pod. The k6 and ZAP stacks disable it. `RateLimitAddon` (`swagger.rs`) documents the `429` on every secured operation. Database errors are logged with `endpoints::db_error::log_db_error` before
 answering `500` (`tracing`, level from `RUST_LOG`, default `info`); a handler that turns some of them into a
 client status maps them with `db_error::classify_db_error` (`Conflict` / `InvalidReference` / `NotFound` logged at `info`,
 `Internal` at `error`) instead of matching `DbError` by hand (MAIR-421). A path segment that is not a valid id

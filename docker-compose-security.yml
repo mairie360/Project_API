@@ -123,6 +123,8 @@ services:
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?JWT_PUBLIC_KEY must be set, run the matching *_test.sh script}
       # Swagger UI + /api-docs/openapi.json (off by default, so off in production).
       API_DOCS_ENABLED: "true"
+      # The load (k6) and the scan (ZAP) flood the API with a few users: no per-user quota.
+      RATE_LIMIT_PER_SECOND: "0"
     depends_on:
       liquibase:
         condition: service_completed_successfully

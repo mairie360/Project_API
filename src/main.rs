@@ -7,6 +7,7 @@
     clippy::cast_sign_loss
 )]
 
+use actix_web::middleware::from_fn;
 use actix_web::{web, App, HttpServer};
 
 use project_api::database::pg_url::build_pg_url;
@@ -16,7 +17,7 @@ use project_api::request_log::request_logger;
 
 use mairie360_api_lib::env_manager::{get_critical_env_var, get_env_var};
 use mairie360_api_lib::logging::telemetry::{init_telemetry, TracingLogger};
-use mairie360_api_lib::security::JwtMiddleware;
+use mairie360_api_lib::security::{rate_limit_middleware, JwtMiddleware, RateLimiter};
 use mairie360_api_lib::state::AppState;
 
 use utoipa::OpenApi;
@@ -47,9 +48,13 @@ async fn main() -> std::io::Result<()> {
     let docs_enabled = api_docs_enabled(get_env_var(API_DOCS_ENABLED).as_deref());
     tracing::info!(docs_enabled, "Swagger UI and OpenAPI document served");
 
+    // One limiter for every worker (counters are per pod). `RATE_LIMIT_PER_SECOND=0` disables it.
+    let rate_limiter = RateLimiter::from_env();
+
     let server = HttpServer::new(move || {
         App::new()
             .app_data(data.clone())
+            .app_data(rate_limiter.clone())
             // Method and path only, never the query string (MAIR-290, see `request_log`).
             .wrap(request_logger())
             // One span per request (MAIR-503), including those refused by `JwtMiddleware`; it
@@ -71,7 +76,14 @@ async fn main() -> std::io::Result<()> {
             .service(health::health)
             .service(health::ready)
             // 3. Endpoints protected by the JWT
-            .service(web::scope("/api").wrap(JwtMiddleware).configure(config))
+            //    `wrap` order: the last one runs first, so the token is checked before the budget
+            //    and every user gets their own.
+            .service(
+                web::scope("/api")
+                    .wrap(from_fn(rate_limit_middleware))
+                    .wrap(JwtMiddleware)
+                    .configure(config),
+            )
     })
     .bind(bind_address)?;
 
