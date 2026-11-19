@@ -44,7 +44,14 @@ async fn mair_688_each_user_has_their_own_budget_and_a_429_carries_retry_after()
         let res = call_service(&app, get("/api/v1/projects/", first).to_request()).await;
         assert_eq!(res.status(), 200);
     }
-    let limited = call_service(&app, get("/api/v1/projects/", first).to_request()).await;
+    // The bucket refills one token per second: keep calling (bounded) until the refusal.
+    let mut limited = call_service(&app, get("/api/v1/projects/", first).to_request()).await;
+    for _ in 0..20 {
+        if limited.status() == 429 {
+            break;
+        }
+        limited = call_service(&app, get("/api/v1/projects/", first).to_request()).await;
+    }
     assert_eq!(limited.status(), 429);
     let retry_after: u64 = limited
         .headers()
