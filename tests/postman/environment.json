@@ -7,6 +7,7 @@
     { "key": "agent_user_id", "value": "2", "type": "default", "enabled": true },
     { "key": "jwt_admin", "value": "", "type": "default", "enabled": true },
     { "key": "jwt_agent", "value": "", "type": "default", "enabled": true },
+    { "key": "jwt_responsable", "value": "", "type": "default", "enabled": true },
     { "key": "jwt_forged", "value": "", "type": "default", "enabled": true },
     { "key": "jwt_expired", "value": "", "type": "default", "enabled": true },
     { "key": "jwt_ghost", "value": "", "type": "default", "enabled": true },

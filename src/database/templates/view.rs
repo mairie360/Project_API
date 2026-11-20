@@ -45,37 +45,61 @@ pub struct TemplateRow {
     pub description: Option<String>,
     pub custom_field_schema: serde_json::Value,
     pub is_default: bool,
+    /// Whether the caller may modify or delete it (see [`can_manage_sql`]).
+    pub can_manage: bool,
     pub statuses: Vec<TemplateStatusRow>,
 }
 
-/// `jsonb` of one template `t` with its statuses by position.
-macro_rules! template_json_sql {
-    () => {
-        "jsonb_build_object('id', t.id, 'name', t.name, 'description', t.description, \
-            'custom_field_schema', t.custom_field_schema, 'is_default', t.is_default, \
-            'statuses', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', s.name, \
-                'color', s.color, 'category', s.category, 'position', s.position) \
-                ORDER BY s.position) FROM project_template_statuses s WHERE s.template_id = t.id), \
-                '[]'::jsonb))"
+/// Whether the user bound to `$user` (a `$n` placeholder) may modify or delete the template `t`:
+/// an Admin any of them, a Responsable only the ones they created and never the default one.
+/// A template without author (its author row was deleted) is the Admins' alone.
+macro_rules! can_manage_sql {
+    ($user:literal) => {
+        concat!(
+            "COALESCE(EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id \
+                              WHERE ur.user_id = ",
+            $user,
+            " AND r.name = 'Admin') \
+             OR (NOT t.is_default AND t.created_by = ",
+            $user,
+            " AND EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id \
+                          WHERE ur.user_id = ",
+            $user,
+            " AND r.name = 'Responsable')), FALSE)"
+        )
     };
 }
 
-/// Every template, the default one first, then by name. Read with
-/// `fetch_one::<Vec<TemplateRow>, _>`.
+/// `jsonb` of one template `t` with its statuses by position, and what the user bound to `$user`
+/// may do with it.
+macro_rules! template_json_sql {
+    ($user:literal) => {
+        concat!(
+            "jsonb_build_object('id', t.id, 'name', t.name, 'description', t.description, \
+                'custom_field_schema', t.custom_field_schema, 'is_default', t.is_default, \
+                'can_manage', ",
+            can_manage_sql!($user),
+            ", \
+                'statuses', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', s.name, \
+                    'color', s.color, 'category', s.category, 'position', s.position) \
+                    ORDER BY s.position) FROM project_template_statuses s WHERE s.template_id = t.id), \
+                    '[]'::jsonb))"
+        )
+    };
+}
+
+/// Every template, the default one first, then by name, with what `user_id` may do with each.
+/// Read with `fetch_one::<Vec<TemplateRow>, _>`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListTemplatesQueryView {
     params: Vec<QueryParam>,
 }
 
 impl ListTemplatesQueryView {
-    pub fn new() -> Self {
-        Self { params: Vec::new() }
-    }
-}
-
-impl Default for ListTemplatesQueryView {
-    fn default() -> Self {
-        Self::new()
+    pub fn new(user_id: u64) -> Self {
+        Self {
+            params: vec![QueryParam::I32(id_to_sql(user_id))],
+        }
     }
 }
 
@@ -83,7 +107,7 @@ impl ApiRequestDto for ListTemplatesQueryView {
     fn query_sql(&self) -> &'static str {
         concat!(
             "SELECT COALESCE(jsonb_agg(",
-            template_json_sql!(),
+            template_json_sql!("$1"),
             " ORDER BY t.is_default DESC, lower(t.name), t.id), '[]'::jsonb) FROM project_templates t"
         )
     }
@@ -93,16 +117,20 @@ impl ApiRequestDto for ListTemplatesQueryView {
     }
 }
 
-/// One template, `null` when it does not exist. Read with `fetch_one::<Option<TemplateRow>, _>`.
+/// One template, `null` when it does not exist, with what `user_id` may do with it. Read with
+/// `fetch_one::<Option<TemplateRow>, _>`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetTemplateQueryView {
     params: Vec<QueryParam>,
 }
 
 impl GetTemplateQueryView {
-    pub fn new(template_id: u64) -> Self {
+    pub fn new(template_id: u64, user_id: u64) -> Self {
         Self {
-            params: vec![QueryParam::I32(id_to_sql(template_id))],
+            params: vec![
+                QueryParam::I32(id_to_sql(template_id)),
+                QueryParam::I32(id_to_sql(user_id)),
+            ],
         }
     }
 }
@@ -111,7 +139,7 @@ impl ApiRequestDto for GetTemplateQueryView {
     fn query_sql(&self) -> &'static str {
         concat!(
             "SELECT COALESCE((SELECT ",
-            template_json_sql!(),
+            template_json_sql!("$2"),
             " FROM project_templates t WHERE t.id = $1), 'null'::jsonb)"
         )
     }
@@ -121,8 +149,8 @@ impl ApiRequestDto for GetTemplateQueryView {
     }
 }
 
-/// Creates a template with its statuses (in list order) and returns its id. A name already used
-/// (whatever the case) is a unique violation.
+/// Creates a template, authored by `created_by`, with its statuses (in list order) and returns
+/// its id. A name already used (whatever the case) is a unique violation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateTemplateQueryView {
     params: Vec<QueryParam>,
@@ -134,6 +162,7 @@ impl CreateTemplateQueryView {
         description: Option<&str>,
         custom_field_schema: &serde_json::Value,
         statuses: &[TemplateStatusInput<'_>],
+        created_by: u64,
     ) -> Self {
         Self {
             params: vec![
@@ -141,6 +170,7 @@ impl CreateTemplateQueryView {
                 QueryParam::Text(description.unwrap_or_default().to_string()),
                 QueryParam::Text(custom_field_schema.to_string()),
                 QueryParam::Text(statuses_json(statuses)),
+                QueryParam::I32(id_to_sql(created_by)),
             ],
         }
     }
@@ -149,8 +179,8 @@ impl CreateTemplateQueryView {
 impl ApiRequestDto for CreateTemplateQueryView {
     fn query_sql(&self) -> &'static str {
         "WITH created AS ( \
-            INSERT INTO project_templates (name, description, custom_field_schema) \
-            VALUES ($1, NULLIF($2, ''), $3::jsonb) RETURNING id \
+            INSERT INTO project_templates (name, description, custom_field_schema, created_by) \
+            VALUES ($1, NULLIF($2, ''), $3::jsonb, $5) RETURNING id \
          ), statuses AS ( \
             INSERT INTO project_template_statuses (template_id, name, color, category, position) \
             SELECT created.id, x.status->>'name', x.status->>'color', \
@@ -326,6 +356,47 @@ impl ApiRequestDto for TemplateManagerQueryView {
     fn query_sql(&self) -> &'static str {
         "SELECT EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id \
                         WHERE ur.user_id = $1 AND r.name IN ('Admin', 'Responsable'))"
+    }
+
+    fn query_params(&self) -> &[QueryParam] {
+        &self.params
+    }
+}
+
+/// `TemplateAccessQueryView` answer: the template does not exist.
+pub const TEMPLATE_UNKNOWN: i32 = 0;
+/// `TemplateAccessQueryView` answer: the user may modify and delete it.
+pub const TEMPLATE_ALLOWED: i32 = 1;
+/// `TemplateAccessQueryView` answer: it exists, and the user may neither modify nor delete it.
+pub const TEMPLATE_FORBIDDEN: i32 = -1;
+
+/// What `user_id` may do with a template: [`TEMPLATE_UNKNOWN`], [`TEMPLATE_ALLOWED`] or
+/// [`TEMPLATE_FORBIDDEN`]. An Admin manages every template; a Responsable only the ones they
+/// created, never the default one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateAccessQueryView {
+    params: Vec<QueryParam>,
+}
+
+impl TemplateAccessQueryView {
+    pub fn new(user_id: u64, template_id: u64) -> Self {
+        Self {
+            params: vec![
+                QueryParam::I32(id_to_sql(user_id)),
+                QueryParam::I32(id_to_sql(template_id)),
+            ],
+        }
+    }
+}
+
+impl ApiRequestDto for TemplateAccessQueryView {
+    fn query_sql(&self) -> &'static str {
+        concat!(
+            "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM project_templates WHERE id = $2) THEN 0 \
+                         WHEN (SELECT ",
+            can_manage_sql!("$1"),
+            " FROM project_templates t WHERE t.id = $2) THEN 1 ELSE -1 END"
+        )
     }
 
     fn query_params(&self) -> &[QueryParam] {

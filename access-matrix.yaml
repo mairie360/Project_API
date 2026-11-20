@@ -116,5 +116,11 @@ operations:
     access: authenticated
     roles: [Admin, Responsable]
     note: "template management is reserved to Admin and Responsable (MAIR-566): not the Maire"
-  PATCH /api/v1/project-templates/{template_id}/: {access: authenticated, roles: [Admin, Responsable]}
-  DELETE /api/v1/project-templates/{template_id}/: {access: authenticated, roles: [Admin, Responsable]}
+  PATCH /api/v1/project-templates/{template_id}/:
+    access: authenticated
+    roles: [Admin]
+    note: "a Responsable only modifies the templates they created, never the default one (403 otherwise, 404 for an unknown template); tests/endpoints/templates.rs covers it, the matrix calls it on a template of the Admin"
+  DELETE /api/v1/project-templates/{template_id}/:
+    access: authenticated
+    roles: [Admin]
+    note: "a Responsable only deletes the templates they created; the default template cannot be deleted by anyone (409 for an Admin)"
