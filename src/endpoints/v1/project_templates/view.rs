@@ -34,6 +34,9 @@ pub struct ProjectTemplateView {
     pub description: Option<String>,
     /// The template of a project created without `template_id`; it cannot be deleted.
     pub is_default: bool,
+    /// Whether the caller may modify or delete it: an Admin any template, a Responsable only the
+    /// ones they created, never the default one.
+    pub can_manage: bool,
     /// Task statuses, by position.
     pub statuses: Vec<TemplateStatusView>,
     /// Custom fields copied into the projects created from it.
@@ -47,6 +50,7 @@ impl From<TemplateRow> for ProjectTemplateView {
             name: row.name,
             description: row.description,
             is_default: row.is_default,
+            can_manage: row.can_manage,
             statuses: row
                 .statuses
                 .into_iter()

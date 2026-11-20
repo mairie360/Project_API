@@ -284,8 +284,12 @@ status of another project is a `400`: `status_outside_project_sql!` checks it in
 still moves a task to the first status of that category (database trigger). `…/statuses/` lists them (viewers)
 and adds, renames, moves, recategorizes or deletes them (managers; `database::statuses`): a category keeps one
 status (`409`), a status holding tasks is deleted with `?move_to=` (`409` without). `/project-templates/` is read
-by anyone signed in and written by Admin and Responsable only (`TemplateManagerQueryView`); the default template
-cannot be deleted. Editing a template never changes an existing project. Integration tests need a Database
+by anyone signed in and written by Admin and Responsable only (`TemplateManagerQueryView`): an Admin manages every
+template, a Responsable only the ones they created (`project_templates.created_by`, set on creation), never the
+default one, and a template without author is the Admins' alone (`TemplateAccessQueryView`, `403` otherwise, `404`
+for an unknown id). Each template carries `can_manage` for the caller (same SQL rule, `can_manage_sql!`) so a front
+hides the refused actions. `created_by` has no foreign key (it would make the `TRUNCATE users CASCADE` of the test
+harness empty the templates). The default template cannot be deleted (`409` for an Admin). Editing a template never changes an existing project. Integration tests need a Database
 image carrying MAIR-566 (`TEST_DB_VERSION`).
 
 List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`,

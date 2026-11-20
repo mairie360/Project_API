@@ -7,8 +7,9 @@ use mairie360_api_lib::state::AppState;
 use crate::database::templates::view::{
     CreateTemplateQueryView, DeleteTemplateQueryView, GetTemplateQueryView,
     InsertTemplateStatusesQueryView, ListTemplatesQueryView, ReplaceTemplateStatusesQueryView,
-    TemplateManagerQueryView, TemplateRow, TemplateStatusInput, UpdateTemplateQueryView,
-    TEMPLATE_DELETED, TEMPLATE_IS_DEFAULT,
+    TemplateAccessQueryView, TemplateManagerQueryView, TemplateRow, TemplateStatusInput,
+    UpdateTemplateQueryView, TEMPLATE_DELETED, TEMPLATE_FORBIDDEN, TEMPLATE_IS_DEFAULT,
+    TEMPLATE_UNKNOWN,
 };
 use crate::endpoints::db_error::{classify_db_error, DbFailure};
 use crate::endpoints::v1::project_templates::view::{
@@ -25,7 +26,8 @@ fn database_error(operation: &str, error: &ApiLibError) -> TemplatesError {
     }
 }
 
-/// Template management is reserved to Admin and Responsable (MAIR-566).
+/// Template management is reserved to Admin and Responsable (MAIR-566); a Responsable only
+/// modifies or deletes the templates they created, see [`template_access`].
 async fn require_template_manager(
     state: &web::Data<AppState>,
     user_id: u64,
@@ -43,17 +45,31 @@ async fn require_template_manager(
     }
 }
 
+/// `NotFound` when the template does not exist, `Forbidden` when the caller may not modify or
+/// delete it: an Admin manages every template, a Responsable only the ones they created and
+/// never the default one.
+fn template_access(code: i32) -> Result<(), TemplatesError> {
+    match code {
+        TEMPLATE_UNKNOWN => Err(TemplatesError::NotFound),
+        TEMPLATE_FORBIDDEN => Err(TemplatesError::Forbidden),
+        _ => Ok(()),
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/",
     summary = "List the project templates",
     description = "Returns every project template, the default one first, then by name, with its \
                    task statuses and custom fields (MAIR-566). A project created with \
-                   `template_id` gets a copy of them. Any signed-in user may read them.",
+                   `template_id` gets a copy of them. Any signed-in user may read them. \
+                   `can_manage` tells whether the caller may modify or delete each one: an Admin \
+                   any of them, a Responsable only the ones they created, never the default one.",
     responses(
         (status = 200, description = "Every template.", body = GetTemplatesResultView,
          example = json!({ "templates": [{
              "id": 1, "name": "Simple", "description": "À faire, en cours, terminé.", "is_default": true,
+             "can_manage": false,
              "statuses": [
                  { "name": "À faire", "color": "#64748B", "category": "Todo", "position": 0 },
                  { "name": "En cours", "color": "#2563EB", "category": "InProgress", "position": 1 },
@@ -72,11 +88,11 @@ async fn require_template_manager(
 #[get("/")]
 pub async fn get_templates(
     state: web::Data<AppState>,
-    _auth_user: AuthenticatedUser,
+    auth_user: AuthenticatedUser,
 ) -> Result<impl Responder, TemplatesError> {
     let rows: Vec<TemplateRow> = state
         .get_smart_db()
-        .fetch_one(&ListTemplatesQueryView::new())
+        .fetch_one(&ListTemplatesQueryView::new(auth_user.id))
         .await
         .map_err(|e| database_error("project-templates/get", &e))?;
     Ok(HttpResponse::Ok().json(GetTemplatesResultView {
@@ -90,7 +106,7 @@ pub async fn get_templates(
     path = "/{template_id}/",
     summary = "Read a project template",
     description = "Returns one template with its task statuses and custom fields. Any signed-in \
-                   user may read it.",
+                   user may read it. `can_manage` tells whether the caller may modify or delete it.",
     responses(
         (status = 200, description = "The template.", body = ProjectTemplateView),
         (status = 400, description = "A URL segment is not an integer.", body = String, content_type = "text/plain",
@@ -108,12 +124,15 @@ pub async fn get_templates(
 #[get("/{template_id}/")]
 pub async fn get_template(
     state: web::Data<AppState>,
-    _auth_user: AuthenticatedUser,
+    auth_user: AuthenticatedUser,
     params: web::Path<TemplatePathParams>,
 ) -> Result<impl Responder, TemplatesError> {
     let row: Option<TemplateRow> = state
         .get_smart_db()
-        .fetch_one(&GetTemplateQueryView::new(params.template_id()))
+        .fetch_one(&GetTemplateQueryView::new(
+            params.template_id(),
+            auth_user.id,
+        ))
         .await
         .map_err(|e| database_error("project-templates/template_id/get", &e))?;
     let template: ProjectTemplateView = row.ok_or(TemplatesError::NotFound)?.into();
@@ -125,7 +144,7 @@ pub async fn get_template(
     path = "/",
     summary = "Create a project template",
     description = "Creates a template with its task statuses, in order, and its custom fields. \
-                   Reserved to the Admin and Responsable roles. The statuses must cover the three \
+                   Reserved to the Admin and Responsable roles; the caller becomes its author. The statuses must cover the three \
                    categories (`Todo`, `InProgress`, `Completed`), so that a task of a project \
                    created from it can always be started and completed.",
     request_body(content = CreateTemplateView, example = json!({
@@ -176,6 +195,7 @@ pub async fn create_template(
             view.description.as_deref(),
             &serde_json::json!(view.custom_fields),
             &statuses,
+            auth_user.id,
         ))
         .await
         .map_err(|e| database_error(OPERATION, &e))?;
@@ -191,8 +211,9 @@ pub async fn create_template(
     summary = "Update a project template",
     description = "Partially updates a template: an absent field is left unchanged; `statuses` \
                    and `custom_fields` replace the whole list. Reserved to the Admin and \
-                   Responsable roles. The projects already created from the template keep their \
-                   statuses. The response has an empty body.",
+                   Responsable roles: an Admin may modify any template, a Responsable only the ones \
+                   they created, never the default one. The projects already created from the \
+                   template keep their statuses. The response has an empty body.",
     request_body(content = PatchTemplateView, example = json!({ "name": "Roads" })),
     responses(
         (status = 204, description = "Template updated. Empty body."),
@@ -200,7 +221,7 @@ pub async fn create_template(
          body = String, content_type = "text/plain", example = json!("Invalid `statuses`: two statuses have the same name")),
         (status = 401, description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
          body = String, content_type = "text/plain", example = json!("Jeton expiré")),
-        (status = 403, description = "The caller is neither Admin nor Responsable.", body = String,
+        (status = 403, description = "The caller is neither Admin nor Responsable, or is a Responsable who did not create the template, or tries to modify the default template.", body = String,
          content_type = "text/plain", example = json!("Forbidden.")),
         (status = 404, description = "No such template.", body = String, content_type = "text/plain",
          example = json!("Unknown template.")),
@@ -228,6 +249,11 @@ pub async fn update_template(
         .begin()
         .await
         .map_err(|e| database_error(OPERATION, &e))?;
+    let access: i32 = tx
+        .fetch_scalar(&TemplateAccessQueryView::new(auth_user.id, template_id))
+        .await
+        .map_err(|e| database_error(OPERATION, &e))?;
+    template_access(access)?;
     let custom_fields = view
         .custom_fields
         .as_ref()
@@ -268,7 +294,8 @@ pub async fn update_template(
     params(TemplatePathParams),
     path = "/{template_id}/",
     summary = "Delete a project template",
-    description = "Deletes a template. Reserved to the Admin and Responsable roles. The projects \
+    description = "Deletes a template. Reserved to the Admin and Responsable roles: an Admin may \
+                   delete any template, a Responsable only the ones they created. The projects \
                    created from it keep their statuses. The default template cannot be deleted. \
                    The response has an empty body.",
     responses(
@@ -277,7 +304,7 @@ pub async fn update_template(
          example = json!("Path deserialize error: can not parse `abc` to a u64")),
         (status = 401, description = "Missing `Authorization` header, invalid or expired JWT, or revoked session.",
          body = String, content_type = "text/plain", example = json!("Jeton expiré")),
-        (status = 403, description = "The caller is neither Admin nor Responsable.", body = String,
+        (status = 403, description = "The caller is neither Admin nor Responsable, or is a Responsable who did not create the template (the default one included).", body = String,
          content_type = "text/plain", example = json!("Forbidden.")),
         (status = 404, description = "No such template.", body = String, content_type = "text/plain",
          example = json!("Unknown template.")),
@@ -297,6 +324,15 @@ pub async fn delete_template(
 ) -> Result<impl Responder, TemplatesError> {
     const OPERATION: &str = "project-templates/template_id/delete";
     require_template_manager(&state, auth_user.id, OPERATION).await?;
+    let access: i32 = state
+        .get_smart_db()
+        .fetch_scalar(&TemplateAccessQueryView::new(
+            auth_user.id,
+            params.template_id(),
+        ))
+        .await
+        .map_err(|e| database_error(OPERATION, &e))?;
+    template_access(access)?;
     let result: i32 = state
         .get_smart_db()
         .fetch_scalar(&DeleteTemplateQueryView::new(params.template_id()))

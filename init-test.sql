@@ -20,6 +20,9 @@ VALUES
     (3, 'Test', 'User', 'test3@mairie360.fr',
      '$argon2id$v=19$m=19456,t=2,p=1$/iKF9PbiDRDs4EKPjlIIhg$UKx9vfwwps250mEP/bYp63CXbEnQGULeUAhDq+az9Aw',
      'active', FALSE),
+    (4, 'Test', 'Responsable', 'test4@mairie360.fr',
+     '$argon2id$v=19$m=19456,t=2,p=1$/iKF9PbiDRDs4EKPjlIIhg$UKx9vfwwps250mEP/bYp63CXbEnQGULeUAhDq+az9Aw',
+     'active', FALSE),
     (42, 'Jean', 'Dupont', 'jean.dupont@mairie360.fr',
      '$argon2id$v=19$m=19456,t=2,p=1$/iKF9PbiDRDs4EKPjlIIhg$UKx9vfwwps250mEP/bYp63CXbEnQGULeUAhDq+az9Aw',
      'active', FALSE)
@@ -27,6 +30,12 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO user_roles (user_id, role_id)
 SELECT u.id, r.id FROM roles r CROSS JOIN (VALUES (2), (3), (42)) AS u(id) WHERE r.name = 'User'
+ON CONFLICT DO NOTHING;
+
+-- User 4 is a Responsable: the newman journey of the template ownership (it manages the templates
+-- it creates, not the Admin's).
+INSERT INTO user_roles (user_id, role_id)
+SELECT 4, r.id FROM roles r WHERE r.name = 'Responsable'
 ON CONFLICT DO NOTHING;
 
 INSERT INTO projects (id, title, description, owner_id)

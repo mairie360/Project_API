@@ -1213,6 +1213,388 @@
           }
         },
         {
+          "name": "A Responsable cannot update a template created by the Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_responsable}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{template_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"x\"\n}"
+            }
+          }
+        },
+        {
+          "name": "A Responsable cannot delete a template created by the Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_responsable}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{template_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "A Responsable cannot modify the default template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_responsable}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{default_template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{default_template_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"x\"\n}"
+            }
+          }
+        },
+        {
+          "name": "The Responsable creates a template of its own",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.environment.set(\"responsable_template_id\", String(pm.response.json().template_id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_responsable}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{template_name}} (Responsable)\",\n  \"description\": \"Étude, chantier, réception.\",\n  \"statuses\": [\n    {\n      \"name\": \"Étude\",\n      \"category\": \"Todo\",\n      \"color\": \"#64748B\",\n      \"position\": 0\n    },\n    {\n      \"name\": \"Chantier\",\n      \"category\": \"InProgress\",\n      \"color\": \"#2563EB\",\n      \"position\": 1\n    },\n    {\n      \"name\": \"Réception\",\n      \"category\": \"Completed\",\n      \"color\": \"#16A34A\",\n      \"position\": 2\n    }\n  ],\n  \"custom_fields\": []\n}"
+            }
+          }
+        },
+        {
+          "name": "The Responsable updates its own template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_responsable}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{responsable_template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{responsable_template_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Modifié par son auteur.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "The templates tell the Responsable which ones it manages",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"can_manage is true for its own template only\", function () {",
+                  "    const templates = pm.response.json().templates;",
+                  "    const own = templates.find(t => String(t.id) === pm.environment.get(\"responsable_template_id\"));",
+                  "    pm.expect(own.can_manage).to.eql(true);",
+                  "    templates.filter(t => t !== own).forEach(t => pm.expect(t.can_manage, t.name).to.eql(false));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_responsable}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "The Admin manages every template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"can_manage is true for the Admin\", function () {",
+                  "    pm.expect(pm.response.json().can_manage).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{responsable_template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{responsable_template_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "The Responsable deletes its own template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_responsable}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{responsable_template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{responsable_template_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "The deleted template of the Responsable answers 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-templates/{{responsable_template_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-templates",
+                "{{responsable_template_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
           "name": "Deleting a template with an id that is not an integer is rejected",
           "event": [
             {
@@ -2650,7 +3032,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"group_id\": null\n}",
+              "raw": "{\n  \"group_id\": 3\n}",
               "options": {
                 "raw": {
                   "language": "json"
