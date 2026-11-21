@@ -2125,7 +2125,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"description\": \"Travaux de voirie 2026, phase 2\",\n  \"status\": \"Suspended\",\n  \"priority\": \"Low\"\n}",
+              "raw": "{\n  \"description\": \"Travaux de voirie 2026, phase 2\",\n  \"status\": \"Suspended\",\n  \"priority\": \"Low\",\n  \"budget_voted\": 1250000,\n  \"budget_committed\": 480000\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2203,6 +2203,63 @@
           "response": []
         },
         {
+          "name": "MAIR-1085 Update with a negative budget is rejected",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"budget_committed\": -1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test(\"The refused field is named\", function () {",
+                  "    pm.expect(pm.response.text()).to.include(\"budget_committed\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
           "name": "Project reflects the update",
           "request": {
             "method": "GET",
@@ -2241,6 +2298,116 @@
                   "    pm.expect(project.status).to.eql(\"Suspended\");",
                   "    pm.expect(project.priority).to.eql(\"Low\");",
                   "    pm.expect(project.description).to.eql(\"Travaux de voirie 2026, phase 2\");",
+                  "});",
+                  "pm.test(\"MAIR-1085 The budget was set, in cents\", function () {",
+                  "    const project = pm.response.json().project;",
+                  "    pm.expect(project.budget_voted).to.eql(1250000);",
+                  "    pm.expect(project.budget_committed).to.eql(480000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "MAIR-1085 Clear the committed budget",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{project_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"budget_committed\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "MAIR-1085 The list shows the budget kept and the one cleared",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/?limit=500",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "500"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"budget_voted kept, budget_committed cleared\", function () {",
+                  "    const project = pm.response.json().projects.find(p => p.id === Number(pm.environment.get(\"project_id\")));",
+                  "    pm.expect(project, \"the project is listed\").to.be.an(\"object\");",
+                  "    pm.expect(project.budget_voted).to.eql(1250000);",
+                  "    pm.expect(project.budget_committed).to.eql(null);",
                   "});"
                 ]
               }

@@ -116,7 +116,7 @@ async fn trigger_get_project(
             description = "The project, one page of its tasks and the first page of its members.",
             body = GetProjectResultView,
             example = json!({
-                "project": { "id": 12, "name": "Renovation of the market square", "description": "2026 road works", "status": "Active", "priority": "High", "group": { "id": 3, "name": "Roads" } },
+                "project": { "id": 12, "name": "Renovation of the market square", "description": "2026 road works", "status": "Active", "priority": "High", "group": { "id": 3, "name": "Roads" }, "budget_voted": 1250000, "budget_committed": 480000 },
                 "tasks": [
                     {
                         "id": 77,
