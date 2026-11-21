@@ -302,6 +302,15 @@ hides the refused actions. `created_by` has no foreign key (it would make the `T
 harness empty the templates). The default template cannot be deleted (`409` for an Admin). Editing a template never changes an existing project. Integration tests need a Database
 image carrying MAIR-566 (`TEST_DB_VERSION`).
 
+Milestones (MAIR-1086, Database `project_milestones`, soft delete `deleted_at`) live in `database::milestones` and
+`endpoints/v1/projects/project_id/milestones/` (one `endpoint.rs` like `statuses/`): `GET …/milestones/` (viewers,
+`limit`/`offset` + `total`, by `due_date` then `id`, deleted ones left out), `POST` (managers, `{title, due_date
+(YYYY-MM-DD), reached?}` → `201` with the row), `PATCH …/milestones/{milestone_id}/` (managers, partial, `200` with the
+row) and `DELETE` (managers, sets `deleted_at`, `204`); a milestone of another project or a deleted one answers `404`
+`Unknown milestone.`. `GET /projects/{id}/` embeds the first 100 as `milestones` + `milestones_total`. The projects list
+does not show them, so their writes invalidate no read cache. A check violation (`23514`) is classified
+`DbFailure::CheckViolation` (`db_error.rs`, read from the SQLSTATE in the lib's error text) and answers `400`.
+
 List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`,
 `GET …/users/` — MAIR-425; the members embedded in `GET /projects/{id}/` are the first 100 + `users_total`)
 take `limit` (default 100, clamped to 1–500) / `offset` (`endpoints::pagination::PageParams`) and return a

@@ -99,6 +99,15 @@ operations:
   PATCH /api/v1/projects/{project_id}/statuses/{status_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
   DELETE /api/v1/projects/{project_id}/statuses/{status_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
 
+  GET /api/v1/projects/{project_id}/milestones/:
+    access: authenticated
+    roles: [Admin, Maire]
+    ownership: [owner, member, responsable]
+    personal: [milestones.created_by, milestones.updated_by]
+  POST /api/v1/projects/{project_id}/milestones/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  PATCH /api/v1/projects/{project_id}/milestones/{milestone_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  DELETE /api/v1/projects/{project_id}/milestones/{milestone_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+
   GET /api/v1/tasks/:
     access: authenticated
     roles: [Admin, Maire, Responsable, User, Guest]

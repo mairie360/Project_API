@@ -132,6 +132,8 @@ struct Fixtures {
     extra: u64,
     status: u64,
     template: u64,
+    /// A milestone of the project (MAIR-1086).
+    milestone: u64,
 }
 
 async fn fixtures<B: MessageBody>(
@@ -201,8 +203,18 @@ async fn fixtures<B: MessageBody>(
         ),
     )
     .await;
+    let milestone = json(
+        app,
+        post(
+            &format!("/api/v1/projects/{project}/milestones/"),
+            people.owner,
+            json!({ "title": "Jalon de la matrice", "due_date": "2026-12-15" }),
+        ),
+    )
+    .await;
     Fixtures {
         project,
+        milestone: milestone["id"].as_u64().unwrap(),
         task: task["task_id"].as_u64().unwrap(),
         extra,
         status: statuses["statuses"][0]["id"].as_u64().unwrap(),
@@ -220,7 +232,8 @@ fn request(spec: &Value, name: &str, f: &Fixtures, caller: Option<u64>) -> TestR
         .replace("{task_id}", &f.task.to_string())
         .replace("{user_id}", &f.extra.to_string())
         .replace("{status_id}", &f.status.to_string())
-        .replace("{template_id}", &f.template.to_string());
+        .replace("{template_id}", &f.template.to_string())
+        .replace("{milestone_id}", &f.milestone.to_string());
     let example = spec["paths"][path][method.to_lowercase()]["requestBody"]["content"]
         ["application/json"]["example"]
         .clone();

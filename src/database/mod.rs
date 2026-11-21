@@ -1,3 +1,4 @@
+pub mod milestones;
 pub mod paged;
 pub mod pg_url;
 pub mod ping;

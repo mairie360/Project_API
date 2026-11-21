@@ -3,6 +3,7 @@ use actix_web::{get, web, HttpResponse, Responder, ResponseError};
 use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
+use crate::database::milestones::view::{GetProjectMilestonesQueryView, MilestoneRow};
 use crate::database::paged::PagedRows;
 use crate::endpoints::db_error::log_db_error;
 use crate::endpoints::pagination::{Page, PageParams, DEFAULT_PAGE_SIZE};
@@ -70,10 +71,12 @@ async fn trigger_get_project(
     // The members are bounded too: the first page, `users_total` tells whether there are more.
     let users_view = GetProjectUsersQueryView::new(project_id, DEFAULT_PAGE_SIZE, 0);
     let archived_view = CountArchivedTasksQueryView::new(project_id);
-    let (tasks, users, archived) = futures_util::try_join!(
+    let milestones_view = GetProjectMilestonesQueryView::new(project_id, DEFAULT_PAGE_SIZE, 0);
+    let (tasks, users, archived, milestones) = futures_util::try_join!(
         smart_db.fetch_one::<PagedRows<Task>, _>(&tasks_view),
         smart_db.fetch_one::<PagedRows<ProjectMemberRow>, _>(&users_view),
         smart_db.fetch_scalar::<i64, _>(&archived_view),
+        smart_db.fetch_one::<PagedRows<MilestoneRow>, _>(&milestones_view),
     )
     .map_err(|e| {
         log_db_error("projects/project_id/get", &e);
@@ -87,6 +90,8 @@ async fn trigger_get_project(
         tasks_archived: u64::try_from(archived).unwrap_or(0),
         users: users.items.into_iter().map(Into::into).collect(),
         users_total: u64::try_from(users.total).unwrap_or(0),
+        milestones: milestones.items.into_iter().map(Into::into).collect(),
+        milestones_total: u64::try_from(milestones.total).unwrap_or(0),
     })
 }
 
@@ -108,6 +113,8 @@ async fn trigger_get_project(
                    `GET …/archived-tasks/`.\n\n\
                    `users` holds at most the first 100 members, sorted by name; `users_total` is \
                    the number of members, and `GET …/users/` pages through the rest.\n\n\
+                   `milestones` holds the first 100 milestones (MAIR-1086), by due date; \
+                   `milestones_total` counts them and `GET …/milestones/` pages through the rest.\n\n\
                    Being a member of the project is enough. A project the caller cannot access \
                    answers `404`, not `403`.",
     responses(
@@ -136,7 +143,12 @@ async fn trigger_get_project(
                     { "id": 42, "name": "Jean Dupont" },
                     { "id": 51, "name": "Amina Bensaïd" }
                 ],
-                "users_total": 2
+                "users_total": 2,
+                "milestones": [
+                    { "id": 5, "project_id": 12, "title": "Tender awarded", "due_date": "2026-12-15", "reached": false,
+                      "created_by": 42, "updated_by": 42, "created_at": "2026-11-21T09:30:00Z", "updated_at": "2026-11-21T09:30:00Z" }
+                ],
+                "milestones_total": 1
             })
         ),
         (

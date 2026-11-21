@@ -3,6 +3,7 @@ pub mod close;
 pub mod delete;
 pub mod doc;
 pub mod get;
+pub mod milestones;
 pub mod patch;
 pub mod statuses;
 pub mod tasks;
@@ -38,6 +39,7 @@ pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
             .configure(tasks::config)
             .configure(archived_tasks::config)
             .configure(statuses::config)
+            .configure(milestones::config)
             .configure(users::config),
     );
 }
