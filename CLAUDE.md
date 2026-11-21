@@ -256,6 +256,10 @@ over `idx_tasks_project_id`, materialized CTE) and reads the members for the pag
 the 5 000-project seed, 2 ms for an agent (a covering index `tasks (project_id) INCLUDE (status, priority,
 due_date)` would halve the Admin cost, Database follow-up).
 
+A project on hold (MAIR-1084) is the `Suspended` status (`project_status` `suspended`): accepted by `POST /projects/`
+and `PATCH /projects/{id}/`, kept by the `status=Suspended` filter and counted in `summary.by_status.suspended`; it is
+resumed by a `PATCH` back to `Active` (`tests/endpoints/mair_1084_project_on_hold.rs`).
+
 `GET /tasks/` (MAIR-524) lists the tasks of every project visible to the caller (same
 `project_visible_to_user_sql!` rule), each with `project_id` and `project_name`, so BFF_Dashboard reads a
 user's pending tasks in one call: filters `assigned_to`, `status` (CSV of `Todo`, `InProgress`, `Completed`,
