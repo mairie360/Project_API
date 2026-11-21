@@ -407,7 +407,7 @@ const writeHandlers = {
   'POST /api/v1/projects/{project_id}/tasks/': ({ request, data }) => {
     const res = request({
       path: { project_id: data.writeProjectId },
-      body: { name: 'k6 create task', description: 'Load test', assigned_to: MEMBER_ID, fields: [] },
+      body: { name: 'k6 create task', description: 'Load test', assigned_to: MEMBER_ID, fields: [], start_date: '2026-10-01', due_date: '2026-10-15' },
     });
     check(res, { 'create task 200': (r) => r.status === 200 });
     if (res.status === 200) deleteTask(data.writeProjectId, res.json('task_id'));

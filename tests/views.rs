@@ -188,8 +188,9 @@ fn create_task_view_accessors() {
     );
     assert_eq!(view.project_id(), 3);
     assert_eq!(view.title(), "Ma tache");
-    // No status_id (MAIR-566): the first status of the category.
-    assert_eq!(view.query_params().len(), 10);
+    // No status_id (MAIR-566): the first status of the category; no start date (MAIR-1087).
+    assert_eq!(view.query_params().len(), 11);
+    assert_eq!(view.query_params()[10].as_text(), "");
     assert_eq!(view.query_params()[7].as_text(), "Ma description");
     assert_eq!(view.query_params()[9].as_option_i32(), None);
     assert_eq!(view.query_params()[8].as_i32(), 5);
@@ -211,10 +212,19 @@ fn create_task_view_without_optionals() {
         &[],
     );
     assert_eq!(view.title(), "T");
-    assert_eq!(view.query_params().len(), 10);
+    assert_eq!(view.query_params().len(), 11);
     assert_eq!(view.query_params()[6].as_text(), r#"{"fields":[]}"#);
     let view = view.with_status_id(Some(7));
     assert_eq!(view.query_params()[9].as_option_i32(), Some(7));
+    let start = chrono::DateTime::parse_from_rfc3339("2026-10-01T00:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let view = view.with_start_date(Some(start));
+    assert_eq!(
+        view.query_params()[10].as_text(),
+        "2026-10-01T00:00:00+00:00"
+    );
+    assert!(view.query_sql().contains("NULLIF($11, '')::timestamptz"));
 }
 
 #[test]
@@ -296,13 +306,14 @@ fn patch_task_view_accessors() {
             status_id: Some(31),
             priority: Some(TaskPriority::Medium),
             due_date: Some(due),
+            start_date: Some(Some(due)),
             assigned_to: Some(Some(7)),
             fields: Some(&fields),
         },
     );
     assert_eq!(view.task_id(), 99);
     assert_eq!(view.project_id(), 4);
-    assert_eq!(view.query_params().len(), 13);
+    assert_eq!(view.query_params().len(), 15);
     assert!(view.query_params()[6].as_bool());
     assert_eq!(view.query_params()[7].as_option_i32(), Some(7));
     // An empty description is a change (it clears the description), not an absence.
@@ -314,6 +325,13 @@ fn patch_task_view_accessors() {
     assert!(view.query_sql().contains("updated_by = $12"));
     // MAIR-566: the status among the project's statuses.
     assert_eq!(view.query_params()[12].as_option_i32(), Some(31));
+    // MAIR-1087: the start date, given.
+    assert!(view.query_params()[13].as_bool());
+    assert_eq!(
+        view.query_params()[14].as_text(),
+        "2024-01-02T03:04:05+00:00"
+    );
+    assert!(view.query_sql().contains("start_date = CASE WHEN $14"));
 }
 
 #[test]
@@ -333,6 +351,19 @@ fn patch_task_view_distinguishes_absent_and_cleared_assignee() {
     assert_eq!(absent.query_params()[10].as_text(), "");
     assert!(cleared.query_params()[6].as_bool());
     assert_eq!(cleared.query_params()[7].as_option_i32(), None);
+    // MAIR-1087: an absent start date is kept, a `null` one is cleared.
+    assert!(!absent.query_params()[13].as_bool());
+    let no_start = PatchTaskQueryView::new(
+        1,
+        2,
+        3,
+        TaskChanges {
+            start_date: Some(None),
+            ..TaskChanges::default()
+        },
+    );
+    assert!(no_start.query_params()[13].as_bool());
+    assert_eq!(no_start.query_params()[14].as_text(), "");
 }
 
 #[test]

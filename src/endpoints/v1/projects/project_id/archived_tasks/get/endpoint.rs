@@ -95,7 +95,7 @@ async fn trigger_get_archived_tasks(
                         "description": "Public meeting to organise before 15 October",
                         "status": "Completed",
                         "priority": "High",
-                        "due_date": "2026-10-15T00:00:00Z",
+                        "due_date": "2026-10-15T00:00:00Z", "start_date": "2026-10-01T00:00:00Z",
                         "archived_at": "2026-10-02T14:30:00Z",
                         "assigned_to": 42,
                         "fields": [

@@ -131,7 +131,7 @@ async fn trigger_get_project(
                         "description": "Public meeting to organise before 15 October",
                         "status": "InProgress",
                         "priority": "High",
-                        "due_date": "2026-10-15T00:00:00Z",
+                        "due_date": "2026-10-15T00:00:00Z", "start_date": "2026-10-01T00:00:00Z",
                         "archived_at": null,
                         "assigned_to": 42,
                         "fields": []

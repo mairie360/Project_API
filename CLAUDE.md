@@ -280,6 +280,13 @@ The list without assignee scans the active tasks (≈ 20-55 ms on 35 000 active 
 `GET /projects/{project_id}/tasks/{task_id}/` reads one task alone (any viewer of the project, 404 for a task of
 another project): BFF_Project's task guards use it instead of reading every task of the project (MAIR-474).
 
+A task has an optional `start_date` (MAIR-1087, Database `tasks.start_date`, same `TIMESTAMP` type as `due_date`,
+`CHECK start_date <= due_date`): `POST …/tasks/` takes it (same formats as `due_date`), `PATCH …/tasks/{id}/` too
+(absent keeps, `null` clears; forbidden to a mere assignee), and every task read returns it (RFC 3339 or `null`). A start
+after the due date is a `400` `Invalid \`start_date\`: must be at or before \`due_date\``, checked by the view when
+both are sent and mapped from the database `23514` (`DbFailure::CheckViolation`) when one is checked against the stored
+other one. `start_date` is listed in the history labels when the trigger records it.
+
 A completed task is archived (MAIR-502, Database `tasks.archived_at`, kept by a trigger): `GET /projects/{id}/`
 and `GET …/tasks/` only list the active tasks (`tasks_total` counts them, `tasks_archived` the others),
 `GET …/archived-tasks/` pages the archived ones (most recently archived first), and every task read carries

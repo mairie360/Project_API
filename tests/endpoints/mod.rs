@@ -9,6 +9,7 @@ pub mod flows;
 pub mod mair_1084_project_on_hold;
 pub mod mair_1085_project_budget;
 pub mod mair_1086_project_milestones;
+pub mod mair_1087_task_start_date;
 pub mod mair_534_negative_cases;
 pub mod mair_680_session_keys;
 pub mod mair_683_project_groups;

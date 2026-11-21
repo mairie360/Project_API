@@ -45,7 +45,7 @@ macro_rules! visible_tasks_sql {
             crate::project_visible_to_user_sql!(),
             " ), matched AS NOT MATERIALIZED ( \
                 SELECT t.id, t.title, COALESCE(t.description, '') AS description, t.status, \
-                       t.status_id, t.priority, t.created_at, t.assigned_to, t.due_date, t.archived_at, \
+                       t.status_id, t.priority, t.created_at, t.assigned_to, t.due_date, t.start_date, t.archived_at, \
                        COALESCE(t.custom_fields, '{}'::jsonb) AS custom_fields, \
                        v.id AS project_id, v.title AS project_name \
                 FROM tasks t JOIN visible v ON v.id = t.project_id \
@@ -62,6 +62,7 @@ macro_rules! visible_tasks_sql {
                            (SELECT name FROM project_task_statuses ps WHERE ps.id = pg.status_id) AS status_name, \
                            pg.priority, pg.created_at, \
                            pg.assigned_to, pg.due_date AT TIME ZONE 'UTC' AS due_date, \
+                           pg.start_date AT TIME ZONE 'UTC' AS start_date, \
                            pg.archived_at AT TIME ZONE 'UTC' AS archived_at, pg.custom_fields, \
                            pg.project_id, pg.project_name, \
                            row_number() OVER (ORDER BY pg.due_date ASC NULLS LAST, pg.id) AS rn \

@@ -27,6 +27,8 @@ pub enum PatchTaskError {
     UnknownAssignee,
     AssigneeNotInProject,
     StatusNotInProject,
+    /// The start date would be after the due date (MAIR-1087, database `CHECK`).
+    DatesOutOfOrder,
 }
 
 impl std::fmt::Display for PatchTaskError {
@@ -45,6 +47,9 @@ impl std::fmt::Display for PatchTaskError {
             PatchTaskError::StatusNotInProject => {
                 write!(f, "`status_id` is not a status of the project.")
             }
+            PatchTaskError::DatesOutOfOrder => {
+                write!(f, "Invalid `start_date`: must be at or before `due_date`")
+            }
         }
     }
 }
@@ -59,6 +64,7 @@ impl ResponseError for PatchTaskError {
             PatchTaskError::UnknownAssignee => StatusCode::BAD_REQUEST,
             PatchTaskError::AssigneeNotInProject => StatusCode::BAD_REQUEST,
             PatchTaskError::StatusNotInProject => StatusCode::BAD_REQUEST,
+            PatchTaskError::DatesOutOfOrder => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -105,6 +111,7 @@ async fn trigger_patch_task(
                 status_id: view.status_id,
                 priority,
                 due_date: view.due_date,
+                start_date: view.start_date,
                 assigned_to: view.assigned_to,
                 fields: view.fields.as_deref(),
             },
@@ -113,6 +120,8 @@ async fn trigger_patch_task(
         .map_err(
             |e| match classify_db_error("projects/project_id/tasks/task_id/patch", &e) {
                 DbFailure::InvalidReference => PatchTaskError::UnknownAssignee,
+                // Only one of the two dates was sent and the stored other one is out of order.
+                DbFailure::CheckViolation => PatchTaskError::DatesOutOfOrder,
                 _ => PatchTaskError::DatabaseError,
             },
         )?;
@@ -152,7 +161,7 @@ async fn trigger_patch_task(
         ),
         (
             status = 400,
-            description = "A URL segment is not an integer, malformed JSON body, `status_id` that is not a status of the project, `assigned_to` that does not match any user or is neither the owner nor a member of the project, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of control characters other than line breaks and tabs; `due_date` a date (`YYYY-MM-DD`) or an RFC 3339 date-time.",
+            description = "A URL segment is not an integer, malformed JSON body, `status_id` that is not a status of the project, `assigned_to` that does not match any user or is neither the owner nor a member of the project, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of control characters other than line breaks and tabs; `due_date` and `start_date` a date (`YYYY-MM-DD`) or an RFC 3339 date-time, `start_date` at or before `due_date` (the one sent or the stored one, MAIR-1087).",
             body = String,
             content_type = "text/plain",
             example = json!("`assigned_to` is not a member of the project.")

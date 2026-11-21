@@ -34,6 +34,9 @@ pub struct TaskView {
     /// Due date, or `null` if the task has none.
     #[schema(value_type = Option<String>, format = DateTime, example = "2026-10-15T00:00:00Z")]
     pub due_date: Option<DateTime<Utc>>,
+    /// Start date (MAIR-1087), at or before `due_date`, or `null` if the task has none.
+    #[schema(value_type = Option<String>, format = DateTime, example = "2026-10-01T00:00:00Z")]
+    pub start_date: Option<DateTime<Utc>>,
     /// When the task was archived (MAIR-502: a task is archived as soon as it is `Completed`, and
     /// back when it is reopened), or `null` while it is active.
     #[schema(value_type = Option<String>, format = DateTime, example = json!(null))]
@@ -56,6 +59,7 @@ impl From<Task> for TaskView {
             status_name: task.status_name().map(str::to_string),
             priority: task.priority().to_string().into(),
             due_date: task.due_date(),
+            start_date: task.start_date(),
             archived_at: task.archived_at(),
             assigned_to: task.assigned_to().map(id_from_sql),
             fields: task.fields(),
