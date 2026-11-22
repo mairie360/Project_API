@@ -91,7 +91,7 @@ async fn trigger_get_tasks(
                     {
                         "id": 93, "title": "Digitise the 1950 registers", "description": "",
                         "status": "Todo", "priority": "Medium",
-                        "due_date": null, "archived_at": null,
+                        "due_date": null, "start_date": null, "archived_at": null,
                         "assigned_to": 42, "fields": [],
                         "project_id": 18, "project_name": "Digitisation of the civil registry"
                     }

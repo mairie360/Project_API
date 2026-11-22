@@ -60,7 +60,10 @@ async fn mair_1087_a_task_starts_before_it_is_due() {
         .iter()
         .any(|t| t["id"] == task_id && t["start_date"] == "2026-10-01T00:00:00Z"));
     // A task without start date reads `null`.
-    assert!(json(&app, get(&s.task(), s.member)).await["start_date"].is_null());
+    assert_eq!(
+        json(&app, get(&s.task(), s.member)).await.get("start_date"),
+        Some(&serde_json::Value::Null)
+    );
 
     // Start after due: refused at creation, by a PATCH carrying both, or one against the stored
     // other one (the database check, mapped to 400).
@@ -100,7 +103,7 @@ async fn mair_1087_a_task_starts_before_it_is_due() {
     let cleared = patch(&task, s.manager, json!({ "start_date": null }));
     assert_eq!(status(&app, cleared).await, 204);
     let read = json(&app, get(&task, s.manager)).await;
-    assert!(read["start_date"].is_null());
+    assert_eq!(read.get("start_date"), Some(&serde_json::Value::Null));
     assert_eq!(read["due_date"], "2026-10-15T00:00:00Z");
 
     // The assignee may only change the status, not the start date.

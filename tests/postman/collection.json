@@ -7902,6 +7902,9 @@
                 "exec": [
                   "pm.test(\"Status is 200\", function () {",
                   "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"The task carries its archiving date\", function () {",
+                  "    pm.expect(pm.response.json().archived_at).to.be.a(\"string\");",
                   "});"
                 ]
               }
@@ -7944,7 +7947,8 @@
                   "    pm.response.to.have.status(200);",
                   "});",
                   "pm.test(\"The completed task is listed\", function () {",
-                  "    pm.expect(JSON.stringify(pm.response.json())).to.include('Commander les panneaux de chantier');",
+                  "    const id = Number(pm.environment.get(\"unassigned_task_id\"));",
+                  "    pm.expect(JSON.stringify(pm.response.json())).to.match(new RegExp('\"id\":' + id + '[,}]'));",
                   "});"
                 ]
               }
@@ -9293,6 +9297,7 @@
                   "pm.test(\"Deleted, unknown, deleted\", function () {",
                   "    const results = pm.response.json().results;",
                   "    pm.expect(results.map(r => r.status)).to.eql([\"deleted\", \"not_found\", \"deleted\"]);",
+                  "    pm.expect(results.map(r => String(r.id))).to.eql([String(pm.environment.get(\"bulk_project_a\")), \"2147483647\", String(pm.environment.get(\"bulk_project_b\"))]);",
                   "});"
                 ]
               }

@@ -538,8 +538,17 @@ const writeHandlers = {
     const ids = [createProject('k6 bulk delete A'), createProject('k6 bulk delete B')];
     check(request({ body: { ids } }), {
       'bulk delete 200': (r) => r.status === 200,
-      'bulk delete deletes each project': (r) =>
-        r.status === 200 && r.json('results').every((result) => result.status === 'deleted'),
+      'bulk delete deletes each project': (r) => {
+        if (r.status !== 200) return false;
+        const results = r.json('results');
+        const returned = results.map((result) => String(result.id)).sort();
+        const requested = ids.map(String).sort();
+        return (
+          returned.length === requested.length &&
+          returned.every((id, index) => id === requested[index]) &&
+          results.every((result) => result.status === 'deleted')
+        );
+      },
     });
   },
 
