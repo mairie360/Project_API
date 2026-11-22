@@ -353,6 +353,15 @@ const readHandlers = {
         && CATEGORIES.every((category) => r.json('statuses').some((status) => status.category === category))
         && r.json('statuses').reduce((total, status) => total + status.task_count, 0) >= HOT_TASKS + HOT_ARCHIVED_TASKS,
     }),
+  // Activity of the read fixture (MAIR-1089), as the Admin: its comment and its task's history.
+  'GET /api/v1/projects/{project_id}/activity/': ({ request, data }) =>
+    check(request({ path: { project_id: data.projectId } }), {
+      'project activity 200': (r) => r.status === 200,
+      'project activity reads the fixture': (r) =>
+        r.status === 200 && r.json('total') >= 2
+        && r.json('items').some((item) => item.kind === 'comment')
+        && r.json('items').some((item) => item.kind === 'task_created'),
+    }),
   // Milestones of the read fixture (MAIR-1086), as the Admin.
   'GET /api/v1/projects/{project_id}/milestones/': ({ request, data }) =>
     check(request({ path: { project_id: data.projectId } }), {
@@ -520,6 +529,20 @@ const writeHandlers = {
     });
   },
 
+  // Project comments and bulk deletion (MAIR-1089).
+  'POST /api/v1/projects/{project_id}/comments/': ({ request, data }) =>
+    check(request({ path: { project_id: data.writeProjectId }, body: { message: 'k6 project comment' } }), {
+      'comment project 201': (r) => r.status === 201 && r.json('kind') === 'comment',
+    }),
+  'POST /api/v1/projects/bulk-delete/': ({ request }) => {
+    const ids = [createProject('k6 bulk delete A'), createProject('k6 bulk delete B')];
+    check(request({ body: { ids } }), {
+      'bulk delete 200': (r) => r.status === 200,
+      'bulk delete deletes each project': (r) =>
+        r.status === 200 && r.json('results').every((result) => result.status === 'deleted'),
+    });
+  },
+
   // Members, on a project of their own: two VUs adding the same user to a shared project would
   // answer 409.
   'POST /api/v1/projects/{project_id}/users/': ({ request }) => {
@@ -619,6 +642,7 @@ export function setup() {
   const taskId = createTask(projectId, 'k6 read task');
   fixture('POST', `/api/v1/projects/${projectId}/tasks/${taskId}/comments`, { message: 'k6 fixture' });
   createMilestone(projectId, 'k6 read milestone');
+  fixture('POST', `/api/v1/projects/${projectId}/comments/`, { message: 'k6 fixture' });
   const writeProjectId = createProject('k6 write sandbox');
   // Tasks are assigned to MEMBER_ID, who must belong to the project (MAIR-393).
   addMember(writeProjectId, MEMBER_ID);

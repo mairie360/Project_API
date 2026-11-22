@@ -330,6 +330,17 @@ the rights of a member, and creating a project still needs the Admin / Maire / R
 and `GET /projects/{id}/` (`project`) tell the caller `my_role` (`caller_project_role_sql!`, `null` when not a member)
 and `can_manage` (`manages_project_sql!`, the same rule). `access-matrix.yaml` calls that relation `member_manager`.
 
+The activity of a project (MAIR-1089, `database::activity`) is `GET …/activity/` (viewers, `limit`/`offset` + `total`,
+newest first): the union of `project_comments` (`kind` `comment`) and the `task_history` of its tasks, archived ones
+included (`kind` = the history `action`), each item `{kind, id, task_id, task_title, author_id, author_name, message,
+changes, label, created_at}`; the history labels come from `TaskHistoryEntry::from` (`database/tasks/collaboration`).
+`POST …/comments/` `{message}` is open to every viewer (trimmed, 1 to 2000 characters, blank refused by the view: the
+database only checks the length) and answers the new item (`201`). `POST /projects/bulk-delete/` `{ids}` (1 to 100)
+checks and deletes each project in a transaction of its own (`begin_write`, same rule as `DELETE /projects/{id}/`) and
+answers `200 {results: [{id, status: deleted | not_found | forbidden}]}`; its route is registered before
+`/{project_id}`. Comments and the activity are not in the projects list: no read cache to invalidate; the bulk
+deletion invalidates it through `DeleteProjectQueryView`.
+
 List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`,
 `GET …/users/` — MAIR-425; the members embedded in `GET /projects/{id}/` are the first 100 + `users_total`)
 take `limit` (default 100, clamped to 1–500) / `offset` (`endpoints::pagination::PageParams`) and return a

@@ -46,6 +46,11 @@ operations:
     access: authenticated
     roles: [Admin, Maire, Responsable]
 
+  POST /api/v1/projects/bulk-delete/:
+    access: authenticated
+    roles: [Admin, Maire, Responsable, User, Guest]
+    note: "always 200: each project is checked like DELETE /projects/{project_id}/ and reported deleted, not_found or forbidden (MAIR-1089)"
+
   GET /api/v1/projects/{project_id}/:
     access: authenticated
     roles: [Admin, Maire]
@@ -114,6 +119,18 @@ operations:
   POST /api/v1/projects/{project_id}/milestones/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
   PATCH /api/v1/projects/{project_id}/milestones/{milestone_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
   DELETE /api/v1/projects/{project_id}/milestones/{milestone_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
+
+  GET /api/v1/projects/{project_id}/activity/:
+    access: authenticated
+    roles: [Admin, Maire]
+    ownership: [owner, member, responsable]
+    personal: [items.author_id, items.author_name, items.message, items.changes]
+  POST /api/v1/projects/{project_id}/comments/:
+    access: authenticated
+    roles: [Admin, Maire]
+    ownership: [owner, member, responsable]
+    personal: [author_id, author_name, message]
+    note: "anyone who sees the project may comment it (MAIR-1089)"
 
   GET /api/v1/tasks/:
     access: authenticated
