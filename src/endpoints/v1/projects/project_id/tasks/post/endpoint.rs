@@ -28,6 +28,8 @@ pub enum CreateTaskError {
     UnknownAssignee,
     AssigneeNotInProject,
     StatusNotInProject,
+    /// The start date is after the due date (MAIR-1087, database `CHECK`).
+    DatesOutOfOrder,
 }
 
 impl std::fmt::Display for CreateTaskError {
@@ -48,6 +50,9 @@ impl std::fmt::Display for CreateTaskError {
             CreateTaskError::BadRequest => {
                 write!(f, "Bad request.")
             }
+            CreateTaskError::DatesOutOfOrder => {
+                write!(f, "Invalid `start_date`: must be at or before `due_date`")
+            }
         }
     }
 }
@@ -61,7 +66,9 @@ impl ResponseError for CreateTaskError {
             CreateTaskError::UnknownAssignee => StatusCode::BAD_REQUEST,
             CreateTaskError::AssigneeNotInProject => StatusCode::BAD_REQUEST,
             CreateTaskError::StatusNotInProject => StatusCode::BAD_REQUEST,
-            CreateTaskError::BadRequest => StatusCode::BAD_REQUEST,
+            CreateTaskError::BadRequest | CreateTaskError::DatesOutOfOrder => {
+                StatusCode::BAD_REQUEST
+            }
         }
     }
 
@@ -107,10 +114,12 @@ async fn trigger_create_task(
         *view.assigned_to(),
         view.fields(),
     )
-    .with_status_id(view.status_id());
+    .with_status_id(view.status_id())
+    .with_start_date(view.start_date());
     let result: i32 = tx.fetch_scalar::<i32, _>(&query_view).await.map_err(|e| {
         match classify_db_error("projects/project_id/tasks/post", &e) {
             DbFailure::InvalidReference => CreateTaskError::UnknownAssignee,
+            DbFailure::CheckViolation => CreateTaskError::DatesOutOfOrder,
             _ => CreateTaskError::DatabaseError,
         }
     })?;
@@ -162,7 +171,7 @@ async fn trigger_create_task(
         ),
         (
             status = 400,
-            description = "A URL segment is not an integer, malformed JSON body, `status_id` that is not a status of the project, `assigned_to` that does not match any user or is neither the owner nor a member of the project, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of control characters other than line breaks and tabs; `due_date` a date (`YYYY-MM-DD`) or an RFC 3339 date-time.",
+            description = "A URL segment is not an integer, malformed JSON body, `status_id` that is not a status of the project, `assigned_to` that does not match any user or is neither the owner nor a member of the project, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; each `fields[].label` 1 to 255 characters (same rules as `name`) and each `fields_options[].option` string free of control characters other than line breaks and tabs; `due_date` and `start_date` a date (`YYYY-MM-DD`) or an RFC 3339 date-time, `start_date` at or before `due_date` (MAIR-1087).",
             body = String,
             content_type = "text/plain",
             example = json!("`assigned_to` is not a member of the project.")
@@ -203,6 +212,7 @@ async fn trigger_create_task(
             "name": "Consult the residents",
             "description": "Public meeting to organise before 15 October",
             "due_date": "2026-10-15",
+            "start_date": "2026-10-01",
             "status": "Todo",
             "priority": "High",
             "assigned_to": 42,

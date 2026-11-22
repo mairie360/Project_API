@@ -13,8 +13,17 @@ impl AddUserToProjectQueryView {
             params: vec![
                 QueryParam::I32(id_to_sql(project_id)),
                 QueryParam::I32(id_to_sql(user_id)),
+                QueryParam::Text(String::new()),
             ],
         }
+    }
+
+    /// Adds the member with this role (`manager`, `contributor` or `reader`, MAIR-1088) instead of
+    /// the default `contributor`.
+    #[must_use]
+    pub fn with_role(mut self, role: Option<&str>) -> Self {
+        self.params[2] = QueryParam::Text(role.unwrap_or_default().to_string());
+        self
     }
 
     pub fn project_id(&self) -> u64 {
@@ -28,7 +37,8 @@ impl AddUserToProjectQueryView {
 
 impl ApiRequestDto for AddUserToProjectQueryView {
     fn query_sql(&self) -> &'static str {
-        "INSERT INTO project_members (project_id, user_id) VALUES ($1, $2)"
+        "INSERT INTO project_members (project_id, user_id, role) \
+         VALUES ($1, $2, COALESCE(NULLIF($3, '')::project_member_role, 'contributor'))"
     }
 
     fn query_params(&self) -> &[QueryParam] {

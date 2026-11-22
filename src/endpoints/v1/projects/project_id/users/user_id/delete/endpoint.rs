@@ -6,6 +6,7 @@ use mairie360_api_lib::state::AppState;
 
 use crate::endpoints::db_error::log_db_error;
 
+use crate::database::users::member_role::view::IsProjectOwnerQueryView;
 use crate::database::users::remove_user_from_project::view::{
     RemoveUserFromProjectQueryView, UnassignMemberTasksQueryView,
 };
@@ -19,6 +20,8 @@ pub enum RemoveUserFromProjectError {
     NotFound,
     DatabaseError,
     UnknownUser,
+    /// The user owns the project (MAIR-1088): the owner cannot be removed.
+    Owner,
 }
 
 impl std::fmt::Display for RemoveUserFromProjectError {
@@ -32,6 +35,9 @@ impl std::fmt::Display for RemoveUserFromProjectError {
             RemoveUserFromProjectError::UnknownUser => {
                 write!(f, "Unknown user.")
             }
+            RemoveUserFromProjectError::Owner => {
+                write!(f, "The owner of the project cannot be removed from it.")
+            }
         }
     }
 }
@@ -43,6 +49,7 @@ impl ResponseError for RemoveUserFromProjectError {
             RemoveUserFromProjectError::NotFound => StatusCode::NOT_FOUND,
             RemoveUserFromProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             RemoveUserFromProjectError::UnknownUser => StatusCode::BAD_REQUEST,
+            RemoveUserFromProjectError::Owner => StatusCode::CONFLICT,
         }
     }
 
@@ -61,6 +68,13 @@ async fn trigger_remove_user_from_project(
         log_db_error("projects/project_id/users/user_id/delete", &e.to_string());
         RemoveUserFromProjectError::DatabaseError
     };
+    let owner: bool = tx
+        .fetch_scalar(&IsProjectOwnerQueryView::new(project_id, user_id))
+        .await
+        .map_err(|e| log(&e))?;
+    if owner {
+        return Err(RemoveUserFromProjectError::Owner);
+    }
     tx.execute(&RemoveUserFromProjectQueryView::new(project_id, user_id))
         .await
         .map_err(|e| log(&e))?;
@@ -84,7 +98,8 @@ async fn trigger_remove_user_from_project(
                    In the same transaction, the tasks of this project assigned to the user are \
                    unassigned (`assigned_to` becomes `null`, logged in each task's history and \
                    signed by the caller), since a task can only be assigned to the owner or a \
-                   member of its project. Nothing changes when the user is the project's owner.\n\n\
+                   member of its project.\n\n\
+                   The owner of the project cannot be removed (`409`, MAIR-1088).\n\n\
                    Idempotent once the rights are checked: removing someone who is not a member \
                    also answers `204`.",
     responses(
@@ -119,6 +134,13 @@ async fn trigger_remove_user_from_project(
             body = String,
             content_type = "text/plain",
             example = json!("Not found.")
+        ),
+        (
+            status = 409,
+            description = "The user owns the project, who always stays its manager (MAIR-1088).",
+            body = String,
+            content_type = "text/plain",
+            example = json!("The owner of the project cannot be removed from it.")
         ),
         (
             status = 500,

@@ -110,6 +110,9 @@ pub struct TaskListItemView {
     /// Due date, or `null` if the task has none (listed last).
     #[schema(value_type = Option<String>, format = DateTime, example = "2026-10-15T00:00:00Z")]
     pub due_date: Option<DateTime<Utc>>,
+    /// Start date (MAIR-1087), at or before `due_date`, or `null` if the task has none.
+    #[schema(value_type = Option<String>, format = DateTime, example = "2026-10-01T00:00:00Z")]
+    pub start_date: Option<DateTime<Utc>>,
     /// When the task was archived (it became `Completed`), or `null` while it is active. Only
     /// archived tasks have one, and they are only listed when `status` includes `Completed`.
     #[schema(value_type = Option<String>, format = DateTime, example = json!(null))]
@@ -139,6 +142,7 @@ impl From<VisibleTaskRow> for TaskListItemView {
             status_name: task.status_name().map(str::to_string),
             priority: task.priority().to_string().into(),
             due_date: task.due_date(),
+            start_date: task.start_date(),
             archived_at: task.archived_at(),
             assigned_to: task.assigned_to().map(id_from_sql),
             fields: task.fields(),
