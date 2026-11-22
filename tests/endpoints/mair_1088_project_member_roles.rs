@@ -106,12 +106,22 @@ async fn mair_1088_managers_give_roles_the_owner_stays_manager() {
         status(&app, patch(&owner, s.manager, json!({ "role": "reader" }))).await,
         409
     );
-    for plain in [s.member, s.assignee] {
+    // A contributor and a reader are refused; the member made a manager above may change roles.
+    for plain in [s.assignee, reader] {
         assert_eq!(
             status(&app, patch(&member, plain, json!({ "role": "reader" }))).await,
             403
         );
     }
+    let assignee = format!("{users}{}/", s.assignee);
+    assert_eq!(
+        status(
+            &app,
+            patch(&assignee, s.member, json!({ "role": "contributor" }))
+        )
+        .await,
+        204
+    );
     assert_eq!(
         status(
             &app,
