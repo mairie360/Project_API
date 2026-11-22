@@ -37,6 +37,7 @@ impl ApiRequestDto for GetTaskQueryView {
                    status_id, (SELECT name FROM project_task_statuses ps \
                                WHERE ps.id = tasks.status_id) AS status_name, \
                    due_date AT TIME ZONE 'UTC' AS due_date, \
+                   start_date AT TIME ZONE 'UTC' AS start_date, \
                    archived_at AT TIME ZONE 'UTC' AS archived_at, \
                    COALESCE(custom_fields, '{}'::jsonb) AS custom_fields \
             FROM tasks WHERE project_id = $1 AND id = $2 \

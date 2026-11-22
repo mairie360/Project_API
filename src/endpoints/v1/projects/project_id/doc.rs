@@ -1,8 +1,11 @@
+use crate::endpoints::v1::projects::project_id::activity::doc::ActivityDoc;
 use crate::endpoints::v1::projects::project_id::archived_tasks::doc::ArchivedTasksDoc;
 use crate::endpoints::v1::projects::project_id::close::endpoint::__path_close_project;
+use crate::endpoints::v1::projects::project_id::comments::doc::CommentsDoc;
 use crate::endpoints::v1::projects::project_id::delete::endpoint::__path_delete_project;
 use crate::endpoints::v1::projects::project_id::get::endpoint::__path_get_project;
 use crate::endpoints::v1::projects::project_id::get::view::GetProjectResultView;
+use crate::endpoints::v1::projects::project_id::milestones::doc::MilestonesDoc;
 use crate::endpoints::v1::projects::project_id::patch::endpoint::__path_update_project;
 use crate::endpoints::v1::projects::project_id::patch::view::UpdateProjectView;
 use crate::endpoints::v1::projects::project_id::statuses::doc::StatusesDoc;
@@ -17,6 +20,9 @@ use utoipa::OpenApi;
         (path = "/tasks", api = TasksDoc),
         (path = "/archived-tasks", api = ArchivedTasksDoc),
         (path = "/statuses", api = StatusesDoc),
+        (path = "/milestones", api = MilestonesDoc),
+        (path = "/activity", api = ActivityDoc),
+        (path = "/comments", api = CommentsDoc),
         (path = "/users", api = UsersDoc),
     )
 )]

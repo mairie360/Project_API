@@ -8,6 +8,7 @@ use crate::endpoints::db_error::{classify_db_error, DbFailure};
 
 use crate::database::users::add_user_to_project::view::AddUserToProjectQueryView;
 use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::project_id::users::get::view::ProjectMemberRole;
 use crate::endpoints::v1::projects::project_id::users::post::view::AddUserToProjectView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
@@ -59,7 +60,8 @@ async fn trigger_add_user_to_project(
     project_id: u64,
     view: AddUserToProjectView,
 ) -> Result<(), AddUserToProjectError> {
-    let query_view = AddUserToProjectQueryView::new(project_id, view.user_id);
+    let query_view = AddUserToProjectQueryView::new(project_id, view.user_id)
+        .with_role(view.role.map(ProjectMemberRole::stored));
     tx.execute(&query_view).await.map_err(|e| {
         match classify_db_error("projects/project_id/users/post", &e) {
             DbFailure::InvalidReference => AddUserToProjectError::UserNotFound,
@@ -81,7 +83,8 @@ async fn trigger_add_user_to_project(
     description = "Adds a user to the project, which then shows up in their \
                    `GET /api/v1/projects/`. Reserved to the managers of the project.\n\n\
                    The expected id is the account's id in Core API, as returned by its \
-                   directory `GET /api/v1/user/`. The answer has an empty body.",
+                   directory `GET /api/v1/user/`. `role` (MAIR-1088) is `manager`, \
+                   `contributor` (the default) or `reader`. The answer has an empty body.",
     responses(
         (
             status = 200,
@@ -89,7 +92,7 @@ async fn trigger_add_user_to_project(
         ),
         (
             status = 400,
-            description = "Malformed JSON body, `project_id` not an integer, or missing `user_id` field.",
+            description = "Malformed JSON body, `project_id` not an integer, missing `user_id` field, or `role` not one of `manager`, `contributor`, `reader`.",
             body = String,
             content_type = "text/plain",
             example = json!("Json deserialize error: missing field `user_id`")
@@ -133,7 +136,7 @@ async fn trigger_add_user_to_project(
     request_body(
         content = AddUserToProjectView,
         description = "Core API id of the user to add.",
-        example = json!({ "user_id": 42 })
+        example = json!({ "user_id": 42, "role": "contributor" })
     ),
     security(
         ("jwt" = [])

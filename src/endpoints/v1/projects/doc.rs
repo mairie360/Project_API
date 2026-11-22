@@ -1,5 +1,6 @@
 use utoipa::OpenApi;
 
+use crate::endpoints::v1::projects::bulk_delete::doc::BulkDeleteDoc;
 use crate::endpoints::v1::projects::get::endpoint::__path_get_projects;
 use crate::endpoints::v1::projects::get::view::{
     GetProjectsResultView, ProjectListItemView, ProjectPriorityCountsView, ProjectStatusCountsView,
@@ -13,6 +14,7 @@ use crate::endpoints::v1::projects::project_id::doc::IdDoc;
 #[openapi(
     nest(
         (path = "/", api = Doc),
+        (path = "/bulk-delete", api = BulkDeleteDoc),
         (path = "/{project_id}", api = IdDoc),
     )
 )]

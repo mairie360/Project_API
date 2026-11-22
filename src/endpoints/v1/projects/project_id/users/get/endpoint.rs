@@ -91,8 +91,8 @@ async fn trigger_get_project_users(
             body = GetProjectUsersResultView,
             example = json!({
                 "users": [
-                    { "id": 42, "name": "Jean Dupont" },
-                    { "id": 51, "name": "Amina Bensaïd" }
+                    { "id": 42, "name": "Jean Dupont", "role": "manager" },
+                    { "id": 51, "name": "Amina Bensaïd", "role": "contributor" }
                 ],
                 "total": 2
             })

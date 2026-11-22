@@ -21,6 +21,8 @@ pub enum DbFailure {
     /// A foreign key points to a row that does not exist: usually `400` (or `404` when the
     /// reference comes from the URL).
     InvalidReference,
+    /// A check constraint refused the value (SQLSTATE `23514`): usually `400`.
+    CheckViolation,
     /// Anything else (connection lost, SQL error, mapping error): `500`, logged at `error`.
     Internal,
 }
@@ -34,6 +36,11 @@ pub fn classify_db_error(operation: &str, error: &ApiLibError) -> DbFailure {
         ApiLibError::Database(DbError::NotFound) => DbFailure::NotFound,
         ApiLibError::Database(DbError::UniqueViolation(_)) => DbFailure::Conflict,
         ApiLibError::Database(DbError::ForeignKeyViolation(_)) => DbFailure::InvalidReference,
+        // The lib has no variant for a check violation: it keeps the SQLSTATE in the text of
+        // `DbError::Sqlx`, never the value (MAIR-290).
+        ApiLibError::Database(DbError::Sqlx(_)) if error.to_string().contains("SQLSTATE 23514") => {
+            DbFailure::CheckViolation
+        }
         _ => DbFailure::Internal,
     };
     if failure == DbFailure::Internal {

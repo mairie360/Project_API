@@ -52,6 +52,7 @@ impl ApiRequestDto for GetProjectTasksQueryView {
                            status_id, (SELECT name FROM project_task_statuses ps \
                                        WHERE ps.id = tasks.status_id) AS status_name, \
                            due_date AT TIME ZONE 'UTC' AS due_date, \
+                           start_date AT TIME ZONE 'UTC' AS start_date, \
                            archived_at AT TIME ZONE 'UTC' AS archived_at, \
                            COALESCE(custom_fields, '{}'::jsonb) AS custom_fields, \
                            row_number() OVER (ORDER BY archived_at DESC, id DESC) AS rn \
@@ -66,6 +67,7 @@ impl ApiRequestDto for GetProjectTasksQueryView {
                            status_id, (SELECT name FROM project_task_statuses ps \
                                        WHERE ps.id = tasks.status_id) AS status_name, \
                            due_date AT TIME ZONE 'UTC' AS due_date, \
+                           start_date AT TIME ZONE 'UTC' AS start_date, \
                            archived_at AT TIME ZONE 'UTC' AS archived_at, \
                            COALESCE(custom_fields, '{}'::jsonb) AS custom_fields, \
                            row_number() OVER (ORDER BY created_at, id) AS rn \
@@ -161,6 +163,9 @@ pub struct Task {
     assigned_to: Option<i32>,
     #[serde(default)]
     due_date: Option<chrono::DateTime<chrono::Utc>>,
+    /// Start date (MAIR-1087), at or before `due_date`.
+    #[serde(default)]
+    start_date: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
     archived_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
@@ -208,6 +213,11 @@ impl Task {
 
     pub fn due_date(&self) -> Option<chrono::DateTime<chrono::Utc>> {
         self.due_date
+    }
+
+    /// Start date of the task (MAIR-1087), `None` when it has none.
+    pub fn start_date(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        self.start_date
     }
 
     /// When the task was archived (it became `completed`), `None` while it is active.

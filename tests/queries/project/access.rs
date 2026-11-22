@@ -67,8 +67,9 @@ async fn test_project_access_distinguishes_managers_assignees_and_outsiders() {
         .unwrap();
     let role_only: ProjectAccess = db.fetch_one(&access(0, None, outsider)).await.unwrap();
 
-    assert!(owner_access.visible && owner_access.task_exists && !owner_access.can_manage());
-    assert!(!owner_access.assigned && !owner_access.can_act_on_task());
+    // MAIR-1088: the owner reads `manager` in its project, so it manages it whatever its role.
+    assert!(owner_access.visible && owner_access.task_exists && owner_access.member_manager);
+    assert!(owner_access.can_manage() && !owner_access.assigned && owner_access.can_act_on_task());
     assert!(
         assignee_access.visible
             && assignee_access.assigned
@@ -88,6 +89,7 @@ fn test_assigned_member_of_a_visible_project_can_act_on_its_task_only() {
     let member = ProjectAccess {
         visible: true,
         manager_role: false,
+        member_manager: false,
         task_exists: true,
         assigned: true,
     };
@@ -98,6 +100,49 @@ fn test_assigned_member_of_a_visible_project_can_act_on_its_task_only() {
 
     assert!(member.can_act_on_task() && !member.can_manage());
     assert!(!viewer.can_act_on_task());
+    // MAIR-1088: a member with the `manager` role manages the project it sees.
+    let manager_member = ProjectAccess {
+        member_manager: true,
+        ..viewer
+    };
+    assert!(manager_member.can_manage() && manager_member.can_act_on_task());
+    let hidden = ProjectAccess {
+        visible: false,
+        ..manager_member
+    };
+    assert!(!hidden.can_manage());
+}
+
+/// MAIR-1088: a member whose project role is `manager` manages the project; a contributor or a
+/// reader does not.
+#[tokio::test]
+async fn mair_1088_a_member_with_the_manager_role_manages_the_project() {
+    let db = get_smart_db().await;
+    let owner = create_user("Owner", Some("Responsable")).await;
+    let project_id = db
+        .fetch_scalar::<i32, _>(&CreateProjectQueryView::new("Rôles", None, owner))
+        .await
+        .unwrap() as u64;
+    let mut rights = Vec::new();
+    for role in ["manager", "contributor", "reader"] {
+        let user = create_user(role, Some("User")).await;
+        db.execute(AddUserToProjectQueryView::new(project_id, user).with_role(Some(role)))
+            .await
+            .unwrap();
+        let access: ProjectAccess = db
+            .fetch_one(&ProjectAccessQueryView::new(project_id, None, user))
+            .await
+            .unwrap();
+        rights.push((role, access.visible, access.can_manage()));
+    }
+    assert_eq!(
+        rights,
+        [
+            ("manager", true, true),
+            ("contributor", true, false),
+            ("reader", true, false)
+        ]
+    );
 }
 
 /// Two writes on the same project are serialized: while a transaction holds the project lock

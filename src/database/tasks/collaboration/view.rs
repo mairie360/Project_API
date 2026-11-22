@@ -249,17 +249,18 @@ pub struct TaskHistoryEntry {
     pub created_at: String,
     /// Changed fields as `{"<field>": {"from": …, "to": …}}`. Keys are `status` (the category),
     /// `status_id` and `status_name` (the project statuses, MAIR-566), `title`, `description`,
-    /// `priority`, `due_date`, `assigned_to` and `fields`. Absent on `task_created`.
+    /// `priority`, `start_date` (MAIR-1087), `due_date`, `assigned_to` and `fields`. Absent on `task_created`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<Object>, example = json!({ "status": { "from": "todo", "to": "in_progress" } }))]
     pub changes: Option<serde_json::Value>,
 }
 
 /// Order in which changed fields are listed in a `task_updated` label.
-const TRACKED_FIELDS: [&str; 6] = [
+const TRACKED_FIELDS: [&str; 7] = [
     "title",
     "description",
     "priority",
+    "start_date",
     "due_date",
     "assigned_to",
     "fields",

@@ -20,7 +20,13 @@ use crate::init_app;
 
 const MATRIX: &str = include_str!("../../access-matrix.yaml");
 const ROLES: [&str; 5] = ["Admin", "Maire", "Responsable", "User", "Guest"];
-const RELATIONS: [&str; 4] = ["owner", "member", "assignee", "responsable"];
+const RELATIONS: [&str; 5] = [
+    "owner",
+    "member",
+    "assignee",
+    "responsable",
+    "member_manager",
+];
 /// The Admin seeded by the database migrations.
 const ADMIN_ID: u64 = 1;
 
@@ -121,6 +127,8 @@ struct People {
     responsable_member: u64,
     /// A Responsable sharing a group with the owner, not a member.
     group_responsable: u64,
+    /// A plain agent, member of every fixture project with the `manager` role (MAIR-1088).
+    member_manager: u64,
 }
 
 /// Fresh instances for one call: a project owned by `owner` with `member` and `assignee` as
@@ -132,6 +140,8 @@ struct Fixtures {
     extra: u64,
     status: u64,
     template: u64,
+    /// A milestone of the project (MAIR-1086).
+    milestone: u64,
 }
 
 async fn fixtures<B: MessageBody>(
@@ -167,6 +177,19 @@ async fn fixtures<B: MessageBody>(
         .await;
         assert_eq!(got, 200, "fixture: add {user} to project {project}");
     }
+    let got = status(
+        app,
+        post(
+            &format!("/api/v1/projects/{project}/users/"),
+            people.owner,
+            json!({ "user_id": people.member_manager, "role": "manager" }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        got, 200,
+        "fixture: add the manager member to project {project}"
+    );
     let task = json(
         app,
         post(
@@ -201,8 +224,18 @@ async fn fixtures<B: MessageBody>(
         ),
     )
     .await;
+    let milestone = json(
+        app,
+        post(
+            &format!("/api/v1/projects/{project}/milestones/"),
+            people.owner,
+            json!({ "title": "Jalon de la matrice", "due_date": "2026-12-15" }),
+        ),
+    )
+    .await;
     Fixtures {
         project,
+        milestone: milestone["id"].as_u64().unwrap(),
         task: task["task_id"].as_u64().unwrap(),
         extra,
         status: statuses["statuses"][0]["id"].as_u64().unwrap(),
@@ -220,7 +253,8 @@ fn request(spec: &Value, name: &str, f: &Fixtures, caller: Option<u64>) -> TestR
         .replace("{task_id}", &f.task.to_string())
         .replace("{user_id}", &f.extra.to_string())
         .replace("{status_id}", &f.status.to_string())
-        .replace("{template_id}", &f.template.to_string());
+        .replace("{template_id}", &f.template.to_string())
+        .replace("{milestone_id}", &f.milestone.to_string());
     let example = spec["paths"][path][method.to_lowercase()]["requestBody"]["content"]
         ["application/json"]["example"]
         .clone();
@@ -233,6 +267,7 @@ fn request(spec: &Value, name: &str, f: &Fixtures, caller: Option<u64>) -> TestR
             Some(json!({ "name": "Nouvelle tâche", "fields": [] }))
         }
         "POST /api/v1/projects/{project_id}/users/" => Some(json!({ "user_id": f.extra })),
+        "POST /api/v1/projects/bulk-delete/" => Some(json!({ "ids": [f.project] })),
         // The example links group 3, which the callers of the matrix may not link.
         "PATCH /api/v1/projects/{project_id}/" => {
             Some(json!({ "status": "Review", "priority": "High" }))
@@ -266,6 +301,7 @@ async fn every_role_and_relation_gets_what_the_matrix_says() {
         assignee: ctx.user("Assignee", Some("User")).await,
         responsable_member: ctx.user("ResponsableMember", Some("Responsable")).await,
         group_responsable: ctx.user("GroupResponsable", Some("Responsable")).await,
+        member_manager: ctx.user("MemberManager", Some("User")).await,
     };
     create_group(people.owner, &[people.owner, people.group_responsable]).await;
     // Users of each role with no relation to the projects (the schema also gives every account
@@ -317,6 +353,12 @@ async fn every_role_and_relation_gets_what_the_matrix_says() {
             ),
             ("owner", people.owner, "Responsable", &["owner"][..]),
             ("member", people.member, "User", &["member"][..]),
+            (
+                "manager member",
+                people.member_manager,
+                "User",
+                &["member_manager", "member"][..],
+            ),
             (
                 "assignee",
                 people.assignee,

@@ -1,6 +1,7 @@
 use crate::endpoints::validation::{
-    check_description, check_json, check_label, check_optional, deserialize_optional_due_date,
-    Validate, ValidationError, MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
+    check_dates_in_order, check_description, check_json, check_label, check_optional,
+    deserialize_optional_due_date, deserialize_present_start_date, Validate, ValidationError,
+    MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
 };
 use crate::{
     database::tasks::get_project_tasks::view::DynamicTaskField,
@@ -50,6 +51,12 @@ pub struct PatchTaskView {
     #[serde(default, deserialize_with = "deserialize_optional_due_date")]
     #[schema(value_type = Option<String>, example = "2026-10-15")]
     pub due_date: Option<DateTime<Utc>>,
+    /// New start date (MAIR-1087), same formats as `due_date`: absent to keep it, `null` to clear
+    /// it. Must be at or before the due date, the one sent or the stored one (`400` otherwise).
+    /// Forbidden to an assigned agent who does not manage the project.
+    #[serde(default, deserialize_with = "deserialize_present_start_date")]
+    #[schema(value_type = Option<String>, nullable, example = "2026-10-01")]
+    pub start_date: Option<Option<DateTime<Utc>>>,
     /// Absent: assignment kept; `null`: assignment removed.
     #[serde(default, deserialize_with = "deserialize_present")]
     #[schema(value_type = Option<u64>, nullable, example = 42)]
@@ -68,6 +75,7 @@ impl PatchTaskView {
             && self.description.is_none()
             && self.priority.is_none()
             && self.due_date.is_none()
+            && self.start_date.is_none()
             && self.assigned_to.is_none()
             && self.fields.is_none()
     }
@@ -81,6 +89,7 @@ impl Validate for PatchTaskView {
         check_optional(self.description.as_deref(), |description| {
             check_description("description", description, MAX_DESCRIPTION_LENGTH)
         })?;
+        check_dates_in_order(self.start_date.flatten(), self.due_date)?;
         for field in self.fields.iter().flatten() {
             check_label("fields.label", &field.label, MAX_TITLE_LENGTH)?;
             for option in &field.fields_options {
