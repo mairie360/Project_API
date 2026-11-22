@@ -1,5 +1,6 @@
 pub mod delete;
 pub mod doc;
+pub mod patch;
 
 /// Path parameters of the routes of a project member.
 #[derive(serde::Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
@@ -34,6 +35,8 @@ impl ProjectUserPathParams {
 
 pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
     cfg.service(
-        actix_web::web::scope("/{user_id}").service(delete::endpoint::remove_user_from_project),
+        actix_web::web::scope("/{user_id}")
+            .service(delete::endpoint::remove_user_from_project)
+            .service(patch::endpoint::update_member_role),
     );
 }

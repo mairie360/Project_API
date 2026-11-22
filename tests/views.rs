@@ -510,8 +510,25 @@ fn add_user_to_project_view_accessors() {
     let view = AddUserToProjectQueryView::new(2, 3);
     assert_eq!(view.project_id(), 2);
     assert_eq!(view.user_id(), 3);
-    assert_eq!(view.query_params().len(), 2);
+    // MAIR-1088: no role given = the default `contributor`.
+    assert_eq!(view.query_params().len(), 3);
+    assert_eq!(view.query_params()[2].as_text(), "");
     assert!(view.query_sql().contains("INSERT INTO project_members"));
+    let reader = view.with_role(Some("reader"));
+    assert_eq!(reader.query_params()[2].as_text(), "reader");
+}
+
+#[test]
+fn mair_1088_a_role_change_invalidates_the_projects_list() {
+    use project_api::database::users::member_role::view::{
+        IsProjectOwnerQueryView, SetMemberRoleQueryView,
+    };
+    let change = SetMemberRoleQueryView::new(2, 3, "manager");
+    assert_eq!(change.query_params()[2].as_text(), "manager");
+    assert_eq!(change.invalidated_read_caches(), ["projects"]);
+    assert!(IsProjectOwnerQueryView::new(2, 3)
+        .invalidated_read_caches()
+        .is_empty());
 }
 
 #[test]

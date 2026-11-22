@@ -44,6 +44,7 @@ async fn test_update_project_keeps_missing_fields_and_can_clear_description() {
             Some("Rue des écoles"),
             "suspended"
         )
+        .with_caller(Some("manager"), true)
     );
 
     let cleared: bool = db
@@ -59,6 +60,7 @@ async fn test_update_project_keeps_missing_fields_and_can_clear_description() {
     assert_eq!(
         read(&db, project_id as u64, owner).await,
         ProjectView::new(project_id, "Voirie 2027", None, "suspended")
+            .with_caller(Some("manager"), true)
     );
 }
 

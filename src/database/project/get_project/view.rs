@@ -35,6 +35,11 @@ impl ApiRequestDto for GetVisibleProjectQueryView {
             "SELECT to_jsonb(t) FROM ( \
                 SELECT p.id, p.title, p.description, p.status, p.priority, \
                     p.budget_voted, p.budget_committed, \
+                    ",
+            crate::caller_project_role_sql!(),
+            " AS my_role, ",
+            crate::manages_project_sql!(),
+            " AS can_manage, \
                     (SELECT jsonb_build_object('id', g.id, 'name', g.name) \
                      FROM project_groups pg JOIN groups g ON g.id = pg.group_id \
                      WHERE pg.project_id = p.id ORDER BY pg.linked_at, g.id LIMIT 1) AS \"group\" \

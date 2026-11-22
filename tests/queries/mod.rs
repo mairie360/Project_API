@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod db_role;
 pub mod milestones;
 pub mod project;
