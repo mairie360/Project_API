@@ -524,8 +524,17 @@ const writeHandlers = {
   // answer 409.
   'POST /api/v1/projects/{project_id}/users/': ({ request }) => {
     const projectId = createProject('k6 add member');
-    check(request({ path: { project_id: projectId }, body: { user_id: OTHER_MEMBER_ID } }), {
+    check(request({ path: { project_id: projectId }, body: { user_id: OTHER_MEMBER_ID, role: 'contributor' } }), {
       'add member 200': (r) => r.status === 200,
+    });
+    deleteProject(projectId);
+  },
+  // Role of a member (MAIR-1088), on a project of its own.
+  'PATCH /api/v1/projects/{project_id}/users/{user_id}/': ({ request }) => {
+    const projectId = createProject('k6 member role');
+    addMember(projectId, OTHER_MEMBER_ID);
+    check(request({ path: { project_id: projectId, user_id: OTHER_MEMBER_ID }, body: { role: 'reader' } }), {
+      'change member role 204': (r) => r.status === 204,
     });
     deleteProject(projectId);
   },

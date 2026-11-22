@@ -140,8 +140,8 @@ async fn trigger_get_project(
                 "tasks_total": 1,
                 "tasks_archived": 3,
                 "users": [
-                    { "id": 42, "name": "Jean Dupont" },
-                    { "id": 51, "name": "Amina Bensaïd" }
+                    { "id": 42, "name": "Jean Dupont", "role": "manager" },
+                    { "id": 51, "name": "Amina Bensaïd", "role": "contributor" }
                 ],
                 "users_total": 2,
                 "milestones": [

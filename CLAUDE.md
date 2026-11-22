@@ -318,6 +318,13 @@ row) and `DELETE` (managers, sets `deleted_at`, `204`); a milestone of another p
 does not show them, so their writes invalidate no read cache. A check violation (`23514`) is classified
 `DbFailure::CheckViolation` (`db_error.rs`, read from the SQLSTATE in the lib's error text) and answers `400`.
 
+Members have a role in their project (MAIR-1088, Database `project_members.role`, enum `project_member_role`
+`manager` / `contributor` / `reader`, default `contributor`): every member read (`GET /projects/` `members`,
+`GET /projects/{id}/` `users`, `GET …/users/`) carries `role`, the owner always reading `manager`
+(`member_role_sql!`). `POST …/users/` takes an optional `role`, `PATCH …/users/{user_id}/` `{role}` (managers, `204`)
+changes it (`404` for a user who is not a member, `409` for the owner), and `DELETE …/users/{user_id}/` refuses the
+owner (`409`). The role is informative: the access rules of `access.rs` do not read it yet.
+
 List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`,
 `GET …/users/` — MAIR-425; the members embedded in `GET /projects/{id}/` are the first 100 + `users_total`)
 take `limit` (default 100, clamped to 1–500) / `offset` (`endpoints::pagination::PageParams`) and return a

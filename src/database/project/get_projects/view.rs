@@ -123,11 +123,15 @@ impl ApiRequestDto for GetProjectsQueryView {
                                pg.budget_voted, pg.budget_committed, \
                                (SELECT count(*) FROM project_members pm WHERE pm.project_id = pg.id) \
                                    AS members_total, \
-                               COALESCE((SELECT jsonb_agg(jsonb_build_object('id', m.id, 'name', m.name) \
+                               COALESCE((SELECT jsonb_agg(jsonb_build_object('id', m.id, 'name', m.name, 'role', m.role) \
                                                           ORDER BY m.last_name, m.first_name, m.id) \
                                          FROM (SELECT u.id, u.first_name, u.last_name, \
-                                                      NULLIF(concat_ws(' ', u.first_name, u.last_name), '') AS name \
+                                                      NULLIF(concat_ws(' ', u.first_name, u.last_name), '') AS name, \
+                                                      ",
+            crate::member_role_sql!(),
+            " AS role \
                                                FROM project_members pm JOIN users u ON u.id = pm.user_id \
+                                               JOIN projects p ON p.id = pm.project_id \
                                                WHERE pm.project_id = pg.id \
                                                ORDER BY u.last_name, u.first_name, u.id LIMIT 5) m), \
                                         '[]'::jsonb) AS members \

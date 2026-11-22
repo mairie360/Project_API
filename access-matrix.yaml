@@ -90,9 +90,14 @@ operations:
     access: authenticated
     roles: [Admin, Maire]
     ownership: [owner, member, responsable]
-    personal: [users.id, users.name]
+    personal: [users.id, users.name, users.role]
   POST /api/v1/projects/{project_id}/users/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
   DELETE /api/v1/projects/{project_id}/users/{user_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  PATCH /api/v1/projects/{project_id}/users/{user_id}/:
+    access: authenticated
+    roles: [Admin, Maire]
+    ownership: [owner, responsable]
+    note: "role of a member (MAIR-1088); the owner always reads manager (409)"
 
   GET /api/v1/projects/{project_id}/statuses/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member, responsable]}
   POST /api/v1/projects/{project_id}/statuses/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}

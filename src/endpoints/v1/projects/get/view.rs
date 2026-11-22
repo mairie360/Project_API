@@ -300,14 +300,7 @@ impl From<ProjectView> for ProjectListItemView {
             tasks_completed: count(value.tasks_completed()),
             priority: value.priority().to_string().into(),
             due_date: value.due_date(),
-            members: value
-                .members()
-                .iter()
-                .map(|member| User {
-                    id: id_from_sql(member.id),
-                    name: member.name.clone(),
-                })
-                .collect(),
+            members: value.members().iter().cloned().map(User::from).collect(),
             members_total: count(value.members_total()),
             budget_voted: value.budget_voted(),
             budget_committed: value.budget_committed(),
