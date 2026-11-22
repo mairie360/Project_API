@@ -74,7 +74,8 @@ impl ApiRequestDto for GetProjectsQueryView {
                        COALESCE(a.tasks_total, 0) AS tasks_total, \
                        COALESCE(a.tasks_completed, 0) AS tasks_completed, \
                        p.priority::text AS priority, \
-                       a.next_due_date AS due_date \
+                       a.next_due_date AS due_date, \
+                       p.budget_voted, p.budget_committed \
                 FROM projects p \
                 LEFT JOIN LATERAL ( \
                     SELECT count(*) AS tasks_total, \
@@ -119,6 +120,7 @@ impl ApiRequestDto for GetProjectsQueryView {
                         SELECT pg.id, pg.title, pg.description, pg.status, pg.created_at, \
                                pg.tasks_total, pg.tasks_completed, pg.priority, \
                                pg.due_date AT TIME ZONE 'UTC' AS due_date, \
+                               pg.budget_voted, pg.budget_committed, \
                                (SELECT count(*) FROM project_members pm WHERE pm.project_id = pg.id) \
                                    AS members_total, \
                                COALESCE((SELECT jsonb_agg(jsonb_build_object('id', m.id, 'name', m.name) \
@@ -192,6 +194,13 @@ pub struct ProjectView {
     /// Group linked to the project; only read by the project detail.
     #[serde(default)]
     group: Option<crate::database::project::group::view::GroupRow>,
+    /// Budget voted by the council, in cents (MAIR-1085); `None` when not filled in. Defaulted: a
+    /// page cached before MAIR-1085 has none.
+    #[serde(default)]
+    budget_voted: Option<i64>,
+    /// Budget already committed, in cents (MAIR-1085); `None` when not filled in.
+    #[serde(default)]
+    budget_committed: Option<i64>,
 }
 
 fn default_priority() -> String {
@@ -212,7 +221,27 @@ impl ProjectView {
             members: Vec::new(),
             members_total: 0,
             group: None,
+            budget_voted: None,
+            budget_committed: None,
         }
+    }
+
+    /// Sets the budget of the project, in cents (MAIR-1085).
+    #[must_use]
+    pub fn with_budget(mut self, voted: Option<i64>, committed: Option<i64>) -> Self {
+        self.budget_voted = voted;
+        self.budget_committed = committed;
+        self
+    }
+
+    /// Budget voted by the council, in cents, `None` when not filled in (MAIR-1085).
+    pub fn budget_voted(&self) -> Option<i64> {
+        self.budget_voted
+    }
+
+    /// Budget already committed, in cents, `None` when not filled in (MAIR-1085).
+    pub fn budget_committed(&self) -> Option<i64> {
+        self.budget_committed
     }
 
     pub fn group(&self) -> Option<&crate::database::project::group::view::GroupRow> {

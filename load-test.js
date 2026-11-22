@@ -373,7 +373,7 @@ const writeHandlers = {
   },
   'PATCH /api/v1/projects/{project_id}/': ({ request }) => {
     const projectId = createProject('k6 patch project');
-    check(request({ path: { project_id: projectId }, body: { name: 'k6 patched', status: 'Suspended' } }), {
+    check(request({ path: { project_id: projectId }, body: { name: 'k6 patched', status: 'Suspended', budget_voted: 1250000, budget_committed: 480000 } }), {
       'patch project 204': (r) => r.status === 204,
     });
     deleteProject(projectId);

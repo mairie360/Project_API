@@ -34,6 +34,11 @@ impl ValidationError {
     fn new(field: &str, reason: &str) -> Self {
         Self(format!("Invalid `{field}`: {reason}"))
     }
+
+    /// `field` breaks a rule the shared checks do not cover; `reason` says which.
+    pub fn invalid(field: &str, reason: &str) -> Self {
+        Self::new(field, reason)
+    }
 }
 
 impl fmt::Display for ValidationError {

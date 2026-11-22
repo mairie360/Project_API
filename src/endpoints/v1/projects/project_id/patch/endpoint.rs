@@ -79,6 +79,9 @@ async fn trigger_update_project(
         view.description.as_deref(),
         status,
     );
+    if view.budget_voted.is_some() || view.budget_committed.is_some() {
+        query_view = query_view.with_budget(view.budget_voted, view.budget_committed);
+    }
     if let Some(priority) = &view.priority {
         query_view = query_view
             .with_priority(stored_priority(priority).ok_or(UpdateProjectError::BadRequest)?);
@@ -131,8 +134,8 @@ async fn set_project_group(
     ),
     path = "",
     summary = "Update a project",
-    description = "Updates the name, the description, the status, the priority or the group of a \
-                   project. \
+    description = "Updates the name, the description, the status, the priority, the group or the \
+                   budget of a project. \
                    Partial update: a missing or `null` field is kept, except `group_id`, which \
                    cannot be `null` (see below). Restricted to the managers of the project.\n\n\
                    A `name` made of spaces only is refused in `400`, and so is the `Error` status \
@@ -146,12 +149,15 @@ async fn set_project_group(
                    the project. The caller may link one of their own groups; Admin and Maire may \
                    link any group (`GET /api/v1/project-groups/`). Any other id answers `404` and \
                    changes nothing.\n\n\
+                   `budget_voted` and `budget_committed` (MAIR-1085) are amounts in cents of euro: \
+                   absent keeps an amount, `null` clears it, an integer from 0 replaces it; a \
+                   negative amount answers `400`.\n\n\
                    The response has an empty body; read the project back with \
                    `GET /api/v1/projects/{project_id}/`.",
     request_body(
         content = UpdateProjectView,
         description = "Fields to change, all optional.",
-        example = json!({ "status": "Review", "priority": "High", "group_id": 3 })
+        example = json!({ "status": "Review", "priority": "High", "group_id": 3, "budget_voted": 1250000, "budget_committed": 480000 })
     ),
     responses(
         (
@@ -160,7 +166,7 @@ async fn set_project_group(
         ),
         (
             status = 400,
-            description = "Malformed JSON body, `project_id` not an integer, `name` empty, `status` or `priority` not one of the enum values, `Error` status or priority, `group_id` set to `null`, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs.",
+            description = "Malformed JSON body, `project_id` not an integer, `name` empty, `status` or `priority` not one of the enum values, `Error` status or priority, `group_id` set to `null`, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; `budget_voted` / `budget_committed` negative, not an integer or above 2^63 - 1.",
             body = String,
             content_type = "text/plain",
             example = json!("Invalid `name`: must be at most 255 characters")
