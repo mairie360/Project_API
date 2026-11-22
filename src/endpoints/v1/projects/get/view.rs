@@ -10,7 +10,7 @@ use crate::database::project::update_status::view::ProjectStatus as DbProjectSta
 use crate::database::tasks::create_task::view::TaskPriority as DbTaskPriority;
 use crate::endpoints::pagination::{Page, PageParams};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
-use crate::endpoints::v1::projects::project_id::users::get::view::User;
+use crate::endpoints::v1::projects::project_id::users::get::view::{ProjectMemberRole, User};
 use crate::endpoints::validation::{
     check_list, check_opaque, check_optional, Validate, ValidationError, MAX_TITLE_LENGTH,
 };
@@ -206,6 +206,15 @@ pub struct ProjetView {
     /// filled in. Never negative; it may exceed `budget_voted`.
     #[schema(minimum = 0, example = 480000)]
     pub budget_committed: Option<i64>,
+    /// Role of the caller in this project (MAIR-1088): `manager` for its owner, the role of a
+    /// member, `null` when the caller is not a member (an Admin, a Maire or a Responsable who
+    /// sees it through a group or their role).
+    pub my_role: Option<ProjectMemberRole>,
+    /// Whether the caller may manage this project: update it, close or delete it, write its
+    /// tasks, members, statuses and milestones (MAIR-1088: Admin, Maire, a Responsable who sees
+    /// it, its owner, or a member with the `manager` role). A front hides the refused actions.
+    #[schema(example = true)]
+    pub can_manage: bool,
 }
 
 /// A Core API group, as linked to a project or offered by `GET /api/v1/project-groups/`.
@@ -239,6 +248,8 @@ impl From<ProjectView> for ProjetView {
             group: value.group().map(Into::into),
             budget_voted: value.budget_voted(),
             budget_committed: value.budget_committed(),
+            my_role: value.my_role().map(ProjectMemberRole::from_stored),
+            can_manage: value.can_manage(),
         }
     }
 }
@@ -283,6 +294,15 @@ pub struct ProjectListItemView {
     /// filled in. Never negative; it may exceed `budget_voted`.
     #[schema(minimum = 0, example = 480000)]
     pub budget_committed: Option<i64>,
+    /// Role of the caller in this project (MAIR-1088): `manager` for its owner, the role of a
+    /// member, `null` when the caller is not a member (an Admin, a Maire or a Responsable who
+    /// sees it through a group or their role).
+    pub my_role: Option<ProjectMemberRole>,
+    /// Whether the caller may manage this project: update it, close or delete it, write its
+    /// tasks, members, statuses and milestones (MAIR-1088: Admin, Maire, a Responsable who sees
+    /// it, its owner, or a member with the `manager` role). A front hides the refused actions.
+    #[schema(example = true)]
+    pub can_manage: bool,
 }
 
 fn count(value: i64) -> u64 {
@@ -304,6 +324,8 @@ impl From<ProjectView> for ProjectListItemView {
             members_total: count(value.members_total()),
             budget_voted: value.budget_voted(),
             budget_committed: value.budget_committed(),
+            my_role: value.my_role().map(ProjectMemberRole::from_stored),
+            can_manage: value.can_manage(),
         }
     }
 }
