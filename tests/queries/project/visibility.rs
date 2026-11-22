@@ -86,7 +86,9 @@ async fn test_projects_are_listed_newest_first() {
     );
     assert_eq!(
         projects[0],
+        // MAIR-1088: the owner reads `manager` and manages it.
         ProjectView::new(second, "Second", Some("desc"), "active")
+            .with_caller(Some("manager"), true)
     );
 }
 

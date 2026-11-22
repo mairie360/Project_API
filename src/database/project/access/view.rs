@@ -27,6 +27,9 @@ impl ApiRequestDto for ProjectAccessQueryView {
             "), \
                 'manager_role', EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id \
                     WHERE ur.user_id = $1 AND r.name IN ('Admin', 'Maire', 'Responsable')), \
+                'member_manager', EXISTS (SELECT 1 FROM projects p WHERE p.id = $2 \
+                    AND (p.owner_id = $1 OR EXISTS (SELECT 1 FROM project_members mm \
+                        WHERE mm.project_id = p.id AND mm.user_id = $1 AND mm.role = 'manager'))), \
                 'task_exists', EXISTS (SELECT 1 FROM tasks t WHERE t.id = $3 AND t.project_id = $2), \
                 'assigned', EXISTS (SELECT 1 FROM tasks t \
                     WHERE t.id = $3 AND t.project_id = $2 AND t.assigned_to = $1) \
@@ -43,14 +46,18 @@ impl ApiRequestDto for ProjectAccessQueryView {
 pub struct ProjectAccess {
     pub visible: bool,
     pub manager_role: bool,
+    /// The user owns the project or is a member of it with the `manager` role (MAIR-1088).
+    #[serde(default)]
+    pub member_manager: bool,
     pub task_exists: bool,
     pub assigned: bool,
 }
 
 impl ProjectAccess {
-    /// Admin, Maire or Responsable who sees the project.
+    /// Admin, Maire or Responsable who sees the project, or its owner or a member with the
+    /// `manager` role (MAIR-1088).
     pub fn can_manage(&self) -> bool {
-        self.visible && self.manager_role
+        self.visible && (self.manager_role || self.member_manager)
     }
 
     /// Manager of the project or agent assigned to the task.

@@ -98,12 +98,14 @@ async fn trigger_get_projects(
                         "status": "Active", "tasks_total": 12, "tasks_completed": 4, "priority": "High",
                         "due_date": "2026-10-15T00:00:00Z",
                         "members": [{ "id": 42, "name": "Jean Dupont", "role": "manager" }, { "id": 57, "name": "Marie Durand", "role": "reader" }],
-                        "members_total": 2, "budget_voted": 1250000, "budget_committed": 480000
+                        "members_total": 2, "budget_voted": 1250000, "budget_committed": 480000,
+                        "my_role": "manager", "can_manage": true
                     },
                     {
                         "id": 18, "name": "Digitisation of the civil registry", "description": "", "status": "Completed",
                         "tasks_total": 0, "tasks_completed": 0, "priority": "Medium", "due_date": null,
-                        "members": [], "members_total": 0, "budget_voted": null, "budget_committed": null
+                        "members": [], "members_total": 0, "budget_voted": null, "budget_committed": null,
+                        "my_role": null, "can_manage": false
                     }
                 ],
                 "total": 2,

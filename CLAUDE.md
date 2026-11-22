@@ -323,7 +323,12 @@ Members have a role in their project (MAIR-1088, Database `project_members.role`
 `GET /projects/{id}/` `users`, `GET …/users/`) carries `role`, the owner always reading `manager`
 (`member_role_sql!`). `POST …/users/` takes an optional `role`, `PATCH …/users/{user_id}/` `{role}` (managers, `204`)
 changes it (`404` for a user who is not a member, `409` for the owner), and `DELETE …/users/{user_id}/` refuses the
-owner (`409`). The role is informative: the access rules of `access.rs` do not read it yet.
+owner (`409`). A member whose role is `manager` manages the project like an Admin, a Maire or a Responsable
+(decision of the product owner): `ProjectAccess::member_manager` (the owner, or a member with the `manager` role) is part
+of `can_manage()`, so every `Requirement::ManageProject` / `ActOnTask` write accepts it; `contributor` and `reader` keep
+the rights of a member, and creating a project still needs the Admin / Maire / Responsable role. `GET /projects/` items
+and `GET /projects/{id}/` (`project`) tell the caller `my_role` (`caller_project_role_sql!`, `null` when not a member)
+and `can_manage` (`manages_project_sql!`, the same rule). `access-matrix.yaml` calls that relation `member_manager`.
 
 List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`,
 `GET …/users/` — MAIR-425; the members embedded in `GET /projects/{id}/` are the first 100 + `users_total`)

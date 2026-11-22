@@ -19,6 +19,8 @@
 #              responsable     a Responsable who sees the project without owning it: a member of
 #                              it, or sharing a group with its owner or one of its members; with
 #                              the manager role, seeing the project is enough to manage it
+#              member_manager  a member whose role in the project is `manager` (MAIR-1088): it
+#                              manages the project like an Admin, a Maire or a Responsable
 #   personal   personal fields of the answer (gdpr/inventory.yaml of Database), for the review
 #   note       the rule when it is not obvious
 #
@@ -49,9 +51,9 @@ operations:
     roles: [Admin, Maire]
     ownership: [owner, member, responsable]
     personal: [users.id, users.name, tasks.assigned_to]
-  PATCH /api/v1/projects/{project_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
-  DELETE /api/v1/projects/{project_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
-  PATCH /api/v1/projects/{project_id}/close: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  PATCH /api/v1/projects/{project_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
+  DELETE /api/v1/projects/{project_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
+  PATCH /api/v1/projects/{project_id}/close: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
 
   GET /api/v1/projects/{project_id}/tasks/:
     access: authenticated
@@ -68,22 +70,22 @@ operations:
     roles: [Admin, Maire]
     ownership: [owner, member, responsable]
     personal: [assigned_to]
-  POST /api/v1/projects/{project_id}/tasks/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  POST /api/v1/projects/{project_id}/tasks/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
   PATCH /api/v1/projects/{project_id}/tasks/{task_id}/:
     access: authenticated
     roles: [Admin, Maire]
-    ownership: [owner, assignee, responsable]
+    ownership: [owner, member_manager, assignee, responsable]
     note: "the assignee may only change the status"
-  DELETE /api/v1/projects/{project_id}/tasks/{task_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  DELETE /api/v1/projects/{project_id}/tasks/{task_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
   GET /api/v1/projects/{project_id}/tasks/{task_id}/collaboration:
     access: authenticated
     roles: [Admin, Maire]
-    ownership: [owner, assignee, responsable]
+    ownership: [owner, member_manager, assignee, responsable]
     personal: [comments.author, comments.message, history.author, history.changes]
   POST /api/v1/projects/{project_id}/tasks/{task_id}/comments:
     access: authenticated
     roles: [Admin, Maire]
-    ownership: [owner, assignee, responsable]
+    ownership: [owner, member_manager, assignee, responsable]
     personal: [author, message]
 
   GET /api/v1/projects/{project_id}/users/:
@@ -91,27 +93,27 @@ operations:
     roles: [Admin, Maire]
     ownership: [owner, member, responsable]
     personal: [users.id, users.name, users.role]
-  POST /api/v1/projects/{project_id}/users/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
-  DELETE /api/v1/projects/{project_id}/users/{user_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  POST /api/v1/projects/{project_id}/users/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
+  DELETE /api/v1/projects/{project_id}/users/{user_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
   PATCH /api/v1/projects/{project_id}/users/{user_id}/:
     access: authenticated
     roles: [Admin, Maire]
-    ownership: [owner, responsable]
+    ownership: [owner, member_manager, responsable]
     note: "role of a member (MAIR-1088); the owner always reads manager (409)"
 
   GET /api/v1/projects/{project_id}/statuses/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member, responsable]}
-  POST /api/v1/projects/{project_id}/statuses/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
-  PATCH /api/v1/projects/{project_id}/statuses/{status_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
-  DELETE /api/v1/projects/{project_id}/statuses/{status_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  POST /api/v1/projects/{project_id}/statuses/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
+  PATCH /api/v1/projects/{project_id}/statuses/{status_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
+  DELETE /api/v1/projects/{project_id}/statuses/{status_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
 
   GET /api/v1/projects/{project_id}/milestones/:
     access: authenticated
     roles: [Admin, Maire]
     ownership: [owner, member, responsable]
     personal: [milestones.created_by, milestones.updated_by]
-  POST /api/v1/projects/{project_id}/milestones/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
-  PATCH /api/v1/projects/{project_id}/milestones/{milestone_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
-  DELETE /api/v1/projects/{project_id}/milestones/{milestone_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, responsable]}
+  POST /api/v1/projects/{project_id}/milestones/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
+  PATCH /api/v1/projects/{project_id}/milestones/{milestone_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
+  DELETE /api/v1/projects/{project_id}/milestones/{milestone_id}/: {access: authenticated, roles: [Admin, Maire], ownership: [owner, member_manager, responsable]}
 
   GET /api/v1/tasks/:
     access: authenticated

@@ -75,7 +75,12 @@ impl ApiRequestDto for GetProjectsQueryView {
                        COALESCE(a.tasks_completed, 0) AS tasks_completed, \
                        p.priority::text AS priority, \
                        a.next_due_date AS due_date, \
-                       p.budget_voted, p.budget_committed \
+                       p.budget_voted, p.budget_committed, \
+                       ",
+            crate::caller_project_role_sql!(),
+            " AS my_role, ",
+            crate::manages_project_sql!(),
+            " AS can_manage \
                 FROM projects p \
                 LEFT JOIN LATERAL ( \
                     SELECT count(*) AS tasks_total, \
@@ -120,7 +125,7 @@ impl ApiRequestDto for GetProjectsQueryView {
                         SELECT pg.id, pg.title, pg.description, pg.status, pg.created_at, \
                                pg.tasks_total, pg.tasks_completed, pg.priority, \
                                pg.due_date AT TIME ZONE 'UTC' AS due_date, \
-                               pg.budget_voted, pg.budget_committed, \
+                               pg.budget_voted, pg.budget_committed, pg.my_role, pg.can_manage, \
                                (SELECT count(*) FROM project_members pm WHERE pm.project_id = pg.id) \
                                    AS members_total, \
                                COALESCE((SELECT jsonb_agg(jsonb_build_object('id', m.id, 'name', m.name, 'role', m.role) \
@@ -205,6 +210,13 @@ pub struct ProjectView {
     /// Budget already committed, in cents (MAIR-1085); `None` when not filled in.
     #[serde(default)]
     budget_committed: Option<i64>,
+    /// Role of the caller in the project (MAIR-1088): `manager` for its owner, the member's
+    /// role, `None` when the caller is not a member. Defaulted: older cached pages.
+    #[serde(default)]
+    my_role: Option<String>,
+    /// Whether the caller may manage the project (`manages_project_sql!`).
+    #[serde(default)]
+    can_manage: bool,
 }
 
 fn default_priority() -> String {
@@ -227,7 +239,27 @@ impl ProjectView {
             group: None,
             budget_voted: None,
             budget_committed: None,
+            my_role: None,
+            can_manage: false,
         }
+    }
+
+    /// Sets what the project says about its caller (MAIR-1088).
+    #[must_use]
+    pub fn with_caller(mut self, my_role: Option<&str>, can_manage: bool) -> Self {
+        self.my_role = my_role.map(str::to_string);
+        self.can_manage = can_manage;
+        self
+    }
+
+    /// Role of the caller in the project (MAIR-1088), `None` when not a member.
+    pub fn my_role(&self) -> Option<&str> {
+        self.my_role.as_deref()
+    }
+
+    /// Whether the caller may manage the project (MAIR-1088).
+    pub fn can_manage(&self) -> bool {
+        self.can_manage
     }
 
     /// Sets the budget of the project, in cents (MAIR-1085).

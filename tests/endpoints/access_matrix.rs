@@ -20,7 +20,13 @@ use crate::init_app;
 
 const MATRIX: &str = include_str!("../../access-matrix.yaml");
 const ROLES: [&str; 5] = ["Admin", "Maire", "Responsable", "User", "Guest"];
-const RELATIONS: [&str; 4] = ["owner", "member", "assignee", "responsable"];
+const RELATIONS: [&str; 5] = [
+    "owner",
+    "member",
+    "assignee",
+    "responsable",
+    "member_manager",
+];
 /// The Admin seeded by the database migrations.
 const ADMIN_ID: u64 = 1;
 
@@ -121,6 +127,8 @@ struct People {
     responsable_member: u64,
     /// A Responsable sharing a group with the owner, not a member.
     group_responsable: u64,
+    /// A plain agent, member of every fixture project with the `manager` role (MAIR-1088).
+    member_manager: u64,
 }
 
 /// Fresh instances for one call: a project owned by `owner` with `member` and `assignee` as
@@ -169,6 +177,19 @@ async fn fixtures<B: MessageBody>(
         .await;
         assert_eq!(got, 200, "fixture: add {user} to project {project}");
     }
+    let got = status(
+        app,
+        post(
+            &format!("/api/v1/projects/{project}/users/"),
+            people.owner,
+            json!({ "user_id": people.member_manager, "role": "manager" }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        got, 200,
+        "fixture: add the manager member to project {project}"
+    );
     let task = json(
         app,
         post(
@@ -279,6 +300,7 @@ async fn every_role_and_relation_gets_what_the_matrix_says() {
         assignee: ctx.user("Assignee", Some("User")).await,
         responsable_member: ctx.user("ResponsableMember", Some("Responsable")).await,
         group_responsable: ctx.user("GroupResponsable", Some("Responsable")).await,
+        member_manager: ctx.user("MemberManager", Some("User")).await,
     };
     create_group(people.owner, &[people.owner, people.group_responsable]).await;
     // Users of each role with no relation to the projects (the schema also gives every account
@@ -330,6 +352,12 @@ async fn every_role_and_relation_gets_what_the_matrix_says() {
             ),
             ("owner", people.owner, "Responsable", &["owner"][..]),
             ("member", people.member, "User", &["member"][..]),
+            (
+                "manager member",
+                people.member_manager,
+                "User",
+                &["member_manager", "member"][..],
+            ),
             (
                 "assignee",
                 people.assignee,
