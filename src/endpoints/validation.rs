@@ -34,6 +34,11 @@ impl ValidationError {
     fn new(field: &str, reason: &str) -> Self {
         Self(format!("Invalid `{field}`: {reason}"))
     }
+
+    /// `field` breaks a rule the shared checks do not cover; `reason` says which.
+    pub fn invalid(field: &str, reason: &str) -> Self {
+        Self::new(field, reason)
+    }
 }
 
 impl fmt::Display for ValidationError {
@@ -207,6 +212,56 @@ where
     Option::<String>::deserialize(deserializer)?
         .map(|value| parse_due_date("due_date", &value).map_err(serde::de::Error::custom))
         .transpose()
+}
+
+/// `deserialize_with` of an optional task `start_date` (MAIR-1087), parsed like a due date
+/// ([`parse_due_date`]): absent or `null` give `None`. Use it with `#[serde(default)]`.
+///
+/// # Errors
+///
+/// Fails the deserialization (hence a `400` naming `start_date`) when the value is not a date.
+pub fn deserialize_optional_start_date<'de, D>(
+    deserializer: D,
+) -> Result<Option<DateTime<Utc>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)?
+        .map(|value| parse_due_date("start_date", &value).map_err(serde::de::Error::custom))
+        .transpose()
+}
+
+/// `deserialize_with` of the `start_date` of a partial update (MAIR-1087): absent gives `None`
+/// (through `#[serde(default)]`), `null` gives `Some(None)` (clear it), a date `Some(Some(_))`.
+///
+/// # Errors
+///
+/// Fails the deserialization when the value is not a date.
+pub fn deserialize_present_start_date<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<DateTime<Utc>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_optional_start_date(deserializer).map(Some)
+}
+
+/// Refuses a start date after the due date when both are known (MAIR-1087).
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] naming `start_date`.
+pub fn check_dates_in_order(
+    start_date: Option<DateTime<Utc>>,
+    due_date: Option<DateTime<Utc>>,
+) -> Result<(), ValidationError> {
+    match (start_date, due_date) {
+        (Some(start), Some(due)) if start > due => Err(ValidationError::new(
+            "start_date",
+            "must be at or before `due_date`",
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// Cap of a task status or project template name (`VARCHAR(100)`, MAIR-566).
@@ -418,6 +473,37 @@ mod tests {
             let error = parse_due_date("due_date", invalid).unwrap_err();
             assert!(error.to_string().contains("`due_date`"), "{invalid}");
         }
+    }
+
+    #[test]
+    fn mair_1087_start_date_absent_null_or_date_and_never_after_the_due_date() {
+        #[derive(Deserialize)]
+        struct Body {
+            #[serde(default, deserialize_with = "deserialize_present_start_date")]
+            start_date: Option<Option<DateTime<Utc>>>,
+        }
+        let read = |json: &str| serde_json::from_str::<Body>(json).map(|body| body.start_date);
+        assert_eq!(read("{}").unwrap(), None);
+        assert_eq!(read(r#"{"start_date":null}"#).unwrap(), Some(None));
+        let day = parse_due_date("start_date", "2026-11-05").unwrap();
+        assert_eq!(
+            read(r#"{"start_date":"2026-11-05"}"#).unwrap(),
+            Some(Some(day))
+        );
+        let error = read(r#"{"start_date":"05/11/2026"}"#).err().unwrap();
+        assert!(error.to_string().contains("`start_date`"), "{error}");
+
+        let later = parse_due_date("due_date", "2026-11-06").unwrap();
+        assert!(check_dates_in_order(Some(day), Some(later)).is_ok());
+        assert!(check_dates_in_order(Some(day), Some(day)).is_ok());
+        assert!(check_dates_in_order(Some(day), None).is_ok());
+        assert!(check_dates_in_order(None, Some(day)).is_ok());
+        assert_eq!(
+            check_dates_in_order(Some(later), Some(day))
+                .unwrap_err()
+                .to_string(),
+            "Invalid `start_date`: must be at or before `due_date`"
+        );
     }
 
     #[test]

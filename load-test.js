@@ -186,6 +186,10 @@ function createStatus(projectId, name) {
   return fixture('POST', `/api/v1/projects/${projectId}/statuses/`, { name, category: 'InProgress' }).json('status_id');
 }
 
+function createMilestone(projectId, title) {
+  return fixture('POST', `/api/v1/projects/${projectId}/milestones/`, { title, due_date: '2026-12-15' }).json('id');
+}
+
 function addMember(projectId, userId) {
   fixture('POST', `/api/v1/projects/${projectId}/users/`, { user_id: userId });
 }
@@ -349,6 +353,22 @@ const readHandlers = {
         && CATEGORIES.every((category) => r.json('statuses').some((status) => status.category === category))
         && r.json('statuses').reduce((total, status) => total + status.task_count, 0) >= HOT_TASKS + HOT_ARCHIVED_TASKS,
     }),
+  // Activity of the read fixture (MAIR-1089), as the Admin: its comment and its task's history.
+  'GET /api/v1/projects/{project_id}/activity/': ({ request, data }) =>
+    check(request({ path: { project_id: data.projectId } }), {
+      'project activity 200': (r) => r.status === 200,
+      'project activity reads the fixture': (r) =>
+        r.status === 200 && r.json('total') >= 2
+        && r.json('items').some((item) => item.kind === 'comment')
+        && r.json('items').some((item) => item.kind === 'task_created'),
+    }),
+  // Milestones of the read fixture (MAIR-1086), as the Admin.
+  'GET /api/v1/projects/{project_id}/milestones/': ({ request, data }) =>
+    check(request({ path: { project_id: data.projectId } }), {
+      'list milestones 200': (r) => r.status === 200,
+      'list milestones reads the fixture': (r) =>
+        r.status === 200 && r.json('total') >= 1 && r.json('milestones.0.title') === 'k6 read milestone',
+    }),
   'GET /api/v1/projects/{project_id}/users/': ({ request }) =>
     check(
       request({
@@ -373,7 +393,7 @@ const writeHandlers = {
   },
   'PATCH /api/v1/projects/{project_id}/': ({ request }) => {
     const projectId = createProject('k6 patch project');
-    check(request({ path: { project_id: projectId }, body: { name: 'k6 patched', status: 'Suspended' } }), {
+    check(request({ path: { project_id: projectId }, body: { name: 'k6 patched', status: 'Suspended', budget_voted: 1250000, budget_committed: 480000 } }), {
       'patch project 204': (r) => r.status === 204,
     });
     deleteProject(projectId);
@@ -396,7 +416,7 @@ const writeHandlers = {
   'POST /api/v1/projects/{project_id}/tasks/': ({ request, data }) => {
     const res = request({
       path: { project_id: data.writeProjectId },
-      body: { name: 'k6 create task', description: 'Load test', assigned_to: MEMBER_ID, fields: [] },
+      body: { name: 'k6 create task', description: 'Load test', assigned_to: MEMBER_ID, fields: [], start_date: '2026-10-01', due_date: '2026-10-15' },
     });
     check(res, { 'create task 200': (r) => r.status === 200 });
     if (res.status === 200) deleteTask(data.writeProjectId, res.json('task_id'));
@@ -486,12 +506,67 @@ const writeHandlers = {
     deleteProject(projectId);
   },
 
+  // Milestones (MAIR-1086) of the write sandbox: add → patch → delete, each on a milestone of its own.
+  'POST /api/v1/projects/{project_id}/milestones/': ({ request, data }) => {
+    const res = request({
+      path: { project_id: data.writeProjectId },
+      body: { title: 'k6 create milestone', due_date: '2026-12-15', reached: false },
+    });
+    check(res, { 'create milestone 201': (r) => r.status === 201 });
+    if (res.status === 201) fixture('DELETE', `/api/v1/projects/${data.writeProjectId}/milestones/${res.json('id')}/`);
+  },
+  'PATCH /api/v1/projects/{project_id}/milestones/{milestone_id}/': ({ request, data }) => {
+    const milestoneId = createMilestone(data.writeProjectId, 'k6 patch milestone');
+    check(request({ path: { project_id: data.writeProjectId, milestone_id: milestoneId }, body: { reached: true } }), {
+      'patch milestone 200': (r) => r.status === 200 && r.json('reached') === true,
+    });
+    fixture('DELETE', `/api/v1/projects/${data.writeProjectId}/milestones/${milestoneId}/`);
+  },
+  'DELETE /api/v1/projects/{project_id}/milestones/{milestone_id}/': ({ request, data }) => {
+    const milestoneId = createMilestone(data.writeProjectId, 'k6 delete milestone');
+    check(request({ path: { project_id: data.writeProjectId, milestone_id: milestoneId } }), {
+      'delete milestone 204': (r) => r.status === 204,
+    });
+  },
+
+  // Project comments and bulk deletion (MAIR-1089).
+  'POST /api/v1/projects/{project_id}/comments/': ({ request, data }) =>
+    check(request({ path: { project_id: data.writeProjectId }, body: { message: 'k6 project comment' } }), {
+      'comment project 201': (r) => r.status === 201 && r.json('kind') === 'comment',
+    }),
+  'POST /api/v1/projects/bulk-delete/': ({ request }) => {
+    const ids = [createProject('k6 bulk delete A'), createProject('k6 bulk delete B')];
+    check(request({ body: { ids } }), {
+      'bulk delete 200': (r) => r.status === 200,
+      'bulk delete deletes each project': (r) => {
+        if (r.status !== 200) return false;
+        const results = r.json('results');
+        const returned = results.map((result) => String(result.id)).sort();
+        const requested = ids.map(String).sort();
+        return (
+          returned.length === requested.length &&
+          returned.every((id, index) => id === requested[index]) &&
+          results.every((result) => result.status === 'deleted')
+        );
+      },
+    });
+  },
+
   // Members, on a project of their own: two VUs adding the same user to a shared project would
   // answer 409.
   'POST /api/v1/projects/{project_id}/users/': ({ request }) => {
     const projectId = createProject('k6 add member');
-    check(request({ path: { project_id: projectId }, body: { user_id: OTHER_MEMBER_ID } }), {
+    check(request({ path: { project_id: projectId }, body: { user_id: OTHER_MEMBER_ID, role: 'contributor' } }), {
       'add member 200': (r) => r.status === 200,
+    });
+    deleteProject(projectId);
+  },
+  // Role of a member (MAIR-1088), on a project of its own.
+  'PATCH /api/v1/projects/{project_id}/users/{user_id}/': ({ request }) => {
+    const projectId = createProject('k6 member role');
+    addMember(projectId, OTHER_MEMBER_ID);
+    check(request({ path: { project_id: projectId, user_id: OTHER_MEMBER_ID }, body: { role: 'reader' } }), {
+      'change member role 204': (r) => r.status === 204,
     });
     deleteProject(projectId);
   },
@@ -575,6 +650,8 @@ export function setup() {
   addMember(projectId, MEMBER_ID);
   const taskId = createTask(projectId, 'k6 read task');
   fixture('POST', `/api/v1/projects/${projectId}/tasks/${taskId}/comments`, { message: 'k6 fixture' });
+  createMilestone(projectId, 'k6 read milestone');
+  fixture('POST', `/api/v1/projects/${projectId}/comments/`, { message: 'k6 fixture' });
   const writeProjectId = createProject('k6 write sandbox');
   // Tasks are assigned to MEMBER_ID, who must belong to the project (MAIR-393).
   addMember(writeProjectId, MEMBER_ID);

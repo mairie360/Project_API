@@ -61,3 +61,28 @@ macro_rules! project_visible_to_user_sql {
             WHERE mine.user_id = $1))"
     };
 }
+
+/// SQL condition "user `$1` manages project `p`" (MAIR-1088): an Admin, a Maire or a Responsable
+/// (who must also see the project, checked apart), its owner, or a member whose project role is
+/// `manager`. Query views insert it with `concat!`: the user must be parameter `$1`, the project
+/// row `p`.
+#[macro_export]
+macro_rules! manages_project_sql {
+    () => {
+        "(EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id \
+            WHERE ur.user_id = $1 AND r.name IN ('Admin', 'Maire', 'Responsable')) \
+          OR p.owner_id = $1 \
+          OR EXISTS (SELECT 1 FROM project_members mm WHERE mm.project_id = p.id \
+            AND mm.user_id = $1 AND mm.role = 'manager'))"
+    };
+}
+
+/// SQL of the role of user `$1` in project `p` (MAIR-1088): `manager` for its owner, the
+/// `project_members.role` of a member, `NULL` otherwise.
+#[macro_export]
+macro_rules! caller_project_role_sql {
+    () => {
+        "(CASE WHEN p.owner_id = $1 THEN 'manager' ELSE (SELECT mr.role::text \
+            FROM project_members mr WHERE mr.project_id = p.id AND mr.user_id = $1) END)"
+    };
+}

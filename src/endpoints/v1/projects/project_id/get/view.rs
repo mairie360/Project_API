@@ -1,6 +1,7 @@
 use utoipa::ToSchema;
 
 use crate::endpoints::v1::projects::get::view::ProjetView;
+use crate::endpoints::v1::projects::project_id::milestones::view::MilestoneView;
 use crate::endpoints::v1::projects::project_id::tasks::get::view::TaskView;
 use crate::endpoints::v1::projects::project_id::users::get::view::User;
 
@@ -94,4 +95,10 @@ pub struct GetProjectResultView {
     /// Number of members of the project, whatever the page.
     #[schema(example = 2)]
     pub users_total: u64,
+    /// The first 100 milestones of the project (MAIR-1086), by due date then id; deleted ones are
+    /// left out (see `GET …/milestones/` for the rest).
+    pub milestones: Vec<MilestoneView>,
+    /// Number of milestones of the project, whatever the page.
+    #[schema(example = 2)]
+    pub milestones_total: u64,
 }

@@ -256,6 +256,16 @@ over `idx_tasks_project_id`, materialized CTE) and reads the members for the pag
 the 5 000-project seed, 2 ms for an agent (a covering index `tasks (project_id) INCLUDE (status, priority,
 due_date)` would halve the Admin cost, Database follow-up).
 
+A project on hold (MAIR-1084) is the `Suspended` status (`project_status` `suspended`): accepted by `POST /projects/`
+and `PATCH /projects/{id}/`, kept by the `status=Suspended` filter and counted in `summary.by_status.suspended`; it is
+resumed by a `PATCH` back to `Active` (`tests/endpoints/mair_1084_project_on_hold.rs`).
+
+The budget of a project (MAIR-1085, Database `projects.budget_voted` / `budget_committed`, `BIGINT` cents, `CHECK >= 0`)
+is read as `budget_voted` / `budget_committed` (integers in cents of euro, `null` when not filled in) by `GET /projects/`
+and `GET /projects/{id}/`, and set by `PATCH /projects/{id}/` (managers only): absent keeps, `null` clears, a negative
+amount is a `400` (`UpdateProjectView::validate`). `ProjectView` defaults both, so a list page cached before them still
+reads (`tests/endpoints/mair_1085_project_budget.rs`).
+
 `GET /tasks/` (MAIR-524) lists the tasks of every project visible to the caller (same
 `project_visible_to_user_sql!` rule), each with `project_id` and `project_name`, so BFF_Dashboard reads a
 user's pending tasks in one call: filters `assigned_to`, `status` (CSV of `Todo`, `InProgress`, `Completed`,
@@ -269,6 +279,13 @@ The list without assignee scans the active tasks (≈ 20-55 ms on 35 000 active 
 
 `GET /projects/{project_id}/tasks/{task_id}/` reads one task alone (any viewer of the project, 404 for a task of
 another project): BFF_Project's task guards use it instead of reading every task of the project (MAIR-474).
+
+A task has an optional `start_date` (MAIR-1087, Database `tasks.start_date`, same `TIMESTAMP` type as `due_date`,
+`CHECK start_date <= due_date`): `POST …/tasks/` takes it (same formats as `due_date`), `PATCH …/tasks/{id}/` too
+(absent keeps, `null` clears; forbidden to a mere assignee), and every task read returns it (RFC 3339 or `null`). A start
+after the due date is a `400` `Invalid \`start_date\`: must be at or before \`due_date\``, checked by the view when
+both are sent and mapped from the database `23514` (`DbFailure::CheckViolation`) when one is checked against the stored
+other one. `start_date` is listed in the history labels when the trigger records it.
 
 A completed task is archived (MAIR-502, Database `tasks.archived_at`, kept by a trigger): `GET /projects/{id}/`
 and `GET …/tasks/` only list the active tasks (`tasks_total` counts them, `tasks_archived` the others),
@@ -291,6 +308,38 @@ for an unknown id). Each template carries `can_manage` for the caller (same SQL 
 hides the refused actions. `created_by` has no foreign key (it would make the `TRUNCATE users CASCADE` of the test
 harness empty the templates). The default template cannot be deleted (`409` for an Admin). Editing a template never changes an existing project. Integration tests need a Database
 image carrying MAIR-566 (`TEST_DB_VERSION`).
+
+Milestones (MAIR-1086, Database `project_milestones`, soft delete `deleted_at`) live in `database::milestones` and
+`endpoints/v1/projects/project_id/milestones/` (one `endpoint.rs` like `statuses/`): `GET …/milestones/` (viewers,
+`limit`/`offset` + `total`, by `due_date` then `id`, deleted ones left out), `POST` (managers, `{title, due_date
+(YYYY-MM-DD), reached?}` → `201` with the row), `PATCH …/milestones/{milestone_id}/` (managers, partial, `200` with the
+row) and `DELETE` (managers, sets `deleted_at`, `204`); a milestone of another project or a deleted one answers `404`
+`Unknown milestone.`. `GET /projects/{id}/` embeds the first 100 as `milestones` + `milestones_total`. The projects list
+does not show them, so their writes invalidate no read cache. A check violation (`23514`) is classified
+`DbFailure::CheckViolation` (`db_error.rs`, read from the SQLSTATE in the lib's error text) and answers `400`.
+
+Members have a role in their project (MAIR-1088, Database `project_members.role`, enum `project_member_role`
+`manager` / `contributor` / `reader`, default `contributor`): every member read (`GET /projects/` `members`,
+`GET /projects/{id}/` `users`, `GET …/users/`) carries `role`, the owner always reading `manager`
+(`member_role_sql!`). `POST …/users/` takes an optional `role`, `PATCH …/users/{user_id}/` `{role}` (managers, `204`)
+changes it (`404` for a user who is not a member, `409` for the owner), and `DELETE …/users/{user_id}/` refuses the
+owner (`409`). A member whose role is `manager` manages the project like an Admin, a Maire or a Responsable
+(decision of the product owner): `ProjectAccess::member_manager` (the owner, or a member with the `manager` role) is part
+of `can_manage()`, so every `Requirement::ManageProject` / `ActOnTask` write accepts it; `contributor` and `reader` keep
+the rights of a member, and creating a project still needs the Admin / Maire / Responsable role. `GET /projects/` items
+and `GET /projects/{id}/` (`project`) tell the caller `my_role` (`caller_project_role_sql!`, `null` when not a member)
+and `can_manage` (`manages_project_sql!`, the same rule). `access-matrix.yaml` calls that relation `member_manager`.
+
+The activity of a project (MAIR-1089, `database::activity`) is `GET …/activity/` (viewers, `limit`/`offset` + `total`,
+newest first): the union of `project_comments` (`kind` `comment`) and the `task_history` of its tasks, archived ones
+included (`kind` = the history `action`), each item `{kind, id, task_id, task_title, author_id, author_name, message,
+changes, label, created_at}`; the history labels come from `TaskHistoryEntry::from` (`database/tasks/collaboration`).
+`POST …/comments/` `{message}` is open to every viewer (trimmed, 1 to 2000 characters, blank refused by the view: the
+database only checks the length) and answers the new item (`201`). `POST /projects/bulk-delete/` `{ids}` (1 to 100)
+checks and deletes each project in a transaction of its own (`begin_write`, same rule as `DELETE /projects/{id}/`) and
+answers `200 {results: [{id, status: deleted | not_found | forbidden}]}`; its route is registered before
+`/{project_id}`. Comments and the activity are not in the projects list: no read cache to invalidate; the bulk
+deletion invalidates it through `DeleteProjectQueryView`.
 
 List endpoints (`GET /projects/`, `GET /projects/{id}/` for its tasks, `GET …/tasks/`, `GET …/collaboration`,
 `GET …/users/` — MAIR-425; the members embedded in `GET /projects/{id}/` are the first 100 + `users_total`)

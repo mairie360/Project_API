@@ -31,6 +31,25 @@ pub struct UpdateProjectView {
     #[serde(default, deserialize_with = "present")]
     #[schema(value_type = Option<u64>, nullable = false, example = 3)]
     pub group_id: Option<Option<u64>>,
+    /// Budget voted by the council, in cents of euro (MAIR-1085: `1250000` is 12 500,00 €):
+    /// absent to keep it, `null` to clear it, an integer from 0 to replace it. A negative amount is
+    /// refused (`400`).
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<i64>, nullable, minimum = 0, example = 1250000)]
+    pub budget_voted: Option<Option<i64>>,
+    /// Budget already committed, in cents of euro (MAIR-1085): absent to keep it, `null` to clear
+    /// it, an integer from 0 to replace it. A negative amount is refused (`400`).
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<i64>, nullable, minimum = 0, example = 480000)]
+    pub budget_committed: Option<Option<i64>>,
+}
+
+/// Refuses a negative amount of cents.
+fn check_amount(field: &str, amount: Option<Option<i64>>) -> Result<(), ValidationError> {
+    match amount.flatten() {
+        Some(cents) if cents < 0 => Err(ValidationError::invalid(field, "must not be negative")),
+        _ => Ok(()),
+    }
 }
 
 /// Tells a field given `null` (`Some(None)`) from an absent one (`None`, through `default`).
@@ -50,6 +69,8 @@ impl Validate for UpdateProjectView {
         if let Some(group_id) = self.group_id {
             check_required("group_id", group_id)?;
         }
+        check_amount("budget_voted", self.budget_voted)?;
+        check_amount("budget_committed", self.budget_committed)?;
         check_optional(self.description.as_deref(), |description| {
             check_description("description", description, MAX_DESCRIPTION_LENGTH)
         })
@@ -79,5 +100,34 @@ mod tests {
         assert!(parse(serde_json::json!({ "name": "Square" }))
             .validate()
             .is_ok());
+    }
+
+    #[test]
+    fn mair_1085_the_budget_is_kept_cleared_or_replaced_never_negative() {
+        let absent = parse(serde_json::json!({ "name": "Square" }));
+        assert_eq!((absent.budget_voted, absent.budget_committed), (None, None));
+        let cleared = parse(serde_json::json!({ "budget_voted": null, "budget_committed": 0 }));
+        assert_eq!(cleared.budget_voted, Some(None));
+        assert_eq!(cleared.budget_committed, Some(Some(0)));
+        assert!(cleared.validate().is_ok());
+        for (field, body) in [
+            ("budget_voted", serde_json::json!({ "budget_voted": -1 })),
+            (
+                "budget_committed",
+                serde_json::json!({ "budget_committed": -100 }),
+            ),
+        ] {
+            assert_eq!(
+                parse(body).validate().unwrap_err().to_string(),
+                format!("Invalid `{field}`: must not be negative")
+            );
+        }
+        for invalid in [
+            serde_json::json!({ "budget_voted": 12.5 }),
+            serde_json::json!({ "budget_voted": "1000" }),
+            serde_json::json!({ "budget_committed": 9_223_372_036_854_775_808_u64 }),
+        ] {
+            assert!(serde_json::from_value::<UpdateProjectView>(invalid).is_err());
+        }
     }
 }

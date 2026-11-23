@@ -2,8 +2,9 @@ use chrono::{DateTime, Utc};
 use utoipa::ToSchema;
 
 use crate::endpoints::validation::{
-    check_description, check_json, check_label, check_optional, deserialize_optional_due_date,
-    Validate, ValidationError, MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
+    check_dates_in_order, check_description, check_json, check_label, check_optional,
+    deserialize_optional_due_date, deserialize_optional_start_date, Validate, ValidationError,
+    MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH,
 };
 use crate::{
     database::tasks::get_project_tasks::view::DynamicTaskField,
@@ -27,6 +28,11 @@ pub struct CreateTaskView {
     #[serde(default, deserialize_with = "deserialize_optional_due_date")]
     #[schema(value_type = Option<String>, example = "2026-10-15")]
     due_date: Option<DateTime<Utc>>,
+    /// Start date (MAIR-1087), optional: same formats as `due_date`, and at or before it (`400`
+    /// otherwise). Read back as an RFC 3339 date-time.
+    #[serde(default, deserialize_with = "deserialize_optional_start_date")]
+    #[schema(value_type = Option<String>, example = "2026-10-01")]
+    start_date: Option<DateTime<Utc>>,
     /// Initial status category. Absent: `Todo`. Ignored when `status_id` is given.
     status: Option<TaskStatus>,
     /// Initial status among the project's statuses (`GET …/statuses/`, MAIR-566); the task takes
@@ -49,6 +55,7 @@ impl CreateTaskView {
             name,
             description: None,
             due_date: None,
+            start_date: None,
             status: None,
             status_id: None,
             priority: None,
@@ -67,6 +74,10 @@ impl CreateTaskView {
 
     pub fn due_date(&self) -> &Option<DateTime<Utc>> {
         &self.due_date
+    }
+
+    pub fn start_date(&self) -> Option<DateTime<Utc>> {
+        self.start_date
     }
 
     pub fn status(&self) -> Option<TaskStatus> {
@@ -117,6 +128,7 @@ impl Validate for CreateTaskView {
         check_optional(self.description.as_deref(), |description| {
             check_description("description", description, MAX_DESCRIPTION_LENGTH)
         })?;
+        check_dates_in_order(self.start_date, self.due_date)?;
         for field in &self.fields {
             check_label("fields.label", &field.label, MAX_TITLE_LENGTH)?;
             for option in &field.fields_options {

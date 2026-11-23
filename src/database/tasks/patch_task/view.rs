@@ -16,6 +16,8 @@ pub struct TaskChanges<'a> {
     pub status_id: Option<u64>,
     pub priority: Option<TaskPriority>,
     pub due_date: Option<chrono::DateTime<chrono::Utc>>,
+    /// Start date (MAIR-1087): `Some(None)` clears it.
+    pub start_date: Option<Option<chrono::DateTime<chrono::Utc>>>,
     pub assigned_to: Option<Option<u64>>,
     pub fields: Option<&'a [DynamicTaskField]>,
 }
@@ -57,6 +59,14 @@ impl PatchTaskQueryView {
                 ),
                 QueryParam::I32(id_to_sql(updated_by)),
                 QueryParam::OptionI32(changes.status_id.map(id_to_sql)),
+                QueryParam::Bool(changes.start_date.is_some()),
+                QueryParam::Text(
+                    changes
+                        .start_date
+                        .flatten()
+                        .map(|d| d.to_rfc3339())
+                        .unwrap_or_default(),
+                ),
             ],
         }
     }
@@ -82,6 +92,8 @@ impl ApiRequestDto for PatchTaskQueryView {
                     status_id = COALESCE($13::int, status_id), \
                     priority = COALESCE(NULLIF($5, '')::task_priority, priority), \
                     due_date = COALESCE(NULLIF($6, '')::timestamptz AT TIME ZONE 'UTC', due_date), \
+                    start_date = CASE WHEN $14 \
+                        THEN NULLIF($15, '')::timestamptz AT TIME ZONE 'UTC' ELSE start_date END, \
                     assigned_to = CASE WHEN $7 THEN $8 ELSE assigned_to END, \
                     description = CASE WHEN $9 THEN $10 ELSE description END, \
                     custom_fields = CASE WHEN $11 = '' THEN custom_fields \

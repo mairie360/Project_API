@@ -142,8 +142,17 @@ impl CreateTaskQueryView {
                 QueryParam::Text(description.to_string()),
                 QueryParam::I32(id_to_sql(created_by)),
                 QueryParam::OptionI32(None),
+                QueryParam::Text(String::new()),
             ],
         }
+    }
+
+    /// Gives the task a start date (MAIR-1087). The database refuses one after `due_date`
+    /// (`CHECK`, SQLSTATE `23514`).
+    #[must_use]
+    pub fn with_start_date(mut self, start_date: Option<chrono::DateTime<chrono::Utc>>) -> Self {
+        self.params[10] = QueryParam::Text(start_date.map(|d| d.to_rfc3339()).unwrap_or_default());
+        self
     }
 
     /// Creates the task in this status of the project (MAIR-566): the database gives it the
@@ -168,9 +177,10 @@ impl ApiRequestDto for CreateTaskQueryView {
         concat!(
             "WITH inserted AS ( \
                 INSERT INTO tasks (project_id, title, status, priority, due_date, assigned_to, \
-                                   custom_fields, description, updated_by, status_id) \
+                                   custom_fields, description, updated_by, status_id, start_date) \
                 SELECT $1, $2, $3::task_status, $4::task_priority, \
-                       NULLIF($5, '')::timestamptz AT TIME ZONE 'UTC', $6, $7::jsonb, $8, $9, $10 \
+                       NULLIF($5, '')::timestamptz AT TIME ZONE 'UTC', $6, $7::jsonb, $8, $9, $10, \
+                       NULLIF($11, '')::timestamptz AT TIME ZONE 'UTC' \
                 WHERE (NOT ",
             crate::status_outside_project_sql!("$1", "$10"),
             ") AND ($6::int IS NULL OR ",

@@ -10,7 +10,7 @@ use crate::database::project::update_status::view::ProjectStatus as DbProjectSta
 use crate::database::tasks::create_task::view::TaskPriority as DbTaskPriority;
 use crate::endpoints::pagination::{Page, PageParams};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
-use crate::endpoints::v1::projects::project_id::users::get::view::User;
+use crate::endpoints::v1::projects::project_id::users::get::view::{ProjectMemberRole, User};
 use crate::endpoints::validation::{
     check_list, check_opaque, check_optional, Validate, ValidationError, MAX_TITLE_LENGTH,
 };
@@ -198,6 +198,23 @@ pub struct ProjetView {
     pub priority: TaskPriority,
     /// Group linked to the project, whose members all see it; `null` when none is linked.
     pub group: Option<ProjectGroupView>,
+    /// Budget voted by the council for the project, in cents of euro (MAIR-1085: `1250000` is
+    /// 12 500,00 €), or `null` when not filled in. Never negative.
+    #[schema(minimum = 0, example = 1250000)]
+    pub budget_voted: Option<i64>,
+    /// Budget already committed (orders placed), in cents of euro (MAIR-1085), or `null` when not
+    /// filled in. Never negative; it may exceed `budget_voted`.
+    #[schema(minimum = 0, example = 480000)]
+    pub budget_committed: Option<i64>,
+    /// Role of the caller in this project (MAIR-1088): `manager` for its owner, the role of a
+    /// member, `null` when the caller is not a member (an Admin, a Maire or a Responsable who
+    /// sees it through a group or their role).
+    pub my_role: Option<ProjectMemberRole>,
+    /// Whether the caller may manage this project: update it, close or delete it, write its
+    /// tasks, members, statuses and milestones (MAIR-1088: Admin, Maire, a Responsable who sees
+    /// it, its owner, or a member with the `manager` role). A front hides the refused actions.
+    #[schema(example = true)]
+    pub can_manage: bool,
 }
 
 /// A Core API group, as linked to a project or offered by `GET /api/v1/project-groups/`.
@@ -229,6 +246,10 @@ impl From<ProjectView> for ProjetView {
             status: value.status().to_string().into(),
             priority: value.priority().to_string().into(),
             group: value.group().map(Into::into),
+            budget_voted: value.budget_voted(),
+            budget_committed: value.budget_committed(),
+            my_role: value.my_role().map(ProjectMemberRole::from_stored),
+            can_manage: value.can_manage(),
         }
     }
 }
@@ -265,6 +286,23 @@ pub struct ProjectListItemView {
     /// Number of its members.
     #[schema(example = 7)]
     pub members_total: u64,
+    /// Budget voted by the council for the project, in cents of euro (MAIR-1085: `1250000` is
+    /// 12 500,00 €), or `null` when not filled in. Never negative.
+    #[schema(minimum = 0, example = 1250000)]
+    pub budget_voted: Option<i64>,
+    /// Budget already committed (orders placed), in cents of euro (MAIR-1085), or `null` when not
+    /// filled in. Never negative; it may exceed `budget_voted`.
+    #[schema(minimum = 0, example = 480000)]
+    pub budget_committed: Option<i64>,
+    /// Role of the caller in this project (MAIR-1088): `manager` for its owner, the role of a
+    /// member, `null` when the caller is not a member (an Admin, a Maire or a Responsable who
+    /// sees it through a group or their role).
+    pub my_role: Option<ProjectMemberRole>,
+    /// Whether the caller may manage this project: update it, close or delete it, write its
+    /// tasks, members, statuses and milestones (MAIR-1088: Admin, Maire, a Responsable who sees
+    /// it, its owner, or a member with the `manager` role). A front hides the refused actions.
+    #[schema(example = true)]
+    pub can_manage: bool,
 }
 
 fn count(value: i64) -> u64 {
@@ -282,15 +320,12 @@ impl From<ProjectView> for ProjectListItemView {
             tasks_completed: count(value.tasks_completed()),
             priority: value.priority().to_string().into(),
             due_date: value.due_date(),
-            members: value
-                .members()
-                .iter()
-                .map(|member| User {
-                    id: id_from_sql(member.id),
-                    name: member.name.clone(),
-                })
-                .collect(),
+            members: value.members().iter().cloned().map(User::from).collect(),
             members_total: count(value.members_total()),
+            budget_voted: value.budget_voted(),
+            budget_committed: value.budget_committed(),
+            my_role: value.my_role().map(ProjectMemberRole::from_stored),
+            can_manage: value.can_manage(),
         }
     }
 }
