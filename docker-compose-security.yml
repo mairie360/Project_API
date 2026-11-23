@@ -86,7 +86,7 @@ services:
       retries: 5
 
   seeder:
-    image: postgres:19-alpine@sha256:8b0ff4cdf221f0c53d7fcda681d3b461be725c492cd881c5ec9c0ad25023f188
+    image: postgres:19-alpine@sha256:cac45fb483caee3668946088a1c0532db89d5285c28dbfeac889b4068296e06f
     depends_on:
       liquibase:
         condition: service_completed_successfully
@@ -146,7 +146,7 @@ services:
       - backend
 
   security-scan:
-    image: zaproxy/zap-stable@sha256:030d3df57735dacbb83464854758e674dd9ad01d79d12a129a8e58b1fd384238
+    image: zaproxy/zap-stable@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af
     networks:
       - backend
     depends_on:
