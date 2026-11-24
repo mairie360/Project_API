@@ -3,7 +3,7 @@
 use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, ResponseError};
 
-use crate::endpoints::v1::projects::access::AccessDenied;
+use crate::endpoints::v1::projects::access::{AccessDenied, PROJECT_CLOSED_MESSAGE};
 
 pub mod doc;
 pub mod endpoint;
@@ -44,6 +44,8 @@ impl ProjectStatusPathParams {
 #[derive(Debug, Clone, PartialEq)]
 pub enum StatusesError {
     Forbidden,
+    /// The project is closed: read-only until a manager reopens it.
+    ProjectClosed,
     /// Unknown or invisible project.
     NotFound,
     /// No such status in the project.
@@ -63,6 +65,7 @@ impl std::fmt::Display for StatusesError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StatusesError::Forbidden => write!(f, "Forbidden."),
+            StatusesError::ProjectClosed => f.write_str(PROJECT_CLOSED_MESSAGE),
             StatusesError::NotFound => write!(f, "Not found."),
             StatusesError::UnknownStatus => write!(f, "Unknown status."),
             StatusesError::NameTaken => {
@@ -90,6 +93,7 @@ impl ResponseError for StatusesError {
     fn status_code(&self) -> StatusCode {
         match self {
             StatusesError::Forbidden => StatusCode::FORBIDDEN,
+            StatusesError::ProjectClosed => StatusCode::CONFLICT,
             StatusesError::NotFound | StatusesError::UnknownStatus => StatusCode::NOT_FOUND,
             StatusesError::NameTaken
             | StatusesError::LastOfCategory
@@ -109,6 +113,7 @@ impl From<AccessDenied> for StatusesError {
         match denied {
             AccessDenied::NotFound => StatusesError::NotFound,
             AccessDenied::Forbidden => StatusesError::Forbidden,
+            AccessDenied::Closed => StatusesError::ProjectClosed,
             AccessDenied::DatabaseError => StatusesError::DatabaseError,
         }
     }

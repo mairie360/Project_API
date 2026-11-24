@@ -7,7 +7,9 @@ use mairie360_api_lib::state::AppState;
 use crate::endpoints::db_error::log_db_error;
 
 use crate::database::project::update_status::view::{ProjectStatus, UpdateProjectStatusQueryView};
-use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{
+    begin_write_on_closed, commit, AccessDenied, Requirement,
+};
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -133,11 +135,10 @@ pub async fn close_project(
     auth_user: AuthenticatedUser,
     params: web::Path<ProjectPathParams>,
 ) -> Result<impl Responder, PatchMessageError> {
-    let (mut tx, _) = begin_write(
+    let (mut tx, _) = begin_write_on_closed(
         &state,
         auth_user.id,
         params.project_id(),
-        None,
         Requirement::ManageProject,
     )
     .await?;
@@ -152,6 +153,8 @@ impl From<AccessDenied> for PatchMessageError {
         match denied {
             AccessDenied::NotFound => PatchMessageError::NotFound,
             AccessDenied::Forbidden => PatchMessageError::Forbidden,
+            // Allowed on a closed project (`begin_write_on_closed`): never returned here.
+            AccessDenied::Closed => PatchMessageError::Forbidden,
             AccessDenied::DatabaseError => PatchMessageError::DatabaseError,
         }
     }

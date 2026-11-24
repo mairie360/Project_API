@@ -7,7 +7,9 @@ use mairie360_api_lib::state::AppState;
 use crate::endpoints::db_error::{classify_db_error, DbFailure};
 
 use crate::database::users::add_user_to_project::view::AddUserToProjectQueryView;
-use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{
+    begin_write, commit, AccessDenied, Requirement, PROJECT_CLOSED_MESSAGE,
+};
 use crate::endpoints::v1::projects::project_id::users::get::view::ProjectMemberRole;
 use crate::endpoints::v1::projects::project_id::users::post::view::AddUserToProjectView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
@@ -15,6 +17,8 @@ use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 #[derive(Debug, Clone, PartialEq)]
 pub enum AddUserToProjectError {
     Forbidden,
+    /// The project is closed: read-only until a manager reopens it.
+    ProjectClosed,
     NotFound,
     DatabaseError,
     UserNotFound,
@@ -25,6 +29,7 @@ impl std::fmt::Display for AddUserToProjectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AddUserToProjectError::Forbidden => write!(f, "Forbidden."),
+            AddUserToProjectError::ProjectClosed => f.write_str(PROJECT_CLOSED_MESSAGE),
             AddUserToProjectError::NotFound => write!(f, "Not found."),
             AddUserToProjectError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
@@ -43,6 +48,7 @@ impl ResponseError for AddUserToProjectError {
     fn status_code(&self) -> StatusCode {
         match self {
             AddUserToProjectError::Forbidden => StatusCode::FORBIDDEN,
+            AddUserToProjectError::ProjectClosed => StatusCode::CONFLICT,
             AddUserToProjectError::NotFound => StatusCode::NOT_FOUND,
             AddUserToProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             AddUserToProjectError::UserNotFound => StatusCode::NOT_FOUND,
@@ -120,7 +126,7 @@ async fn trigger_add_user_to_project(
         ),
         (
             status = 409,
-            description = "The user is already a member of the project.",
+            description = "The user is already a member of the project, or the project is closed (`Completed`): it is read-only until a manager reopens it (`Project is closed.`).",
             body = String,
             content_type = "text/plain",
             example = json!("The user is already a member of this project.")
@@ -169,6 +175,7 @@ impl From<AccessDenied> for AddUserToProjectError {
         match denied {
             AccessDenied::NotFound => AddUserToProjectError::NotFound,
             AccessDenied::Forbidden => AddUserToProjectError::Forbidden,
+            AccessDenied::Closed => AddUserToProjectError::ProjectClosed,
             AccessDenied::DatabaseError => AddUserToProjectError::DatabaseError,
         }
     }

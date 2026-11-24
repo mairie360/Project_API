@@ -3,7 +3,7 @@
 use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, ResponseError};
 
-use crate::endpoints::v1::projects::access::AccessDenied;
+use crate::endpoints::v1::projects::access::{AccessDenied, PROJECT_CLOSED_MESSAGE};
 
 pub mod doc;
 pub mod endpoint;
@@ -44,6 +44,8 @@ impl ProjectMilestonePathParams {
 #[derive(Debug, Clone, PartialEq)]
 pub enum MilestonesError {
     Forbidden,
+    /// The project is closed: read-only until a manager reopens it.
+    ProjectClosed,
     /// Unknown or invisible project.
     NotFound,
     /// No such milestone in the project, or a deleted one.
@@ -57,6 +59,7 @@ impl std::fmt::Display for MilestonesError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MilestonesError::Forbidden => write!(f, "Forbidden."),
+            MilestonesError::ProjectClosed => f.write_str(PROJECT_CLOSED_MESSAGE),
             MilestonesError::NotFound => write!(f, "Not found."),
             MilestonesError::UnknownMilestone => write!(f, "Unknown milestone."),
             MilestonesError::BadRequest => write!(f, "Invalid milestone."),
@@ -71,6 +74,7 @@ impl ResponseError for MilestonesError {
     fn status_code(&self) -> StatusCode {
         match self {
             MilestonesError::Forbidden => StatusCode::FORBIDDEN,
+            MilestonesError::ProjectClosed => StatusCode::CONFLICT,
             MilestonesError::NotFound | MilestonesError::UnknownMilestone => StatusCode::NOT_FOUND,
             MilestonesError::BadRequest => StatusCode::BAD_REQUEST,
             MilestonesError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
@@ -87,6 +91,7 @@ impl From<AccessDenied> for MilestonesError {
         match denied {
             AccessDenied::NotFound => MilestonesError::NotFound,
             AccessDenied::Forbidden => MilestonesError::Forbidden,
+            AccessDenied::Closed => MilestonesError::ProjectClosed,
             AccessDenied::DatabaseError => MilestonesError::DatabaseError,
         }
     }

@@ -30,6 +30,7 @@ impl ApiRequestDto for ProjectAccessQueryView {
                 'member_manager', EXISTS (SELECT 1 FROM projects p WHERE p.id = $2 \
                     AND (p.owner_id = $1 OR EXISTS (SELECT 1 FROM project_members mm \
                         WHERE mm.project_id = p.id AND mm.user_id = $1 AND mm.role = 'manager'))), \
+                'closed', EXISTS (SELECT 1 FROM projects p WHERE p.id = $2 AND p.status = 'completed'), \
                 'task_exists', EXISTS (SELECT 1 FROM tasks t WHERE t.id = $3 AND t.project_id = $2), \
                 'assigned', EXISTS (SELECT 1 FROM tasks t \
                     WHERE t.id = $3 AND t.project_id = $2 AND t.assigned_to = $1) \
@@ -49,6 +50,9 @@ pub struct ProjectAccess {
     /// The user owns the project or is a member of it with the `manager` role (MAIR-1088).
     #[serde(default)]
     pub member_manager: bool,
+    /// The project is closed (`completed`): it is read-only until it is reopened.
+    #[serde(default)]
+    pub closed: bool,
     pub task_exists: bool,
     pub assigned: bool,
 }

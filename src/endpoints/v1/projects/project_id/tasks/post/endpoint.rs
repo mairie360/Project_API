@@ -11,7 +11,9 @@ use crate::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority as DbTaskPriority, TaskStatus, ASSIGNEE_NOT_IN_PROJECT,
     STATUS_NOT_IN_PROJECT,
 };
-use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{
+    begin_write, commit, AccessDenied, Requirement, PROJECT_CLOSED_MESSAGE,
+};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority as ApiTaskPriority;
 use crate::endpoints::v1::projects::project_id::tasks::post::view::{
     CreateTaskResultView, CreateTaskView,
@@ -22,6 +24,8 @@ use crate::endpoints::validation::ValidatedJson;
 #[derive(Debug, Clone, PartialEq)]
 pub enum CreateTaskError {
     Forbidden,
+    /// The project is closed: read-only until a manager reopens it.
+    ProjectClosed,
     NotFound,
     DatabaseError,
     BadRequest,
@@ -36,6 +40,7 @@ impl std::fmt::Display for CreateTaskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CreateTaskError::Forbidden => write!(f, "Forbidden."),
+            CreateTaskError::ProjectClosed => f.write_str(PROJECT_CLOSED_MESSAGE),
             CreateTaskError::NotFound => write!(f, "Not found."),
             CreateTaskError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
@@ -61,6 +66,7 @@ impl ResponseError for CreateTaskError {
     fn status_code(&self) -> StatusCode {
         match self {
             CreateTaskError::Forbidden => StatusCode::FORBIDDEN,
+            CreateTaskError::ProjectClosed => StatusCode::CONFLICT,
             CreateTaskError::NotFound => StatusCode::NOT_FOUND,
             CreateTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             CreateTaskError::UnknownAssignee => StatusCode::BAD_REQUEST,
@@ -198,6 +204,13 @@ async fn trigger_create_task(
             example = json!("Not found.")
         ),
         (
+            status = 409,
+            description = "The caller may write, but the project is closed (`Completed`): it is read-only until a manager reopens it.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Project is closed.")
+        ),
+        (
             status = 500,
             description = "Database error.",
             body = String,
@@ -250,6 +263,7 @@ impl From<AccessDenied> for CreateTaskError {
         match denied {
             AccessDenied::NotFound => CreateTaskError::NotFound,
             AccessDenied::Forbidden => CreateTaskError::Forbidden,
+            AccessDenied::Closed => CreateTaskError::ProjectClosed,
             AccessDenied::DatabaseError => CreateTaskError::DatabaseError,
         }
     }

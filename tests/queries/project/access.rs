@@ -2,6 +2,9 @@ use crate::common::fixtures::create_user;
 use crate::common::get_smart_db;
 use project_api::database::project::access::view::{ProjectAccess, ProjectAccessQueryView};
 use project_api::database::project::create::view::CreateProjectQueryView;
+use project_api::database::project::update_status::view::{
+    ProjectStatus, UpdateProjectStatusQueryView,
+};
 use project_api::database::tasks::create_task::view::{
     CreateTaskQueryView, TaskPriority, TaskStatus,
 };
@@ -90,6 +93,7 @@ fn test_assigned_member_of_a_visible_project_can_act_on_its_task_only() {
         visible: true,
         manager_role: false,
         member_manager: false,
+        closed: false,
         task_exists: true,
         assigned: true,
     };
@@ -195,4 +199,35 @@ async fn test_project_lock_serializes_writes_on_a_project() {
         .await
         .unwrap();
     assert_eq!(locked, 0);
+}
+
+/// `closed` is set while the project is `completed` only, and cleared once reopened;
+/// a suspended project is not closed.
+#[tokio::test]
+async fn mair_1200_closed_follows_the_completed_status() {
+    let db = get_smart_db().await;
+    let owner = create_user("Owner", Some("Responsable")).await;
+    let project_id = db
+        .fetch_scalar::<i32, _>(&CreateProjectQueryView::new("Clôture", None, owner))
+        .await
+        .unwrap() as u64;
+    let closed = || async {
+        db.fetch_one::<ProjectAccess, _>(&ProjectAccessQueryView::new(project_id, None, owner))
+            .await
+            .unwrap()
+            .closed
+    };
+
+    assert!(!closed().await);
+    for (status, expected) in [
+        (ProjectStatus::Completed, true),
+        (ProjectStatus::Suspended, false),
+        (ProjectStatus::Completed, true),
+        (ProjectStatus::Active, false),
+    ] {
+        db.execute(UpdateProjectStatusQueryView::new(project_id, status))
+            .await
+            .unwrap();
+        assert_eq!(closed().await, expected, "status {status}");
+    }
 }

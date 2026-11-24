@@ -155,6 +155,8 @@ impl From<AccessDenied> for GetProjectUsersError {
         match denied {
             AccessDenied::NotFound => GetProjectUsersError::NotFound,
             AccessDenied::Forbidden => GetProjectUsersError::Forbidden,
+            // A read is never refused because the project is closed.
+            AccessDenied::Closed => GetProjectUsersError::Forbidden,
             AccessDenied::DatabaseError => GetProjectUsersError::DatabaseError,
         }
     }

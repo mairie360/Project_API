@@ -7,13 +7,17 @@ use mairie360_api_lib::state::AppState;
 use crate::endpoints::db_error::log_db_error;
 
 use crate::database::tasks::delete_task::view::DeleteTaskQueryView;
-use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{
+    begin_write, commit, AccessDenied, Requirement, PROJECT_CLOSED_MESSAGE,
+};
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum DeleteTaskError {
     Forbidden,
+    /// The project is closed: read-only until a manager reopens it.
+    ProjectClosed,
     NotFound,
     DatabaseError,
     UnknownTask,
@@ -23,6 +27,7 @@ impl std::fmt::Display for DeleteTaskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DeleteTaskError::Forbidden => write!(f, "Forbidden."),
+            DeleteTaskError::ProjectClosed => f.write_str(PROJECT_CLOSED_MESSAGE),
             DeleteTaskError::NotFound => write!(f, "Not found."),
             DeleteTaskError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
@@ -38,6 +43,7 @@ impl ResponseError for DeleteTaskError {
     fn status_code(&self) -> StatusCode {
         match self {
             DeleteTaskError::Forbidden => StatusCode::FORBIDDEN,
+            DeleteTaskError::ProjectClosed => StatusCode::CONFLICT,
             DeleteTaskError::NotFound => StatusCode::NOT_FOUND,
             DeleteTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             DeleteTaskError::UnknownTask => StatusCode::BAD_REQUEST,
@@ -106,6 +112,13 @@ async fn trigger_delete_task(
             example = json!("Unknown task.")
         ),
         (
+            status = 409,
+            description = "The caller may write, but the project is closed (`Completed`): it is read-only until a manager reopens it.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Project is closed.")
+        ),
+        (
             status = 500,
             description = "Database error.",
             body = String,
@@ -145,6 +158,7 @@ impl From<AccessDenied> for DeleteTaskError {
         match denied {
             AccessDenied::NotFound => DeleteTaskError::NotFound,
             AccessDenied::Forbidden => DeleteTaskError::Forbidden,
+            AccessDenied::Closed => DeleteTaskError::ProjectClosed,
             AccessDenied::DatabaseError => DeleteTaskError::DatabaseError,
         }
     }

@@ -46,6 +46,8 @@ impl From<AccessDenied> for GetProjectActivityError {
         match denied {
             // A read only needs to see the project: no `Forbidden` is possible.
             AccessDenied::NotFound | AccessDenied::Forbidden => GetProjectActivityError::NotFound,
+            // A read is never refused because the project is closed.
+            AccessDenied::Closed => GetProjectActivityError::NotFound,
             AccessDenied::DatabaseError => GetProjectActivityError::DatabaseError,
         }
     }

@@ -10,13 +10,17 @@ use crate::database::users::member_role::view::IsProjectOwnerQueryView;
 use crate::database::users::remove_user_from_project::view::{
     RemoveUserFromProjectQueryView, UnassignMemberTasksQueryView,
 };
-use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{
+    begin_write, commit, AccessDenied, Requirement, PROJECT_CLOSED_MESSAGE,
+};
 use crate::endpoints::v1::projects::project_id::users::user_id::ProjectUserPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum RemoveUserFromProjectError {
     Forbidden,
+    /// The project is closed: read-only until a manager reopens it.
+    ProjectClosed,
     NotFound,
     DatabaseError,
     UnknownUser,
@@ -28,6 +32,7 @@ impl std::fmt::Display for RemoveUserFromProjectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RemoveUserFromProjectError::Forbidden => write!(f, "Forbidden."),
+            RemoveUserFromProjectError::ProjectClosed => f.write_str(PROJECT_CLOSED_MESSAGE),
             RemoveUserFromProjectError::NotFound => write!(f, "Not found."),
             RemoveUserFromProjectError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
@@ -46,6 +51,7 @@ impl ResponseError for RemoveUserFromProjectError {
     fn status_code(&self) -> StatusCode {
         match self {
             RemoveUserFromProjectError::Forbidden => StatusCode::FORBIDDEN,
+            RemoveUserFromProjectError::ProjectClosed => StatusCode::CONFLICT,
             RemoveUserFromProjectError::NotFound => StatusCode::NOT_FOUND,
             RemoveUserFromProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
             RemoveUserFromProjectError::UnknownUser => StatusCode::BAD_REQUEST,
@@ -138,7 +144,7 @@ async fn trigger_remove_user_from_project(
         ),
         (
             status = 409,
-            description = "The user owns the project, who always stays its manager (MAIR-1088).",
+            description = "The user owns the project, who always stays its manager (MAIR-1088), or the project is closed (`Completed`): it is read-only until a manager reopens it (`Project is closed.`).",
             body = String,
             content_type = "text/plain",
             example = json!("The owner of the project cannot be removed from it.")
@@ -185,6 +191,7 @@ impl From<AccessDenied> for RemoveUserFromProjectError {
         match denied {
             AccessDenied::NotFound => RemoveUserFromProjectError::NotFound,
             AccessDenied::Forbidden => RemoveUserFromProjectError::Forbidden,
+            AccessDenied::Closed => RemoveUserFromProjectError::ProjectClosed,
             AccessDenied::DatabaseError => RemoveUserFromProjectError::DatabaseError,
         }
     }

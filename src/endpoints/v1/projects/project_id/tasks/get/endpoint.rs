@@ -167,6 +167,8 @@ impl From<AccessDenied> for GetTasksError {
         match denied {
             AccessDenied::NotFound => GetTasksError::NotFound,
             AccessDenied::Forbidden => GetTasksError::Forbidden,
+            // A read is never refused because the project is closed.
+            AccessDenied::Closed => GetTasksError::Forbidden,
             AccessDenied::DatabaseError => GetTasksError::DatabaseError,
         }
     }

@@ -221,6 +221,8 @@ impl From<AccessDenied> for GetTaskCollaborationError {
         match denied {
             AccessDenied::NotFound => GetTaskCollaborationError::NotFound,
             AccessDenied::Forbidden => GetTaskCollaborationError::Forbidden,
+            // A read is never refused because the project is closed.
+            AccessDenied::Closed => GetTaskCollaborationError::Forbidden,
             AccessDenied::DatabaseError => GetTaskCollaborationError::DatabaseError,
         }
     }
