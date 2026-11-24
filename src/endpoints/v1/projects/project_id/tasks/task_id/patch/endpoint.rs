@@ -13,7 +13,7 @@ use crate::database::tasks::patch_task::view::{
     PatchTaskQueryView, TaskChanges, TASK_STATUS_NOT_IN_PROJECT, TASK_UPDATED,
 };
 use crate::endpoints::v1::projects::access::{
-    begin_write, commit, AccessDenied, Requirement, PROJECT_CLOSED_MESSAGE,
+    begin_task_write_on_closed, commit, AccessDenied, Requirement, PROJECT_CLOSED_MESSAGE,
 };
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::patch::view::PatchTaskView;
@@ -229,17 +229,21 @@ pub async fn patch_task(
     view: ValidatedJson<PatchTaskView>,
 ) -> Result<impl Responder, PatchTaskError> {
     let view = view.into_inner();
-    let (mut tx, access) = begin_write(
+    let (mut tx, access) = begin_task_write_on_closed(
         &state,
         auth_user.id,
         params.project_id(),
-        Some(params.task_id()),
+        params.task_id(),
         Requirement::ActOnTask,
     )
     .await?;
-    // An assigned agent who does not manage the project may only change the status of their task.
+    // An assigned agent who does not manage the project may only change the status of their task;
+    // that `403` comes before the closed project's `409`.
     if !access.can_manage() && !view.only_changes_status() {
         return Err(PatchTaskError::Forbidden);
+    }
+    if access.closed {
+        return Err(PatchTaskError::ProjectClosed);
     }
     trigger_patch_task(
         &mut tx,

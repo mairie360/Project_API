@@ -225,6 +225,15 @@ async fn mair_1200_callers_without_rights_keep_their_403_and_404() {
     ] {
         assert_eq!(status(&app, request).await, 403);
     }
+    // The assignee may only change the status of their task: renaming it stays a 403.
+    assert_eq!(
+        status(
+            &app,
+            patch(&s.task(), s.assignee, json!({ "name": "Renommée" }))
+        )
+        .await,
+        403
+    );
     // Someone who does not see the project still reads 404.
     assert_eq!(
         status(&app, patch(&p, s.outsider, json!({ "status": "Active" }))).await,

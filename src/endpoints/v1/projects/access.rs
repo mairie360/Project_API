@@ -135,6 +135,26 @@ pub async fn begin_write_on_closed(
     .await
 }
 
+/// [`begin_write`] on a task that leaves the closed state to the handler, which first checks the
+/// rights the body needs: an assignee who may not make that change keeps their `403`.
+pub async fn begin_task_write_on_closed(
+    state: &web::Data<AppState>,
+    user_id: u64,
+    project_id: u64,
+    task_id: u64,
+    requirement: Requirement,
+) -> Result<(SmartTransaction, ProjectAccess), AccessDenied> {
+    begin_checked_write(
+        state,
+        user_id,
+        project_id,
+        Some(task_id),
+        requirement,
+        OnClosed::Allow,
+    )
+    .await
+}
+
 async fn begin_checked_write(
     state: &web::Data<AppState>,
     user_id: u64,
