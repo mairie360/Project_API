@@ -37,8 +37,9 @@ fn create_project_view_accessors() {
     assert_eq!(view.description(), "Desc");
     assert_eq!(view.owner_id(), 42);
     // Status and priority (MAIR-558), empty for the table defaults; no template (MAIR-566), the
-    // default one.
-    assert_eq!(view.query_params().len(), 7);
+    // default one; no responsible (MAIR-1196).
+    assert_eq!(view.query_params().len(), 8);
+    assert_eq!(view.query_params()[7].as_option_i32(), None);
     assert_eq!(view.query_params()[3].as_text(), "");
     assert_eq!(view.query_params()[4].as_text(), "");
     assert_eq!(view.query_params()[5].as_option_i32(), None);
@@ -50,6 +51,10 @@ fn create_project_view_accessors() {
     let view = view.with_group(Some(3));
     assert_eq!(view.query_params()[6].as_option_i32(), Some(3));
     assert!(view.query_sql().contains("INSERT INTO project_groups"));
+    // The responsible is recorded and made a manager member in the same statement (MAIR-1196).
+    let view = view.with_responsible(Some(9));
+    assert_eq!(view.query_params()[7].as_option_i32(), Some(9));
+    assert!(view.query_sql().contains("'manager'"));
 
     let view = view
         .with_status(ProjectStatus::Todo)
