@@ -42,6 +42,12 @@ pub struct UpdateProjectView {
     #[serde(default, deserialize_with = "present")]
     #[schema(value_type = Option<i64>, nullable, minimum = 0, example = 480000)]
     pub budget_committed: Option<Option<i64>>,
+    /// Responsible of the project: absent to keep it, `null` to clear it, a user id to replace it.
+    /// The new responsible becomes a `manager` member (added, or promoted when already a member);
+    /// the former one keeps their membership and role. An unknown user is refused (`400`).
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<u64>, nullable, example = 7)]
+    pub responsible_id: Option<Option<u64>>,
 }
 
 /// Refuses a negative amount of cents.

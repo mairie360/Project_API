@@ -215,6 +215,32 @@ pub struct ProjetView {
     /// it, its owner, or a member with the `manager` role). A front hides the refused actions.
     #[schema(example = true)]
     pub can_manage: bool,
+    /// Responsible of the project, chosen with `responsible_id` on its creation or a PATCH; `null`
+    /// when none is recorded (projects created without one, or whose responsible left the members).
+    pub responsible: Option<ProjectResponsibleView>,
+}
+
+/// The responsible of a project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct ProjectResponsibleView {
+    /// Core API id of the responsible, also listed among the members with the `manager` role
+    /// while they stay a member.
+    #[schema(example = 7)]
+    pub id: u64,
+    /// First and last name of the responsible, or `null` if it could not be resolved.
+    #[schema(example = "Marie Durand")]
+    pub name: Option<String>,
+}
+
+impl From<&crate::database::project::get_projects::view::ResponsibleRow>
+    for ProjectResponsibleView
+{
+    fn from(row: &crate::database::project::get_projects::view::ResponsibleRow) -> Self {
+        Self {
+            id: id_from_sql(row.id),
+            name: row.name.clone(),
+        }
+    }
 }
 
 /// A Core API group, as linked to a project or offered by `GET /api/v1/project-groups/`.
@@ -250,6 +276,7 @@ impl From<ProjectView> for ProjetView {
             budget_committed: value.budget_committed(),
             my_role: value.my_role().map(ProjectMemberRole::from_stored),
             can_manage: value.can_manage(),
+            responsible: value.responsible().map(Into::into),
         }
     }
 }
@@ -303,6 +330,9 @@ pub struct ProjectListItemView {
     /// it, its owner, or a member with the `manager` role). A front hides the refused actions.
     #[schema(example = true)]
     pub can_manage: bool,
+    /// Responsible of the project, chosen with `responsible_id` on its creation or a PATCH; `null`
+    /// when none is recorded (projects created without one, or whose responsible left the members).
+    pub responsible: Option<ProjectResponsibleView>,
 }
 
 fn count(value: i64) -> u64 {
@@ -326,6 +356,7 @@ impl From<ProjectView> for ProjectListItemView {
             budget_committed: value.budget_committed(),
             my_role: value.my_role().map(ProjectMemberRole::from_stored),
             can_manage: value.can_manage(),
+            responsible: value.responsible().map(Into::into),
         }
     }
 }

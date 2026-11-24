@@ -51,6 +51,15 @@ pub fn classify_db_error(operation: &str, error: &ApiLibError) -> DbFailure {
     failure
 }
 
+/// Name of the foreign key a write broke, `None` for any other error: lets a handler tell which
+/// reference of its body is unknown when it writes several.
+pub fn violated_foreign_key(error: &ApiLibError) -> Option<&str> {
+    match error {
+        ApiLibError::Database(DbError::ForeignKeyViolation(constraint)) => Some(constraint),
+        _ => None,
+    }
+}
+
 /// Logs a database error at `error` before the handler turns it into an opaque `500`.
 pub fn log_db_error(operation: &str, error: &impl Display) {
     tracing::error!(operation, %error, "database error");
@@ -62,6 +71,21 @@ mod tests {
 
     fn classify(error: DbError) -> DbFailure {
         classify_db_error("test", &ApiLibError::Database(error))
+    }
+
+    #[test]
+    fn mair_1196_names_the_broken_foreign_key_only() {
+        let broken = ApiLibError::Database(DbError::ForeignKeyViolation(
+            "fk_projects_responsible".into(),
+        ));
+        assert_eq!(
+            violated_foreign_key(&broken),
+            Some("fk_projects_responsible")
+        );
+        assert_eq!(
+            violated_foreign_key(&ApiLibError::Database(DbError::NotFound)),
+            None
+        );
     }
 
     #[test]

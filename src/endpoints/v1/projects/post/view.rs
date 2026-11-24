@@ -39,6 +39,12 @@ pub struct CreateProjectView {
     #[serde(default)]
     #[schema(example = 2)]
     template_id: Option<u64>,
+    /// Responsible of the project: a user id. They become a `manager` member of the project and
+    /// are read back as `responsible`. Absent or `null` for none; the caller stays the owner either
+    /// way. An unknown user is refused (`400`).
+    #[serde(default)]
+    #[schema(example = 7)]
+    responsible_id: Option<u64>,
 }
 
 impl CreateProjectView {
@@ -50,7 +56,19 @@ impl CreateProjectView {
             status: None,
             priority: None,
             template_id: None,
+            responsible_id: None,
         }
+    }
+
+    pub fn responsible_id(&self) -> Option<u64> {
+        self.responsible_id
+    }
+
+    /// Records this user as the responsible of the project.
+    #[must_use]
+    pub fn with_responsible_id(mut self, responsible_id: u64) -> Self {
+        self.responsible_id = Some(responsible_id);
+        self
     }
 
     pub fn status(&self) -> Option<ProjectStatus> {

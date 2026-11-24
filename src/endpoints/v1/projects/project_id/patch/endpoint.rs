@@ -4,10 +4,12 @@ use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::smart_db::SmartTransaction;
 use mairie360_api_lib::state::AppState;
 
-use crate::endpoints::db_error::log_db_error;
+use crate::endpoints::db_error::{classify_db_error, log_db_error, DbFailure};
 
 use crate::database::project::group::view::{LinkableGroupQueryView, SetProjectGroupQueryView};
-use crate::database::project::update::view::UpdateProjectQueryView;
+use crate::database::project::update::view::{
+    SetProjectResponsibleQueryView, UpdateProjectQueryView,
+};
 use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
 use crate::endpoints::v1::projects::get::view::stored_priority;
 use crate::endpoints::v1::projects::project_id::patch::view::UpdateProjectView;
@@ -22,6 +24,8 @@ pub enum UpdateProjectError {
     NotFound,
     /// `group_id` names no group, or a group the caller may not link.
     UnknownGroup,
+    /// `responsible_id` names no user.
+    UnknownResponsible,
     DatabaseError,
 }
 
@@ -32,6 +36,9 @@ impl std::fmt::Display for UpdateProjectError {
             UpdateProjectError::BadRequest => write!(f, "Bad request."),
             UpdateProjectError::NotFound => write!(f, "Unknown project."),
             UpdateProjectError::UnknownGroup => write!(f, "Unknown group."),
+            UpdateProjectError::UnknownResponsible => {
+                write!(f, "`responsible_id` does not match any user.")
+            }
             UpdateProjectError::DatabaseError => {
                 write!(f, "An error occurred while accessing the database.")
             }
@@ -43,7 +50,9 @@ impl ResponseError for UpdateProjectError {
     fn status_code(&self) -> StatusCode {
         match self {
             UpdateProjectError::Forbidden => StatusCode::FORBIDDEN,
-            UpdateProjectError::BadRequest => StatusCode::BAD_REQUEST,
+            UpdateProjectError::BadRequest | UpdateProjectError::UnknownResponsible => {
+                StatusCode::BAD_REQUEST
+            }
             UpdateProjectError::NotFound | UpdateProjectError::UnknownGroup => {
                 StatusCode::NOT_FOUND
             }
@@ -97,6 +106,19 @@ async fn trigger_update_project(
     }
     if let Some(group_id) = view.group_id {
         set_project_group(tx, user_id, project_id, group_id).await?;
+    }
+    if let Some(responsible_id) = view.responsible_id {
+        tx.execute(&SetProjectResponsibleQueryView::new(
+            project_id,
+            responsible_id,
+        ))
+        .await
+        .map_err(
+            |e| match classify_db_error("projects/project_id/patch", &e) {
+                DbFailure::InvalidReference => UpdateProjectError::UnknownResponsible,
+                _ => UpdateProjectError::DatabaseError,
+            },
+        )?;
     }
     Ok(())
 }
@@ -152,12 +174,18 @@ async fn set_project_group(
                    `budget_voted` and `budget_committed` (MAIR-1085) are amounts in cents of euro: \
                    absent keeps an amount, `null` clears it, an integer from 0 replaces it; a \
                    negative amount answers `400`.\n\n\
+                   `responsible_id` replaces the responsible of the project, read back as \
+                   `responsible`: absent keeps it, `null` clears it. The new responsible becomes a \
+                   `manager` member in the same write (added, or promoted when already a member); \
+                   the former one keeps their membership and role. An unknown user answers `400` \
+                   and changes nothing. Removing the responsible from the members \
+                   (`DELETE …/users/{user_id}/`) clears it too.\n\n\
                    The response has an empty body; read the project back with \
                    `GET /api/v1/projects/{project_id}/`.",
     request_body(
         content = UpdateProjectView,
         description = "Fields to change, all optional.",
-        example = json!({ "status": "Review", "priority": "High", "group_id": 3, "budget_voted": 1250000, "budget_committed": 480000 })
+        example = json!({ "status": "Review", "priority": "High", "group_id": 3, "budget_voted": 1250000, "budget_committed": 480000, "responsible_id": 7 })
     ),
     responses(
         (
@@ -166,7 +194,7 @@ async fn set_project_group(
         ),
         (
             status = 400,
-            description = "Malformed JSON body, `project_id` not an integer, `name` empty, `status` or `priority` not one of the enum values, `Error` status or priority, `group_id` set to `null`, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; `budget_voted` / `budget_committed` negative, not an integer or above 2^63 - 1.",
+            description = "Malformed JSON body, `project_id` not an integer, `name` empty, `status` or `priority` not one of the enum values, `Error` status or priority, `group_id` set to `null`, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; `budget_voted` / `budget_committed` negative, not an integer or above 2^63 - 1; `responsible_id` that matches no user (`` `responsible_id` does not match any user. ``).",
             body = String,
             content_type = "text/plain",
             example = json!("Invalid `name`: must be at most 255 characters")

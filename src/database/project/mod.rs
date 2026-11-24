@@ -86,3 +86,18 @@ macro_rules! caller_project_role_sql {
             FROM project_members mr WHERE mr.project_id = p.id AND mr.user_id = $1) END)"
     };
 }
+
+/// SQL of the responsible of a project as a JSON object `{id, name}`, `NULL` when none is recorded;
+/// `$column` is the project's `responsible_id` column.
+#[macro_export]
+macro_rules! responsible_sql {
+    ($column:literal) => {
+        concat!(
+            "(SELECT jsonb_build_object('id', ru.id, 'name', \
+                NULLIF(concat_ws(' ', ru.first_name, ru.last_name), '')) \
+              FROM users ru WHERE ru.id = ",
+            $column,
+            ")"
+        )
+    };
+}

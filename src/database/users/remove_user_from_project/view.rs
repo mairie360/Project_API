@@ -28,7 +28,11 @@ impl RemoveUserFromProjectQueryView {
 
 impl ApiRequestDto for RemoveUserFromProjectQueryView {
     fn query_sql(&self) -> &'static str {
-        "DELETE FROM project_members WHERE project_id = $1 AND user_id = $2"
+        // A member who leaves the project is no longer its responsible.
+        "WITH cleared AS ( \
+            UPDATE projects SET responsible_id = NULL WHERE id = $1 AND responsible_id = $2 \
+         ) \
+         DELETE FROM project_members WHERE project_id = $1 AND user_id = $2"
     }
 
     fn query_params(&self) -> &[QueryParam] {

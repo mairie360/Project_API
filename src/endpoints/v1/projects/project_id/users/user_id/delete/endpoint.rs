@@ -98,7 +98,8 @@ async fn trigger_remove_user_from_project(
                    In the same transaction, the tasks of this project assigned to the user are \
                    unassigned (`assigned_to` becomes `null`, logged in each task's history and \
                    signed by the caller), since a task can only be assigned to the owner or a \
-                   member of its project.\n\n\
+                   member of its project. When the user is the responsible of the project, the \
+                   project no longer has one (`responsible` becomes `null`).\n\n\
                    The owner of the project cannot be removed (`409`, MAIR-1088).\n\n\
                    Idempotent once the rights are checked: removing someone who is not a member \
                    also answers `204`.",
