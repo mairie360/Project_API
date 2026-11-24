@@ -51,10 +51,9 @@ docker compose watch         # same, with hot reload (cargo-watch syncs src/, Ca
 
 Session tokens (MAIR-680): only Core_API signs them, with its Ed25519 key (`EdDSA`, `kid` = RFC 7638 thumbprint,
 `iss` `mairie360-core`, `aud` `mairie360`). This API only gets `JWT_PUBLIC_KEY` (Core's public key as PEM, several
-`PUBLIC KEY` blocks during a rotation, `\n`-escaped line breaks accepted) and checks them with the lib (4.3.0). No
-`JWT_SECRET`: while it is set the lib still accepts HS256 tokens signed with it (transition), so a deployment
-removes it once `JWT_PUBLIC_KEY` is in place, and every HS256 token is then refused. The lib refuses to start
-without either variable, with a short or well-known `JWT_SECRET`, or with its committed test key.
+`PUBLIC KEY` blocks during a rotation, `\n`-escaped line breaks accepted) and checks them with the lib.
+Since lib 6.0.0 `JWT_PUBLIC_KEY` is required, `JWT_SECRET` is no longer read and every HS256 token is refused.
+The lib refuses to start without `JWT_PUBLIC_KEY` or with its committed test key.
 
 - The dev stack (`docker-compose.yml`) defaults `JWT_PUBLIC_KEY` to the public half of the lib's test key pair
   (`test_setup::http_setup::TEST_JWT_PUBLIC_KEY`) with `JWT_ALLOW_WEAK_SECRET: "true"`, which only that stack sets.
