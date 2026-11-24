@@ -5,8 +5,8 @@ use mairie360_api_lib::database::db_interface::{
 use crate::database::project::update_status::view::ProjectStatus;
 use crate::database::tasks::create_task::view::TaskPriority;
 
-/// Updates the title, the description, the status, the priority and/or the budget of a project (a
-/// missing field is kept). Returns `true` if the project exists.
+/// Updates the title, the description, the status, the priority, the budget and/or the deadline of
+/// a project (a missing field is kept). Returns `true` if the project exists.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UpdateProjectQueryView {
     params: Vec<QueryParam>,
@@ -26,6 +26,8 @@ impl UpdateProjectQueryView {
                 QueryParam::Bool(description.is_some()),
                 QueryParam::Text(description.unwrap_or_default().to_string()),
                 QueryParam::Text(status.map(|s| s.to_string()).unwrap_or_default()),
+                QueryParam::Text(String::new()),
+                QueryParam::Bool(false),
                 QueryParam::Text(String::new()),
                 QueryParam::Bool(false),
                 QueryParam::Text(String::new()),
@@ -52,6 +54,20 @@ impl UpdateProjectQueryView {
         self
     }
 
+    /// Also sets the deadline of the project (`projects.due_date`): `None` keeps it, `Some(None)`
+    /// clears it, `Some(Some(day))` replaces it.
+    #[must_use]
+    pub fn with_deadline(mut self, deadline: Option<Option<chrono::NaiveDate>>) -> Self {
+        self.params[10] = QueryParam::Bool(deadline.is_some());
+        self.params[11] = QueryParam::Text(
+            deadline
+                .flatten()
+                .map(|day| day.to_string())
+                .unwrap_or_default(),
+        );
+        self
+    }
+
     /// Also sets the priority (MAIR-558).
     #[must_use]
     pub fn with_priority(mut self, priority: TaskPriority) -> Self {
@@ -73,7 +89,8 @@ impl ApiRequestDto for UpdateProjectQueryView {
                 status = COALESCE(NULLIF($5, '')::project_status, status), \
                 priority = COALESCE(NULLIF($6, '')::task_priority, priority), \
                 budget_voted = CASE WHEN $7 THEN NULLIF($8, '')::bigint ELSE budget_voted END, \
-                budget_committed = CASE WHEN $9 THEN NULLIF($10, '')::bigint ELSE budget_committed END \
+                budget_committed = CASE WHEN $9 THEN NULLIF($10, '')::bigint ELSE budget_committed END, \
+                due_date = CASE WHEN $11 THEN NULLIF($12, '')::date ELSE due_date END \
             WHERE id = $1 RETURNING id \
          ) \
          SELECT EXISTS (SELECT 1 FROM updated)"

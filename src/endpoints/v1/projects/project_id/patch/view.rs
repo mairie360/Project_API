@@ -48,6 +48,11 @@ pub struct UpdateProjectView {
     #[serde(default, deserialize_with = "present")]
     #[schema(value_type = Option<u64>, nullable, example = 7)]
     pub responsible_id: Option<Option<u64>>,
+    /// Deadline of the project, a `YYYY-MM-DD` day: absent to keep it, `null` to clear it, a day to
+    /// replace it.
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>, format = Date, nullable, example = "2027-06-30")]
+    pub deadline: Option<Option<chrono::NaiveDate>>,
 }
 
 /// Refuses a negative amount of cents.

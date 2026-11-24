@@ -45,6 +45,11 @@ pub struct CreateProjectView {
     #[serde(default)]
     #[schema(example = 7)]
     responsible_id: Option<u64>,
+    /// Deadline of the project, a `YYYY-MM-DD` day, read back as `deadline`. Absent or `null`
+    /// for none.
+    #[serde(default)]
+    #[schema(value_type = Option<String>, format = Date, example = "2027-06-30")]
+    deadline: Option<chrono::NaiveDate>,
 }
 
 impl CreateProjectView {
@@ -57,7 +62,19 @@ impl CreateProjectView {
             priority: None,
             template_id: None,
             responsible_id: None,
+            deadline: None,
         }
+    }
+
+    pub fn deadline(&self) -> Option<chrono::NaiveDate> {
+        self.deadline
+    }
+
+    /// Records this deadline.
+    #[must_use]
+    pub fn with_deadline(mut self, deadline: chrono::NaiveDate) -> Self {
+        self.deadline = Some(deadline);
+        self
     }
 
     pub fn responsible_id(&self) -> Option<u64> {

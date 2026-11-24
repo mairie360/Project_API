@@ -38,8 +38,10 @@ fn create_project_view_accessors() {
     assert_eq!(view.owner_id(), 42);
     // Status and priority (MAIR-558), empty for the table defaults; no template (MAIR-566), the
     // default one; no responsible (MAIR-1196).
-    assert_eq!(view.query_params().len(), 8);
+    assert_eq!(view.query_params().len(), 9);
     assert_eq!(view.query_params()[7].as_option_i32(), None);
+    // No deadline (MAIR-1199): empty, stored NULL.
+    assert_eq!(view.query_params()[8].as_text(), "");
     assert_eq!(view.query_params()[3].as_text(), "");
     assert_eq!(view.query_params()[4].as_text(), "");
     assert_eq!(view.query_params()[5].as_option_i32(), None);
@@ -55,6 +57,8 @@ fn create_project_view_accessors() {
     let view = view.with_responsible(Some(9));
     assert_eq!(view.query_params()[7].as_option_i32(), Some(9));
     assert!(view.query_sql().contains("'manager'"));
+    let view = view.with_deadline(chrono::NaiveDate::from_ymd_opt(2027, 6, 30));
+    assert_eq!(view.query_params()[8].as_text(), "2027-06-30");
 
     let view = view
         .with_status(ProjectStatus::Todo)
