@@ -12,7 +12,9 @@ use crate::database::tasks::create_task::view::{
 use crate::database::tasks::patch_task::view::{
     PatchTaskQueryView, TaskChanges, TASK_STATUS_NOT_IN_PROJECT, TASK_UPDATED,
 };
-use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{
+    begin_task_write_on_closed, commit, AccessDenied, Requirement, PROJECT_CLOSED_MESSAGE,
+};
 use crate::endpoints::v1::projects::project_id::get::view::TaskPriority;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::patch::view::PatchTaskView;
 use crate::endpoints::v1::projects::project_id::tasks::task_id::TaskPathParams;
@@ -21,6 +23,8 @@ use crate::endpoints::validation::ValidatedJson;
 #[derive(Debug, Clone, PartialEq)]
 pub enum PatchTaskError {
     Forbidden,
+    /// The project is closed: read-only until a manager reopens it.
+    ProjectClosed,
     BadRequest,
     NotFound,
     DatabaseError,
@@ -35,6 +39,7 @@ impl std::fmt::Display for PatchTaskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PatchTaskError::Forbidden => write!(f, "Forbidden."),
+            PatchTaskError::ProjectClosed => f.write_str(PROJECT_CLOSED_MESSAGE),
             PatchTaskError::BadRequest => write!(f, "Bad request."),
             PatchTaskError::NotFound => write!(f, "Unknown task."),
             PatchTaskError::DatabaseError => {
@@ -58,6 +63,7 @@ impl ResponseError for PatchTaskError {
     fn status_code(&self) -> StatusCode {
         match self {
             PatchTaskError::Forbidden => StatusCode::FORBIDDEN,
+            PatchTaskError::ProjectClosed => StatusCode::CONFLICT,
             PatchTaskError::BadRequest => StatusCode::BAD_REQUEST,
             PatchTaskError::NotFound => StatusCode::NOT_FOUND,
             PatchTaskError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
@@ -188,6 +194,13 @@ async fn trigger_patch_task(
             example = json!("Unknown task.")
         ),
         (
+            status = 409,
+            description = "The caller may write, but the project is closed (`Completed`): it is read-only until a manager reopens it.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Project is closed.")
+        ),
+        (
             status = 500,
             description = "Database error.",
             body = String,
@@ -216,17 +229,21 @@ pub async fn patch_task(
     view: ValidatedJson<PatchTaskView>,
 ) -> Result<impl Responder, PatchTaskError> {
     let view = view.into_inner();
-    let (mut tx, access) = begin_write(
+    let (mut tx, access) = begin_task_write_on_closed(
         &state,
         auth_user.id,
         params.project_id(),
-        Some(params.task_id()),
+        params.task_id(),
         Requirement::ActOnTask,
     )
     .await?;
-    // An assigned agent who does not manage the project may only change the status of their task.
+    // An assigned agent who does not manage the project may only change the status of their task;
+    // that `403` comes before the closed project's `409`.
     if !access.can_manage() && !view.only_changes_status() {
         return Err(PatchTaskError::Forbidden);
+    }
+    if access.closed {
+        return Err(PatchTaskError::ProjectClosed);
     }
     trigger_patch_task(
         &mut tx,
@@ -245,6 +262,7 @@ impl From<AccessDenied> for PatchTaskError {
         match denied {
             AccessDenied::NotFound => PatchTaskError::NotFound,
             AccessDenied::Forbidden => PatchTaskError::Forbidden,
+            AccessDenied::Closed => PatchTaskError::ProjectClosed,
             AccessDenied::DatabaseError => PatchTaskError::DatabaseError,
         }
     }

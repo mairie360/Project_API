@@ -5,7 +5,9 @@ use mairie360_api_lib::state::AppState;
 
 use crate::database::project::delete::view::DeleteProjectQueryView;
 use crate::endpoints::db_error::log_db_error;
-use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{
+    begin_write_on_closed, commit, AccessDenied, Requirement,
+};
 use crate::endpoints::v1::projects::bulk_delete::view::{
     BulkDeleteProjectsResultView, BulkDeleteProjectsView, BulkDeleteResultItem, BulkDeleteStatus,
 };
@@ -45,10 +47,12 @@ async fn delete_one(
 ) -> Result<BulkDeleteStatus, BulkDeleteProjectsError> {
     const OPERATION: &str = "projects/bulk-delete";
     let mut tx =
-        match begin_write(state, user_id, project_id, None, Requirement::ManageProject).await {
+        match begin_write_on_closed(state, user_id, project_id, Requirement::ManageProject).await {
             Ok((tx, _)) => tx,
             Err(AccessDenied::NotFound) => return Ok(BulkDeleteStatus::NotFound),
             Err(AccessDenied::Forbidden) => return Ok(BulkDeleteStatus::Forbidden),
+            // A closed project can be deleted: `begin_write_on_closed` never answers `Closed`.
+            Err(AccessDenied::Closed) => return Ok(BulkDeleteStatus::Forbidden),
             Err(AccessDenied::DatabaseError) => return Err(BulkDeleteProjectsError::DatabaseError),
         };
     tx.execute(&DeleteProjectQueryView::new(project_id))

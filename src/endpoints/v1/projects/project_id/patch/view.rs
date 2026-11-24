@@ -55,6 +55,22 @@ pub struct UpdateProjectView {
     pub deadline: Option<Option<chrono::NaiveDate>>,
 }
 
+impl UpdateProjectView {
+    /// Whether this body only reopens a project: a `status` other than `Completed` and nothing
+    /// else. The one `PATCH` a closed project accepts.
+    pub fn only_reopens(&self) -> bool {
+        matches!(self.status, Some(status) if status != ProjectStatus::Completed)
+            && self.name.is_none()
+            && self.description.is_none()
+            && self.priority.is_none()
+            && self.group_id.is_none()
+            && self.budget_voted.is_none()
+            && self.budget_committed.is_none()
+            && self.responsible_id.is_none()
+            && self.deadline.is_none()
+    }
+}
+
 /// Refuses a negative amount of cents.
 fn check_amount(field: &str, amount: Option<Option<i64>>) -> Result<(), ValidationError> {
     match amount.flatten() {

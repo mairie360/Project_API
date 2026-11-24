@@ -7,7 +7,9 @@ use mairie360_api_lib::state::AppState;
 use crate::endpoints::db_error::log_db_error;
 
 use crate::database::project::delete::view::DeleteProjectQueryView;
-use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{
+    begin_write_on_closed, commit, AccessDenied, Requirement,
+};
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -126,11 +128,10 @@ pub async fn delete_project(
     auth_user: AuthenticatedUser,
     params: web::Path<ProjectPathParams>,
 ) -> Result<impl Responder, DeleteProjectError> {
-    let (mut tx, _) = begin_write(
+    let (mut tx, _) = begin_write_on_closed(
         &state,
         auth_user.id,
         params.project_id(),
-        None,
         Requirement::ManageProject,
     )
     .await?;
@@ -145,6 +146,8 @@ impl From<AccessDenied> for DeleteProjectError {
         match denied {
             AccessDenied::NotFound => DeleteProjectError::NotFound,
             AccessDenied::Forbidden => DeleteProjectError::Forbidden,
+            // Allowed on a closed project (`begin_write_on_closed`): never returned here.
+            AccessDenied::Closed => DeleteProjectError::Forbidden,
             AccessDenied::DatabaseError => DeleteProjectError::DatabaseError,
         }
     }

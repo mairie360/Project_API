@@ -15,7 +15,23 @@ pub enum AccessDenied {
     NotFound,
     /// Visible project, but insufficient rights.
     Forbidden,
+    /// The caller has the rights, but the project is closed (`Completed`): it is read-only until a
+    /// manager reopens it. Answered `409 Conflict`.
+    Closed,
     DatabaseError,
+}
+
+/// Body of the `409` answered for a write on a closed project.
+pub const PROJECT_CLOSED_MESSAGE: &str = "Project is closed.";
+
+/// Whether a write may run on a closed project.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OnClosed {
+    /// Refuse it with [`AccessDenied::Closed`]: the default of every write.
+    Refuse,
+    /// Let it run: reads, delete, close again, or a `PATCH` that may reopen the project (which
+    /// then checks its body itself).
+    Allow,
 }
 
 /// What the operation requires from the caller.
@@ -31,6 +47,7 @@ fn check(
     access: ProjectAccess,
     task_id: Option<u64>,
     requirement: Requirement,
+    on_closed: OnClosed,
 ) -> Result<ProjectAccess, AccessDenied> {
     if !access.visible || (task_id.is_some() && !access.task_exists) {
         return Err(AccessDenied::NotFound);
@@ -40,11 +57,14 @@ fn check(
         Requirement::ManageProject => access.can_manage(),
         Requirement::ActOnTask => access.can_act_on_task(),
     };
-    if allowed {
-        Ok(access)
-    } else {
-        Err(AccessDenied::Forbidden)
+    if !allowed {
+        // Rights first: a caller who may not write keeps their `403`, closed project or not.
+        return Err(AccessDenied::Forbidden);
     }
+    if access.closed && on_closed == OnClosed::Refuse {
+        return Err(AccessDenied::Closed);
+    }
+    Ok(access)
 }
 
 fn database_error(error: &impl std::fmt::Display) -> AccessDenied {
@@ -65,7 +85,8 @@ pub async fn require_access(
         .fetch_one(&ProjectAccessQueryView::new(project_id, task_id, user_id))
         .await
         .map_err(|e| database_error(&e))?;
-    check(access, task_id, requirement)
+    // A read is never refused because the project is closed.
+    check(access, task_id, requirement, OnClosed::Allow)
 }
 
 /// Starts the transaction of a write on a project (or its tasks and members): locks the project
@@ -74,12 +95,73 @@ pub async fn require_access(
 /// The caller runs its queries on the returned transaction and commits it with [`commit`].
 /// Dropping it (early `?` return) rolls everything back. Concurrent writes on the same project
 /// are serialized, so the access check cannot be invalidated before the write (MAIR-420).
+///
+/// A closed project is read-only: the write is refused with [`AccessDenied::Closed`] (use
+/// [`begin_write_on_closed`] for the few writes allowed on it).
 pub async fn begin_write(
     state: &web::Data<AppState>,
     user_id: u64,
     project_id: u64,
     task_id: Option<u64>,
     requirement: Requirement,
+) -> Result<(SmartTransaction, ProjectAccess), AccessDenied> {
+    begin_checked_write(
+        state,
+        user_id,
+        project_id,
+        task_id,
+        requirement,
+        OnClosed::Refuse,
+    )
+    .await
+}
+
+/// [`begin_write`] for the writes still allowed on a closed project: delete it, close it again,
+/// or a `PATCH` that may reopen it. The returned access tells whether the project is closed.
+pub async fn begin_write_on_closed(
+    state: &web::Data<AppState>,
+    user_id: u64,
+    project_id: u64,
+    requirement: Requirement,
+) -> Result<(SmartTransaction, ProjectAccess), AccessDenied> {
+    begin_checked_write(
+        state,
+        user_id,
+        project_id,
+        None,
+        requirement,
+        OnClosed::Allow,
+    )
+    .await
+}
+
+/// [`begin_write`] on a task that leaves the closed state to the handler, which first checks the
+/// rights the body needs: an assignee who may not make that change keeps their `403`.
+pub async fn begin_task_write_on_closed(
+    state: &web::Data<AppState>,
+    user_id: u64,
+    project_id: u64,
+    task_id: u64,
+    requirement: Requirement,
+) -> Result<(SmartTransaction, ProjectAccess), AccessDenied> {
+    begin_checked_write(
+        state,
+        user_id,
+        project_id,
+        Some(task_id),
+        requirement,
+        OnClosed::Allow,
+    )
+    .await
+}
+
+async fn begin_checked_write(
+    state: &web::Data<AppState>,
+    user_id: u64,
+    project_id: u64,
+    task_id: Option<u64>,
+    requirement: Requirement,
+    on_closed: OnClosed,
 ) -> Result<(SmartTransaction, ProjectAccess), AccessDenied> {
     let mut tx = state
         .get_smart_db()
@@ -93,7 +175,7 @@ pub async fn begin_write(
         .fetch_one(&ProjectAccessQueryView::new(project_id, task_id, user_id))
         .await
         .map_err(|e| database_error(&e))?;
-    let access = check(access, task_id, requirement)?;
+    let access = check(access, task_id, requirement, on_closed)?;
     Ok((tx, access))
 }
 

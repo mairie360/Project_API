@@ -45,6 +45,8 @@ impl From<AccessDenied> for GetTaskError {
         match denied {
             // Reading a task only needs the project to be visible: `Forbidden` cannot happen.
             AccessDenied::NotFound | AccessDenied::Forbidden => GetTaskError::NotFound,
+            // A read is never refused because the project is closed.
+            AccessDenied::Closed => GetTaskError::NotFound,
             AccessDenied::DatabaseError => GetTaskError::DatabaseError,
         }
     }

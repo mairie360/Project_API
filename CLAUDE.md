@@ -270,6 +270,16 @@ The deadline of a project (MAIR-1199, Database `projects.due_date`, `DATE`) is `
 the tasks. The list's `due_date` stays the earliest task due date; `due_before` / `due_after` compare `deadline` (from
 midnight UTC), else `due_date` (`tests/endpoints/mair_1199_project_deadline.rs`).
 
+A closed project (status `Completed`, set by `PATCH …/close` or the `PATCH`) is read-only. `ProjectAccess::closed`
+comes with the access query, and `begin_write` answers `AccessDenied::Closed` (`409 Project is closed.`,
+`access::PROJECT_CLOSED_MESSAGE`) once the rights are granted, so a caller without them keeps their `403` / `404`. Every
+write family is refused: project fields, tasks (create, patch, status included for the assignee, delete, comments), members,
+milestones, statuses and project comments. `begin_write_on_closed` serves the writes still allowed: `DELETE` (single and
+bulk), `PATCH …/close` (idempotent) and the project `PATCH`, which then accepts only a body holding a `status` other than
+`Completed` and nothing else (`UpdateProjectView::only_reopens`): that reopens it, the managers picking the new status (the
+former one is not stored). Reads are never refused. `Suspended` is not closed. A new write handler maps
+`AccessDenied::Closed` to a `409` and documents it (`tests/endpoints/mair_1200_closed_project_read_only.rs`).
+
 `GET /tasks/` (MAIR-524) lists the tasks of every project visible to the caller (same
 `project_visible_to_user_sql!` rule), each with `project_id` and `project_name`, so BFF_Dashboard reads a
 user's pending tasks in one call: filters `assigned_to`, `status` (CSV of `Todo`, `InProgress`, `Completed`,

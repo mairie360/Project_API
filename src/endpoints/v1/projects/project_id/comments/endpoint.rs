@@ -6,7 +6,9 @@ use mairie360_api_lib::state::AppState;
 
 use crate::database::activity::view::{ActivityRow, AddProjectCommentQueryView};
 use crate::endpoints::db_error::{classify_db_error, DbFailure};
-use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{
+    begin_write, commit, AccessDenied, Requirement, PROJECT_CLOSED_MESSAGE,
+};
 use crate::endpoints::v1::projects::project_id::activity::view::ActivityItemView;
 use crate::endpoints::v1::projects::project_id::comments::view::AddProjectCommentView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
@@ -15,6 +17,8 @@ use crate::endpoints::validation::ValidatedJson;
 #[derive(Debug, Clone, PartialEq)]
 pub enum AddProjectCommentError {
     NotFound,
+    /// The project is closed: read-only until a manager reopens it.
+    ProjectClosed,
     /// The database refused the message (its `CHECK`).
     BadRequest,
     DatabaseError,
@@ -24,6 +28,7 @@ impl std::fmt::Display for AddProjectCommentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AddProjectCommentError::NotFound => write!(f, "Not found."),
+            AddProjectCommentError::ProjectClosed => f.write_str(PROJECT_CLOSED_MESSAGE),
             AddProjectCommentError::BadRequest => {
                 write!(f, "Invalid `message`: must hold 1 to 2000 characters")
             }
@@ -38,6 +43,7 @@ impl ResponseError for AddProjectCommentError {
     fn status_code(&self) -> StatusCode {
         match self {
             AddProjectCommentError::NotFound => StatusCode::NOT_FOUND,
+            AddProjectCommentError::ProjectClosed => StatusCode::CONFLICT,
             AddProjectCommentError::BadRequest => StatusCode::BAD_REQUEST,
             AddProjectCommentError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -53,6 +59,7 @@ impl From<AccessDenied> for AddProjectCommentError {
         match denied {
             // Seeing the project is enough to comment it: no `Forbidden` is possible.
             AccessDenied::NotFound | AccessDenied::Forbidden => AddProjectCommentError::NotFound,
+            AccessDenied::Closed => AddProjectCommentError::ProjectClosed,
             AccessDenied::DatabaseError => AddProjectCommentError::DatabaseError,
         }
     }
@@ -106,6 +113,8 @@ async fn trigger_add_project_comment(
          body = String, content_type = "text/plain", example = json!("Jeton expiré")),
         (status = 404, description = "Unknown project, or project not visible to the caller — both cases are deliberately indistinguishable.",
          body = String, content_type = "text/plain", example = json!("Not found.")),
+        (status = 409, description = "The caller may write, but the project is closed (`Completed`): it is read-only until a manager reopens it.",
+         body = String, content_type = "text/plain", example = json!("Project is closed.")),
         (status = 500, description = "Database error.", body = String, content_type = "text/plain",
          example = json!("An error occurred while accessing the database.")),
     ),

@@ -7,7 +7,9 @@ use mairie360_api_lib::state::AppState;
 use crate::endpoints::db_error::log_db_error;
 
 use crate::database::tasks::collaboration::view::{AddTaskCommentQueryView, TaskComment};
-use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{
+    begin_write, commit, AccessDenied, Requirement, PROJECT_CLOSED_MESSAGE,
+};
 use crate::endpoints::v1::projects::project_id::tasks::task_id::comments::view::{
     AddTaskCommentView, MAX_COMMENT_LENGTH,
 };
@@ -17,6 +19,8 @@ use crate::endpoints::validation::ValidatedJson;
 #[derive(Debug, Clone, PartialEq)]
 pub enum AddTaskCommentError {
     Forbidden,
+    /// The project is closed: read-only until a manager reopens it.
+    ProjectClosed,
     BadRequest,
     NotFound,
     DatabaseError,
@@ -26,6 +30,7 @@ impl std::fmt::Display for AddTaskCommentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AddTaskCommentError::Forbidden => write!(f, "Forbidden."),
+            AddTaskCommentError::ProjectClosed => f.write_str(PROJECT_CLOSED_MESSAGE),
             AddTaskCommentError::BadRequest => write!(f, "Bad request."),
             AddTaskCommentError::NotFound => write!(f, "Unknown task."),
             AddTaskCommentError::DatabaseError => {
@@ -39,6 +44,7 @@ impl ResponseError for AddTaskCommentError {
     fn status_code(&self) -> StatusCode {
         match self {
             AddTaskCommentError::Forbidden => StatusCode::FORBIDDEN,
+            AddTaskCommentError::ProjectClosed => StatusCode::CONFLICT,
             AddTaskCommentError::BadRequest => StatusCode::BAD_REQUEST,
             AddTaskCommentError::NotFound => StatusCode::NOT_FOUND,
             AddTaskCommentError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
@@ -140,6 +146,13 @@ async fn trigger_add_task_comment(
             example = json!("Unknown task.")
         ),
         (
+            status = 409,
+            description = "The caller may write, but the project is closed (`Completed`): it is read-only until a manager reopens it.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Project is closed.")
+        ),
+        (
             status = 500,
             description = "Database error.",
             body = String,
@@ -178,6 +191,7 @@ impl From<AccessDenied> for AddTaskCommentError {
         match denied {
             AccessDenied::NotFound => AddTaskCommentError::NotFound,
             AccessDenied::Forbidden => AddTaskCommentError::Forbidden,
+            AccessDenied::Closed => AddTaskCommentError::ProjectClosed,
             AccessDenied::DatabaseError => AddTaskCommentError::DatabaseError,
         }
     }

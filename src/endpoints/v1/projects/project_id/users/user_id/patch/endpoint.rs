@@ -6,13 +6,17 @@ use mairie360_api_lib::state::AppState;
 
 use crate::database::users::member_role::view::{IsProjectOwnerQueryView, SetMemberRoleQueryView};
 use crate::endpoints::db_error::log_db_error;
-use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{
+    begin_write, commit, AccessDenied, Requirement, PROJECT_CLOSED_MESSAGE,
+};
 use crate::endpoints::v1::projects::project_id::users::user_id::patch::view::UpdateMemberRoleView;
 use crate::endpoints::v1::projects::project_id::users::user_id::ProjectUserPathParams;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UpdateMemberRoleError {
     Forbidden,
+    /// The project is closed: read-only until a manager reopens it.
+    ProjectClosed,
     /// Unknown or invisible project.
     NotFound,
     /// The user is not a member of the project.
@@ -26,6 +30,7 @@ impl std::fmt::Display for UpdateMemberRoleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UpdateMemberRoleError::Forbidden => write!(f, "Forbidden."),
+            UpdateMemberRoleError::ProjectClosed => f.write_str(PROJECT_CLOSED_MESSAGE),
             UpdateMemberRoleError::NotFound => write!(f, "Not found."),
             UpdateMemberRoleError::UnknownMember => {
                 write!(f, "The user is not a member of this project.")
@@ -44,6 +49,7 @@ impl ResponseError for UpdateMemberRoleError {
     fn status_code(&self) -> StatusCode {
         match self {
             UpdateMemberRoleError::Forbidden => StatusCode::FORBIDDEN,
+            UpdateMemberRoleError::ProjectClosed => StatusCode::CONFLICT,
             UpdateMemberRoleError::NotFound | UpdateMemberRoleError::UnknownMember => {
                 StatusCode::NOT_FOUND
             }
@@ -62,6 +68,7 @@ impl From<AccessDenied> for UpdateMemberRoleError {
         match denied {
             AccessDenied::NotFound => UpdateMemberRoleError::NotFound,
             AccessDenied::Forbidden => UpdateMemberRoleError::Forbidden,
+            AccessDenied::Closed => UpdateMemberRoleError::ProjectClosed,
             AccessDenied::DatabaseError => UpdateMemberRoleError::DatabaseError,
         }
     }
@@ -125,7 +132,7 @@ async fn trigger_update_member_role(
          body = String, content_type = "text/plain", example = json!("Forbidden.")),
         (status = 404, description = "Unknown or invisible project (`Not found.`), or user who is not a member of it (`The user is not a member of this project.`).",
          body = String, content_type = "text/plain", example = json!("The user is not a member of this project.")),
-        (status = 409, description = "The user owns the project, who always reads `manager`.",
+        (status = 409, description = "The user owns the project, who always reads `manager`, or the project is closed (`Completed`): it is read-only until a manager reopens it (`Project is closed.`).",
          body = String, content_type = "text/plain", example = json!("The owner of the project is always its manager.")),
         (status = 500, description = "Database error.", body = String, content_type = "text/plain",
          example = json!("An error occurred while accessing the database.")),

@@ -242,6 +242,8 @@ impl From<AccessDenied> for CreateProjectError {
         match denied {
             AccessDenied::NotFound => CreateProjectError::NotFound,
             AccessDenied::Forbidden => CreateProjectError::Forbidden,
+            // Project creation does not check a project.
+            AccessDenied::Closed => CreateProjectError::Forbidden,
             AccessDenied::DatabaseError => CreateProjectError::DatabaseError,
         }
     }

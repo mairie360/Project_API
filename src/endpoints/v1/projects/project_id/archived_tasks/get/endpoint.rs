@@ -164,6 +164,8 @@ impl From<AccessDenied> for GetArchivedTasksError {
         match denied {
             AccessDenied::NotFound => GetArchivedTasksError::NotFound,
             AccessDenied::Forbidden => GetArchivedTasksError::Forbidden,
+            // A read is never refused because the project is closed.
+            AccessDenied::Closed => GetArchivedTasksError::Forbidden,
             AccessDenied::DatabaseError => GetArchivedTasksError::DatabaseError,
         }
     }

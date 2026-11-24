@@ -10,7 +10,9 @@ use crate::database::project::group::view::{LinkableGroupQueryView, SetProjectGr
 use crate::database::project::update::view::{
     SetProjectResponsibleQueryView, UpdateProjectQueryView,
 };
-use crate::endpoints::v1::projects::access::{begin_write, commit, AccessDenied, Requirement};
+use crate::endpoints::v1::projects::access::{
+    begin_write_on_closed, commit, AccessDenied, Requirement, PROJECT_CLOSED_MESSAGE,
+};
 use crate::endpoints::v1::projects::get::view::stored_priority;
 use crate::endpoints::v1::projects::project_id::patch::view::UpdateProjectView;
 use crate::endpoints::v1::projects::project_id::ProjectPathParams;
@@ -20,6 +22,8 @@ use mairie360_api_lib::error::ApiLibError;
 #[derive(Debug, Clone, PartialEq)]
 pub enum UpdateProjectError {
     Forbidden,
+    /// The project is closed: read-only until a manager reopens it.
+    ProjectClosed,
     BadRequest,
     NotFound,
     /// `group_id` names no group, or a group the caller may not link.
@@ -33,6 +37,7 @@ impl std::fmt::Display for UpdateProjectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UpdateProjectError::Forbidden => write!(f, "Forbidden."),
+            UpdateProjectError::ProjectClosed => f.write_str(PROJECT_CLOSED_MESSAGE),
             UpdateProjectError::BadRequest => write!(f, "Bad request."),
             UpdateProjectError::NotFound => write!(f, "Unknown project."),
             UpdateProjectError::UnknownGroup => write!(f, "Unknown group."),
@@ -50,6 +55,7 @@ impl ResponseError for UpdateProjectError {
     fn status_code(&self) -> StatusCode {
         match self {
             UpdateProjectError::Forbidden => StatusCode::FORBIDDEN,
+            UpdateProjectError::ProjectClosed => StatusCode::CONFLICT,
             UpdateProjectError::BadRequest | UpdateProjectError::UnknownResponsible => {
                 StatusCode::BAD_REQUEST
             }
@@ -186,6 +192,9 @@ async fn set_project_group(
                    `deadline` replaces the deadline of the project (a `YYYY-MM-DD` day), read back \
                    as `deadline`: absent keeps it, `null` clears it. A value that is not a day \
                    answers `400` and changes nothing.\n\n\
+                   A closed project (`Completed`) is read-only: the only change accepted is a \
+                   body holding a `status` other than `Completed` and nothing else, which \
+                   reopens it; any other body answers `409` and changes nothing.\n\n\
                    The response has an empty body; read the project back with \
                    `GET /api/v1/projects/{project_id}/`.",
     request_body(
@@ -227,6 +236,13 @@ async fn set_project_group(
             example = json!("Unknown project.")
         ),
         (
+            status = 409,
+            description = "The caller may write, but the project is closed (`Completed`): it is read-only until a manager reopens it.",
+            body = String,
+            content_type = "text/plain",
+            example = json!("Project is closed.")
+        ),
+        (
             status = 500,
             description = "Database error.",
             body = String,
@@ -246,21 +262,19 @@ pub async fn update_project(
     params: web::Path<ProjectPathParams>,
     view: ValidatedJson<UpdateProjectView>,
 ) -> Result<impl Responder, UpdateProjectError> {
-    let (mut tx, _) = begin_write(
+    let (mut tx, access) = begin_write_on_closed(
         &state,
         auth_user.id,
         params.project_id(),
-        None,
         Requirement::ManageProject,
     )
     .await?;
-    trigger_update_project(
-        &mut tx,
-        auth_user.id,
-        params.project_id(),
-        view.into_inner(),
-    )
-    .await?;
+    let view = view.into_inner();
+    // A closed project is read-only: its managers may only reopen it, with a status alone.
+    if access.closed && !view.only_reopens() {
+        return Err(UpdateProjectError::ProjectClosed);
+    }
+    trigger_update_project(&mut tx, auth_user.id, params.project_id(), view).await?;
     commit(tx, "projects/project_id/patch").await?;
     Ok(HttpResponse::NoContent().finish())
 }
@@ -270,6 +284,7 @@ impl From<AccessDenied> for UpdateProjectError {
         match denied {
             AccessDenied::NotFound => UpdateProjectError::NotFound,
             AccessDenied::Forbidden => UpdateProjectError::Forbidden,
+            AccessDenied::Closed => UpdateProjectError::ProjectClosed,
             AccessDenied::DatabaseError => UpdateProjectError::DatabaseError,
         }
     }
