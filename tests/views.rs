@@ -637,6 +637,15 @@ fn writes_shown_by_the_projects_list_invalidate_its_read_cache() {
             "unassign member",
             caches(UnassignMemberTasksQueryView::new(1, 2, 3)),
         ),
+        (
+            "set project responsible",
+            caches(
+                project_api::database::project::update::view::SetProjectResponsibleQueryView::new(
+                    1,
+                    Some(2),
+                ),
+            ),
+        ),
     ];
     for (name, invalidated) in &writes {
         assert_eq!(*invalidated, projects, "{name}");

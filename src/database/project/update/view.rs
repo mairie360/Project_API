@@ -87,3 +87,45 @@ impl ApiRequestDto for UpdateProjectQueryView {
         crate::database::project::PROJECTS_READ_CACHES
     }
 }
+
+/// Records `responsible_id` as the responsible of the project, or clears it with `None`. The
+/// responsible becomes a `manager` member of the project in the same statement (added, or promoted
+/// when already a member). An unknown user is a foreign key violation.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SetProjectResponsibleQueryView {
+    params: Vec<QueryParam>,
+}
+
+impl SetProjectResponsibleQueryView {
+    pub fn new(project_id: u64, responsible_id: Option<u64>) -> Self {
+        Self {
+            params: vec![
+                QueryParam::I32(id_to_sql(project_id)),
+                QueryParam::OptionI32(responsible_id.map(id_to_sql)),
+            ],
+        }
+    }
+
+    pub fn project_id(&self) -> u64 {
+        id_from_sql(self.params[0].as_i32())
+    }
+}
+
+impl ApiRequestDto for SetProjectResponsibleQueryView {
+    fn query_sql(&self) -> &'static str {
+        "WITH updated AS ( \
+            UPDATE projects SET responsible_id = $2 WHERE id = $1 RETURNING id \
+         ) \
+         INSERT INTO project_members (project_id, user_id, role) \
+         SELECT id, $2, 'manager' FROM updated WHERE $2::INT IS NOT NULL \
+         ON CONFLICT (project_id, user_id) DO UPDATE SET role = 'manager'"
+    }
+
+    fn query_params(&self) -> &[QueryParam] {
+        &self.params
+    }
+
+    fn invalidated_read_caches(&self) -> &'static [&'static str] {
+        crate::database::project::PROJECTS_READ_CACHES
+    }
+}

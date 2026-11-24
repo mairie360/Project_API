@@ -5,7 +5,9 @@ use mairie360_api_lib::security::AuthenticatedUser;
 use mairie360_api_lib::state::AppState;
 
 use crate::database::project::group::view::LinkableGroupQueryView;
-use crate::endpoints::db_error::{classify_db_error, log_db_error, DbFailure};
+use crate::endpoints::db_error::{
+    classify_db_error, log_db_error, violated_foreign_key, DbFailure,
+};
 
 use crate::database::project::create::view::CreateProjectQueryView;
 use crate::endpoints::v1::projects::access::{require_manager_role, AccessDenied};
@@ -19,6 +21,8 @@ pub enum CreateProjectError {
     BadRequest,
     NotFound,
     UnknownTemplate,
+    /// `responsible_id` names no user.
+    UnknownResponsible,
     /// `group_id` names no group, or a group the caller may not link.
     UnknownGroup,
     DatabaseError,
@@ -32,6 +36,9 @@ impl std::fmt::Display for CreateProjectError {
             CreateProjectError::NotFound => write!(f, "Not found."),
             CreateProjectError::UnknownTemplate => {
                 write!(f, "`template_id` does not match any project template.")
+            }
+            CreateProjectError::UnknownResponsible => {
+                write!(f, "`responsible_id` does not match any user.")
             }
             CreateProjectError::UnknownGroup => write!(f, "Unknown group."),
             CreateProjectError::DatabaseError => {
@@ -49,7 +56,9 @@ impl ResponseError for CreateProjectError {
             CreateProjectError::NotFound | CreateProjectError::UnknownGroup => {
                 StatusCode::NOT_FOUND
             }
-            CreateProjectError::UnknownTemplate => StatusCode::BAD_REQUEST,
+            CreateProjectError::UnknownTemplate | CreateProjectError::UnknownResponsible => {
+                StatusCode::BAD_REQUEST
+            }
             CreateProjectError::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -82,6 +91,13 @@ async fn require_linkable_group(
     }
 }
 
+/// Whether the broken foreign key is the responsible's (`projects.responsible_id` or the member row
+/// written for them), not the template's.
+fn references_a_user(error: &mairie360_api_lib::error::ApiLibError) -> bool {
+    violated_foreign_key(error)
+        .is_some_and(|constraint| constraint.contains("responsible") || constraint.contains("user"))
+}
+
 async fn trigger_create_project(
     state: web::Data<AppState>,
     user_id: u64,
@@ -100,12 +116,16 @@ async fn trigger_create_project(
     }
     let view = query_view
         .with_template(view.template_id())
-        .with_group(view.group_id());
+        .with_group(view.group_id())
+        .with_responsible(view.responsible_id());
     let result: i32 = state
         .get_smart_db()
         .fetch_scalar::<i32, _>(&view)
         .await
         .map_err(|e| match classify_db_error("projects/post", &e) {
+            DbFailure::InvalidReference if references_a_user(&e) => {
+                CreateProjectError::UnknownResponsible
+            }
             DbFailure::InvalidReference => CreateProjectError::UnknownTemplate,
             _ => CreateProjectError::DatabaseError,
         })?;
@@ -133,6 +153,10 @@ async fn trigger_create_project(
                    `template_id` (`GET /api/v1/project-templates/`, MAIR-566) gives the project a \
                    copy of the template's task statuses and custom fields; without it, the default \
                    template's. Editing the template later never changes the project.\n\n\
+                   `responsible_id` records the responsible of the project, read back as \
+                   `responsible` by the project reads: that user becomes a `manager` member in the \
+                   same write. Without it the project has no responsible (`null`). The caller stays \
+                   the owner either way.\n\n\
                    The response only holds the new id; read the whole project back with \
                    `GET /api/v1/projects/{project_id}/`.",
     responses(
@@ -144,7 +168,7 @@ async fn trigger_create_project(
         ),
         (
             status = 400,
-            description = "Malformed JSON body, missing `name` or `group_id`, `status` or `priority` not one of the enum values, `Error` as `status` or `priority`, `template_id` that matches no project template, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs. The body names the first invalid field, except for `Error` (`Bad request.`).",
+            description = "Malformed JSON body, missing `name` or `group_id`, `status` or `priority` not one of the enum values, `Error` as `status` or `priority`, `template_id` that matches no project template, `responsible_id` that matches no user, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs. The body names the first invalid field, except for `Error` (`Bad request.`).",
             body = String,
             content_type = "text/plain",
             example = json!("Invalid `name`: must not contain control characters")
@@ -180,13 +204,14 @@ async fn trigger_create_project(
     ),
     request_body(
         content = CreateProjectView,
-        description = "Project name and group; description, status, priority and template are optional.",
+        description = "Project name and group; description, status, priority, template and responsible are optional.",
         example = json!({
             "name": "Renovation of the market square",
             "description": "2026 road works",
             "group_id": 3,
             "status": "Todo",
-            "priority": "High"
+            "priority": "High",
+            "responsible_id": 7
         })
     ),
     security(

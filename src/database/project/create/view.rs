@@ -5,7 +5,8 @@ use mairie360_api_lib::database::db_interface::{
 use crate::database::project::update_status::view::ProjectStatus;
 use crate::database::tasks::create_task::view::TaskPriority;
 
-/// Creates a project, links its group when one is given, and returns its id. Its status and priority default to the table's
+/// Creates a project, links its group and records its responsible (as a `manager` member) when they
+/// are given, and returns its id. Its status and priority default to the table's
 /// (`active`, `medium`) unless `with_status` / `with_priority` set them (MAIR-558).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CreateProjectQueryView {
@@ -21,6 +22,7 @@ impl CreateProjectQueryView {
                 QueryParam::I32(id_to_sql(owner_id)),
                 QueryParam::Text(String::new()),
                 QueryParam::Text(String::new()),
+                QueryParam::OptionI32(None),
                 QueryParam::OptionI32(None),
                 QueryParam::OptionI32(None),
             ],
@@ -57,6 +59,14 @@ impl CreateProjectQueryView {
         self
     }
 
+    /// Records this user as the responsible of the project and makes them a `manager` member in
+    /// the same statement. An unknown user is a foreign key violation.
+    #[must_use]
+    pub fn with_responsible(mut self, responsible_id: Option<u64>) -> Self {
+        self.params[7] = QueryParam::OptionI32(responsible_id.map(id_to_sql));
+        self
+    }
+
     pub fn title(&self) -> &str {
         self.params[0].as_text()
     }
@@ -73,14 +83,18 @@ impl CreateProjectQueryView {
 impl ApiRequestDto for CreateProjectQueryView {
     fn query_sql(&self) -> &'static str {
         "WITH created AS ( \
-            INSERT INTO projects (title, description, owner_id, status, priority, template_id) \
+            INSERT INTO projects (title, description, owner_id, status, priority, template_id, \
+                                  responsible_id) \
             VALUES ($1, NULLIF($2, ''), $3, \
                     COALESCE(NULLIF($4, '')::project_status, 'active'), \
-                    COALESCE(NULLIF($5, '')::task_priority, 'medium'), $6) \
+                    COALESCE(NULLIF($5, '')::task_priority, 'medium'), $6, $8) \
             RETURNING id \
          ), linked AS ( \
             INSERT INTO project_groups (project_id, group_id) \
             SELECT id, $7 FROM created WHERE $7::INT IS NOT NULL \
+         ), responsible AS ( \
+            INSERT INTO project_members (project_id, user_id, role) \
+            SELECT id, $8, 'manager' FROM created WHERE $8::INT IS NOT NULL \
          ) \
          SELECT id FROM created"
     }

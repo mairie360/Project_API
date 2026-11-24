@@ -75,7 +75,7 @@ impl ApiRequestDto for GetProjectsQueryView {
                        COALESCE(a.tasks_completed, 0) AS tasks_completed, \
                        p.priority::text AS priority, \
                        a.next_due_date AS due_date, \
-                       p.budget_voted, p.budget_committed, \
+                       p.budget_voted, p.budget_committed, p.responsible_id, \
                        ",
             crate::caller_project_role_sql!(),
             " AS my_role, ",
@@ -126,6 +126,9 @@ impl ApiRequestDto for GetProjectsQueryView {
                                pg.tasks_total, pg.tasks_completed, pg.priority, \
                                pg.due_date AT TIME ZONE 'UTC' AS due_date, \
                                pg.budget_voted, pg.budget_committed, pg.my_role, pg.can_manage, \
+                               ",
+            crate::responsible_sql!("pg.responsible_id"),
+            " AS responsible, \
                                (SELECT count(*) FROM project_members pm WHERE pm.project_id = pg.id) \
                                    AS members_total, \
                                COALESCE((SELECT jsonb_agg(jsonb_build_object('id', m.id, 'name', m.name, 'role', m.role) \
@@ -217,6 +220,17 @@ pub struct ProjectView {
     /// Whether the caller may manage the project (`manages_project_sql!`).
     #[serde(default)]
     can_manage: bool,
+    /// Responsible of the project (`projects.responsible_id`), `None` when none is recorded.
+    /// Defaulted: a page cached before it has none.
+    #[serde(default)]
+    responsible: Option<ResponsibleRow>,
+}
+
+/// The responsible of a project: a user id and their name, `None` when it cannot be resolved.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ResponsibleRow {
+    pub id: i32,
+    pub name: Option<String>,
 }
 
 fn default_priority() -> String {
@@ -241,7 +255,20 @@ impl ProjectView {
             budget_committed: None,
             my_role: None,
             can_manage: false,
+            responsible: None,
         }
+    }
+
+    /// Sets the responsible of the project.
+    #[must_use]
+    pub fn with_responsible(mut self, responsible: Option<ResponsibleRow>) -> Self {
+        self.responsible = responsible;
+        self
+    }
+
+    /// Responsible of the project, `None` when none is recorded.
+    pub fn responsible(&self) -> Option<&ResponsibleRow> {
+        self.responsible.as_ref()
     }
 
     /// Sets what the project says about its caller (MAIR-1088).

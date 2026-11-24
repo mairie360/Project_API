@@ -39,7 +39,9 @@ impl ApiRequestDto for GetVisibleProjectQueryView {
             crate::caller_project_role_sql!(),
             " AS my_role, ",
             crate::manages_project_sql!(),
-            " AS can_manage, \
+            " AS can_manage, ",
+            crate::responsible_sql!("p.responsible_id"),
+            " AS responsible, \
                     (SELECT jsonb_build_object('id', g.id, 'name', g.name) \
                      FROM project_groups pg JOIN groups g ON g.id = pg.group_id \
                      WHERE pg.project_id = p.id ORDER BY pg.linked_at, g.id LIMIT 1) AS \"group\" \
