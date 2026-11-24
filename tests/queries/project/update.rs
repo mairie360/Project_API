@@ -193,3 +193,41 @@ async fn mair_1085_the_budget_is_set_kept_and_cleared() {
         .await
         .is_err());
 }
+
+#[tokio::test]
+async fn mair_1199_the_deadline_is_written_on_creation_kept_replaced_and_cleared() {
+    let db = get_smart_db().await;
+    let owner = create_user("Owner", None).await;
+    let day = |month, date| chrono::NaiveDate::from_ymd_opt(2027, month, date);
+    let project_id = db
+        .fetch_scalar::<i32, _>(
+            &CreateProjectQueryView::new("Cantine", None, owner).with_deadline(day(6, 30)),
+        )
+        .await
+        .unwrap() as u64;
+    assert_eq!(read(&db, project_id, owner).await.deadline(), day(6, 30));
+
+    let deadline = |deadline| {
+        UpdateProjectQueryView::new(project_id, None, None, None).with_deadline(deadline)
+    };
+    assert!(db
+        .fetch_scalar::<bool, _>(&UpdateProjectQueryView::new(
+            project_id,
+            Some("Cantine 2027"),
+            None,
+            None
+        ))
+        .await
+        .unwrap());
+    assert_eq!(read(&db, project_id, owner).await.deadline(), day(6, 30));
+    assert!(db
+        .fetch_scalar::<bool, _>(&deadline(Some(day(9, 1))))
+        .await
+        .unwrap());
+    assert_eq!(read(&db, project_id, owner).await.deadline(), day(9, 1));
+    assert!(db
+        .fetch_scalar::<bool, _>(&deadline(Some(None)))
+        .await
+        .unwrap());
+    assert_eq!(read(&db, project_id, owner).await.deadline(), None);
+}

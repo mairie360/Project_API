@@ -265,6 +265,11 @@ and `GET /projects/{id}/`, and set by `PATCH /projects/{id}/` (managers only): a
 amount is a `400` (`UpdateProjectView::validate`). `ProjectView` defaults both, so a list page cached before them still
 reads (`tests/endpoints/mair_1085_project_budget.rs`).
 
+The deadline of a project (MAIR-1199, Database `projects.due_date`, `DATE`) is `deadline` (`YYYY-MM-DD` or `null`): set by
+`POST /projects/` and `PATCH /projects/{id}/` (absent keeps, `null` clears), read by the detail and the list, independent of
+the tasks. The list's `due_date` stays the earliest task due date; `due_before` / `due_after` compare `deadline` (from
+midnight UTC), else `due_date` (`tests/endpoints/mair_1199_project_deadline.rs`).
+
 `GET /tasks/` (MAIR-524) lists the tasks of every project visible to the caller (same
 `project_visible_to_user_sql!` rule), each with `project_id` and `project_name`, so BFF_Dashboard reads a
 user's pending tasks in one call: filters `assigned_to`, `status` (CSV of `Todo`, `InProgress`, `Completed`,

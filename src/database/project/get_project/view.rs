@@ -34,7 +34,7 @@ impl ApiRequestDto for GetVisibleProjectQueryView {
         concat!(
             "SELECT to_jsonb(t) FROM ( \
                 SELECT p.id, p.title, p.description, p.status, p.priority, \
-                    p.budget_voted, p.budget_committed, \
+                    p.budget_voted, p.budget_committed, p.due_date AS deadline, \
                     ",
             crate::caller_project_role_sql!(),
             " AS my_role, ",

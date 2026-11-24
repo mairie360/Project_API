@@ -25,6 +25,7 @@ impl CreateProjectQueryView {
                 QueryParam::OptionI32(None),
                 QueryParam::OptionI32(None),
                 QueryParam::OptionI32(None),
+                QueryParam::Text(String::new()),
             ],
         }
     }
@@ -67,6 +68,13 @@ impl CreateProjectQueryView {
         self
     }
 
+    /// Records the deadline entered for the project (`projects.due_date`), none without it.
+    #[must_use]
+    pub fn with_deadline(mut self, deadline: Option<chrono::NaiveDate>) -> Self {
+        self.params[8] = QueryParam::Text(deadline.map(|day| day.to_string()).unwrap_or_default());
+        self
+    }
+
     pub fn title(&self) -> &str {
         self.params[0].as_text()
     }
@@ -84,10 +92,11 @@ impl ApiRequestDto for CreateProjectQueryView {
     fn query_sql(&self) -> &'static str {
         "WITH created AS ( \
             INSERT INTO projects (title, description, owner_id, status, priority, template_id, \
-                                  responsible_id) \
+                                  responsible_id, due_date) \
             VALUES ($1, NULLIF($2, ''), $3, \
                     COALESCE(NULLIF($4, '')::project_status, 'active'), \
-                    COALESCE(NULLIF($5, '')::task_priority, 'medium'), $6, $8) \
+                    COALESCE(NULLIF($5, '')::task_priority, 'medium'), $6, $8, \
+                    NULLIF($9, '')::date) \
             RETURNING id \
          ), linked AS ( \
             INSERT INTO project_groups (project_id, group_id) \

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use mairie360_api_lib::database::db_interface::{
     id_from_sql, id_to_sql, ApiRequestDto, QueryParam,
 };
@@ -76,6 +76,7 @@ impl ApiRequestDto for GetProjectsQueryView {
                        p.priority::text AS priority, \
                        a.next_due_date AS due_date, \
                        p.budget_voted, p.budget_committed, p.responsible_id, \
+                       p.due_date AS deadline, \
                        ",
             crate::caller_project_role_sql!(),
             " AS my_role, ",
@@ -97,9 +98,11 @@ impl ApiRequestDto for GetProjectsQueryView {
                 SELECT * FROM matched m \
                 WHERE ($4 = '' OR m.priority = ANY (string_to_array($4, ','))) \
                   AND (NULLIF($5, '')::timestamptz IS NULL \
-                       OR m.due_date <= NULLIF($5, '')::timestamptz AT TIME ZONE 'UTC') \
+                       OR COALESCE(m.deadline::timestamp, m.due_date) \
+                          <= NULLIF($5, '')::timestamptz AT TIME ZONE 'UTC') \
                   AND (NULLIF($6, '')::timestamptz IS NULL \
-                       OR m.due_date >= NULLIF($6, '')::timestamptz AT TIME ZONE 'UTC') \
+                       OR COALESCE(m.deadline::timestamp, m.due_date) \
+                          >= NULLIF($6, '')::timestamptz AT TIME ZONE 'UTC') \
              ), page AS ( \
                 SELECT * FROM filtered \
                 ORDER BY created_at DESC NULLS LAST, id DESC LIMIT $7 OFFSET $8 \
@@ -126,6 +129,7 @@ impl ApiRequestDto for GetProjectsQueryView {
                                pg.tasks_total, pg.tasks_completed, pg.priority, \
                                pg.due_date AT TIME ZONE 'UTC' AS due_date, \
                                pg.budget_voted, pg.budget_committed, pg.my_role, pg.can_manage, \
+                               pg.deadline, \
                                ",
             crate::responsible_sql!("pg.responsible_id"),
             " AS responsible, \
@@ -224,6 +228,10 @@ pub struct ProjectView {
     /// Defaulted: a page cached before it has none.
     #[serde(default)]
     responsible: Option<ResponsibleRow>,
+    /// Deadline entered for the project (`projects.due_date`), `None` when none is recorded.
+    /// Defaulted: a page cached before it has none.
+    #[serde(default)]
+    deadline: Option<NaiveDate>,
 }
 
 /// The responsible of a project: a user id and their name, `None` when it cannot be resolved.
@@ -256,6 +264,7 @@ impl ProjectView {
             my_role: None,
             can_manage: false,
             responsible: None,
+            deadline: None,
         }
     }
 
@@ -269,6 +278,18 @@ impl ProjectView {
     /// Responsible of the project, `None` when none is recorded.
     pub fn responsible(&self) -> Option<&ResponsibleRow> {
         self.responsible.as_ref()
+    }
+
+    /// Sets the deadline of the project.
+    #[must_use]
+    pub fn with_deadline(mut self, deadline: Option<NaiveDate>) -> Self {
+        self.deadline = deadline;
+        self
+    }
+
+    /// Deadline entered for the project, `None` when none is recorded.
+    pub fn deadline(&self) -> Option<NaiveDate> {
+        self.deadline
     }
 
     /// Sets what the project says about its caller (MAIR-1088).

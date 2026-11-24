@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use mairie360_api_lib::database::db_interface::id_from_sql;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -73,12 +73,13 @@ pub struct GetProjectsQuery {
     /// stored `High`).
     #[param(example = "High,Medium")]
     priority: Option<String>,
-    /// Keeps the projects whose `due_date` (earliest due date of their tasks) is at or before this
-    /// instant (RFC 3339). A project without due date never matches.
+    /// Keeps the projects whose date is at or before this instant (RFC 3339): their `deadline`
+    /// (from midnight UTC), else the `due_date` of their tasks. A project without either never
+    /// matches.
     #[param(value_type = Option<String>, format = DateTime, example = "2026-12-31T23:59:59Z")]
     due_before: Option<DateTime<Utc>>,
-    /// Keeps the projects whose `due_date` is at or after this instant (RFC 3339). A project without
-    /// due date never matches.
+    /// Keeps the projects whose date (`deadline`, else `due_date`) is at or after this instant
+    /// (RFC 3339). A project without either never matches.
     #[param(value_type = Option<String>, format = DateTime, example = "2026-01-01T00:00:00Z")]
     due_after: Option<DateTime<Utc>>,
 }
@@ -218,6 +219,11 @@ pub struct ProjetView {
     /// Responsible of the project, chosen with `responsible_id` on its creation or a PATCH; `null`
     /// when none is recorded (projects created without one, or whose responsible left the members).
     pub responsible: Option<ProjectResponsibleView>,
+    /// Deadline entered for the project (`YYYY-MM-DD`), set with `deadline` on its creation or a
+    /// PATCH; `null` when none is recorded. Unlike `due_date` of the list, it does not depend on
+    /// the tasks.
+    #[schema(value_type = Option<String>, format = Date, example = "2027-06-30")]
+    pub deadline: Option<NaiveDate>,
 }
 
 /// The responsible of a project.
@@ -277,6 +283,7 @@ impl From<ProjectView> for ProjetView {
             my_role: value.my_role().map(ProjectMemberRole::from_stored),
             can_manage: value.can_manage(),
             responsible: value.responsible().map(Into::into),
+            deadline: value.deadline(),
         }
     }
 }
@@ -333,6 +340,11 @@ pub struct ProjectListItemView {
     /// Responsible of the project, chosen with `responsible_id` on its creation or a PATCH; `null`
     /// when none is recorded (projects created without one, or whose responsible left the members).
     pub responsible: Option<ProjectResponsibleView>,
+    /// Deadline entered for the project (`YYYY-MM-DD`), set with `deadline` on its creation or a
+    /// PATCH; `null` when none is recorded. Unlike `due_date` of the list, it does not depend on
+    /// the tasks.
+    #[schema(value_type = Option<String>, format = Date, example = "2027-06-30")]
+    pub deadline: Option<NaiveDate>,
 }
 
 fn count(value: i64) -> u64 {
@@ -357,6 +369,7 @@ impl From<ProjectView> for ProjectListItemView {
             my_role: value.my_role().map(ProjectMemberRole::from_stored),
             can_manage: value.can_manage(),
             responsible: value.responsible().map(Into::into),
+            deadline: value.deadline(),
         }
     }
 }

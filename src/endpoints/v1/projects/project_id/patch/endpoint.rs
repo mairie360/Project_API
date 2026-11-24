@@ -95,6 +95,9 @@ async fn trigger_update_project(
         query_view = query_view
             .with_priority(stored_priority(priority).ok_or(UpdateProjectError::BadRequest)?);
     }
+    if view.deadline.is_some() {
+        query_view = query_view.with_deadline(view.deadline);
+    }
 
     let updated: bool = tx.fetch_scalar(&query_view).await.map_err(|e| {
         log_db_error("projects/project_id/patch", &e);
@@ -180,12 +183,15 @@ async fn set_project_group(
                    the former one keeps their membership and role. An unknown user answers `400` \
                    and changes nothing. Removing the responsible from the members \
                    (`DELETE …/users/{user_id}/`) clears it too.\n\n\
+                   `deadline` replaces the deadline of the project (a `YYYY-MM-DD` day), read back \
+                   as `deadline`: absent keeps it, `null` clears it. A value that is not a day \
+                   answers `400` and changes nothing.\n\n\
                    The response has an empty body; read the project back with \
                    `GET /api/v1/projects/{project_id}/`.",
     request_body(
         content = UpdateProjectView,
         description = "Fields to change, all optional.",
-        example = json!({ "status": "Review", "priority": "High", "group_id": 3, "budget_voted": 1250000, "budget_committed": 480000, "responsible_id": 7 })
+        example = json!({ "status": "Review", "priority": "High", "group_id": 3, "budget_voted": 1250000, "budget_committed": 480000, "responsible_id": 7, "deadline": "2027-06-30" })
     ),
     responses(
         (
@@ -194,7 +200,7 @@ async fn set_project_group(
         ),
         (
             status = 400,
-            description = "Malformed JSON body, `project_id` not an integer, `name` empty, `status` or `priority` not one of the enum values, `Error` status or priority, `group_id` set to `null`, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; `budget_voted` / `budget_committed` negative, not an integer or above 2^63 - 1; `responsible_id` that matches no user (`` `responsible_id` does not match any user. ``).",
+            description = "Malformed JSON body, `project_id` not an integer, `name` empty, `status` or `priority` not one of the enum values, `Error` status or priority, `group_id` set to `null`, or a field breaking its rules: `name` 1 to 255 characters, not blank, no control character; `description` at most 5000 characters, no control character other than line breaks and tabs; `budget_voted` / `budget_committed` negative, not an integer or above 2^63 - 1; `responsible_id` that matches no user (`` `responsible_id` does not match any user. ``); `deadline` not a `YYYY-MM-DD` day.",
             body = String,
             content_type = "text/plain",
             example = json!("Invalid `name`: must be at most 255 characters")

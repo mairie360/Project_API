@@ -72,7 +72,9 @@ async fn trigger_get_projects(
                    filters, newest first. Each project carries the aggregates of its tasks \
                    (`tasks_total`, `tasks_completed`, `priority`: the highest priority of its \
                    tasks, `Medium` without task; `due_date`: their earliest due date) and its first \
-                   5 members; call `GET /api/v1/projects/{project_id}/` for its tasks.\n\n\
+                   5 members; call `GET /api/v1/projects/{project_id}/` for its tasks. \
+                   `deadline` is the date entered for the project, independent of its tasks; \
+                   `due_before` / `due_after` compare it, else `due_date` when it has none.\n\n\
                    The filters (`search`, `status`, `priority`, `due_before`, `due_after`) are \
                    optional and combine. `limit` (default 100, at most 500) and `offset` (default 0) \
                    select the page; `total` and `summary` (counts per status and per priority) cover \
@@ -100,13 +102,13 @@ async fn trigger_get_projects(
                         "members": [{ "id": 42, "name": "Jean Dupont", "role": "manager" }, { "id": 57, "name": "Marie Durand", "role": "reader" }],
                         "members_total": 2, "budget_voted": 1250000, "budget_committed": 480000,
                         "my_role": "manager", "can_manage": true,
-                        "responsible": { "id": 42, "name": "Jean Dupont" }
+                        "responsible": { "id": 42, "name": "Jean Dupont" }, "deadline": "2026-12-18"
                     },
                     {
                         "id": 18, "name": "Digitisation of the civil registry", "description": "", "status": "Completed",
                         "tasks_total": 0, "tasks_completed": 0, "priority": "Medium", "due_date": null,
                         "members": [], "members_total": 0, "budget_voted": null, "budget_committed": null,
-                        "my_role": null, "can_manage": false, "responsible": null
+                        "my_role": null, "can_manage": false, "responsible": null, "deadline": null
                     }
                 ],
                 "total": 2,

@@ -13,6 +13,7 @@ pub mod mair_1087_task_start_date;
 pub mod mair_1088_project_member_roles;
 pub mod mair_1089_project_activity;
 pub mod mair_1196_project_responsible;
+pub mod mair_1199_project_deadline;
 pub mod mair_534_negative_cases;
 pub mod mair_680_session_keys;
 pub mod mair_683_project_groups;
