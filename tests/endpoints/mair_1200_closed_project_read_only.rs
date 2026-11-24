@@ -193,7 +193,7 @@ async fn mair_1200_every_write_on_a_closed_project_answers_409() {
     assert_eq!(read["project"]["status"], "Completed", "{read}");
     assert_eq!(read["project"]["name"], "Réfection de la place du marché");
     let task = json(&app, get(&s.task(), s.manager)).await;
-    assert_eq!(task["name"], "Consulter les riverains", "{task}");
+    assert_eq!(task["title"], "Consulter les riverains", "{task}");
 }
 
 #[actix_web::test]
