@@ -327,7 +327,17 @@ fn bad_request(error: &ValidationError) -> actix_web::Error {
     actix_web::error::ErrorBadRequest(error.to_string())
 }
 
-/// `web::Json<T>` followed by [`Validate::validate`]: answers `400` when either fails.
+/// `400` text of a body that does not deserialize, naming the JSON path of the faulty value
+/// (`body` for the whole object), e.g. ``Invalid `deadline`: input contains invalid characters``.
+pub fn body_error(error: &serde_path_to_error::Error<serde_json::Error>) -> ValidationError {
+    let path = error.path().to_string();
+    let field = if path == "." { "body" } else { path.as_str() };
+    ValidationError::invalid(field, &error.inner().to_string())
+}
+
+/// `web::Json<T>` followed by [`Validate::validate`]: answers `400` when either fails. The body is
+/// read as JSON first, then deserialized through `serde_path_to_error`, so a value of the wrong
+/// type or format names its field like every other validation error.
 pub struct ValidatedJson<T>(pub T);
 
 impl<T> ValidatedJson<T> {
@@ -344,9 +354,10 @@ where
     type Future = Pin<Box<dyn Future<Output = Result<Self, Self::Error>>>>;
 
     fn from_request(req: &HttpRequest, payload: &mut Payload) -> Self::Future {
-        let json = web::Json::<T>::from_request(req, payload);
+        let json = web::Json::<serde_json::Value>::from_request(req, payload);
         Box::pin(async move {
-            let value = json.await?.into_inner();
+            let value: T = serde_path_to_error::deserialize(json.await?.into_inner())
+                .map_err(|e| bad_request(&body_error(&e)))?;
             value.validate().map_err(|e| bad_request(&e))?;
             Ok(Self(value))
         })
@@ -382,6 +393,35 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Debug, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[allow(dead_code)]
+    struct Body {
+        name: String,
+        deadline: Option<NaiveDate>,
+    }
+
+    fn body_error_of(json: serde_json::Value) -> String {
+        body_error(&serde_path_to_error::deserialize::<_, Body>(json).unwrap_err()).to_string()
+    }
+
+    #[test]
+    fn mair_1203_a_body_that_does_not_deserialize_names_its_field() {
+        assert!(
+            body_error_of(serde_json::json!({ "name": "a", "deadline": "30/06/2027" }))
+                .starts_with("Invalid `deadline`: ")
+        );
+        assert!(body_error_of(serde_json::json!({ "name": 12 })).starts_with("Invalid `name`: "));
+        assert_eq!(
+            body_error_of(serde_json::json!({})),
+            "Invalid `body`: missing field `name`"
+        );
+        assert!(
+            body_error_of(serde_json::json!({ "name": "a", "colour": 1 }))
+                .contains("unknown field `colour`")
+        );
+    }
 
     #[test]
     fn label_rejects_blank_long_and_control() {
