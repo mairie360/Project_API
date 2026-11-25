@@ -1,0 +1,64 @@
+# GDPR simulation risks reviewed and accepted (mairie360/CICD tests/gdpr/simulation/accepted.mjs).
+# A high-risk AI finding whose fingerprint is listed no longer blocks the Prod release.
+version: 1
+risks:
+  - fingerprint: 9cdd2294e755526435ee942f  # projects.description
+    reason: >-
+      Free text typed by agents (descriptions, comments, messages, event fields, titles). The platform cannot prevent an agent from writing a name or a phone number there; the content is only visible to the members of the resource and is covered by the erasure and retention rules. Reviewed and accepted for the release.
+    date: 2026-11-25
+    author: Quentintnrl
+  - fingerprint: d7e729cedb1e9ecd2681a75a  # projects.description
+    reason: >-
+      Free text typed by agents (descriptions, comments, messages, event fields, titles). The platform cannot prevent an agent from writing a name or a phone number there; the content is only visible to the members of the resource and is covered by the erasure and retention rules. Reviewed and accepted for the release.
+    date: 2026-11-25
+    author: Quentintnrl
+  - fingerprint: 7def0671c1309df4016330e1  # task_comments.message
+    reason: >-
+      Free text typed by agents (descriptions, comments, messages, event fields, titles). The platform cannot prevent an agent from writing a name or a phone number there; the content is only visible to the members of the resource and is covered by the erasure and retention rules. Reviewed and accepted for the release.
+    date: 2026-11-25
+    author: Quentintnrl
+  - fingerprint: af8d8afbf60e407882eff264  # task_history.changes
+    reason: >-
+      Free text typed by agents (descriptions, comments, messages, event fields, titles). The platform cannot prevent an agent from writing a name or a phone number there; the content is only visible to the members of the resource and is covered by the erasure and retention rules. Reviewed and accepted for the release.
+    date: 2026-11-25
+    author: Quentintnrl
+  - fingerprint: 29f467e7ce5e635226c8d67d  # tasks.description
+    reason: >-
+      Free text typed by agents (descriptions, comments, messages, event fields, titles). The platform cannot prevent an agent from writing a name or a phone number there; the content is only visible to the members of the resource and is covered by the erasure and retention rules. Reviewed and accepted for the release.
+    date: 2026-11-25
+    author: Quentintnrl
+  - fingerprint: 3d050cb4750cca449e86bc68  # users_audit_log.new_data
+    reason: >-
+      Audit trail of the accounts (users_audit_log), written by the database trigger on every change of a user row. Kept for accountability, purged by the retention policy (MAIR-286) and pseudonymised when the account is erased (MAIR-289); only administrators read it. Reviewed and accepted for the release.
+    date: 2026-11-25
+    author: Quentintnrl
+  - fingerprint: 61a29372b605317453c4fac6  # users_audit_log.new_data
+    reason: >-
+      Audit trail of the accounts (users_audit_log), written by the database trigger on every change of a user row. Kept for accountability, purged by the retention policy (MAIR-286) and pseudonymised when the account is erased (MAIR-289); only administrators read it. Reviewed and accepted for the release.
+    date: 2026-11-25
+    author: Quentintnrl
+  - fingerprint: 6f8982b11c620deb636350e4  # users_audit_log.new_data
+    reason: >-
+      Audit trail of the accounts (users_audit_log), written by the database trigger on every change of a user row. Kept for accountability, purged by the retention policy (MAIR-286) and pseudonymised when the account is erased (MAIR-289); only administrators read it. Reviewed and accepted for the release.
+    date: 2026-11-25
+    author: Quentintnrl
+  - fingerprint: 8cdf8f4a8ccc2bd28960d20e  # users_audit_log.new_data
+    reason: >-
+      Audit trail of the accounts (users_audit_log), written by the database trigger on every change of a user row. Kept for accountability, purged by the retention policy (MAIR-286) and pseudonymised when the account is erased (MAIR-289); only administrators read it. Reviewed and accepted for the release.
+    date: 2026-11-25
+    author: Quentintnrl
+  - fingerprint: 905ec967c74ee685da4a9c63  # users_audit_log.new_data
+    reason: >-
+      Audit trail of the accounts (users_audit_log), written by the database trigger on every change of a user row. Kept for accountability, purged by the retention policy (MAIR-286) and pseudonymised when the account is erased (MAIR-289); only administrators read it. Reviewed and accepted for the release.
+    date: 2026-11-25
+    author: Quentintnrl
+  - fingerprint: d04cd93b5060016b654fb48b  # users_audit_log.new_data
+    reason: >-
+      Audit trail of the accounts (users_audit_log), written by the database trigger on every change of a user row. Kept for accountability, purged by the retention policy (MAIR-286) and pseudonymised when the account is erased (MAIR-289); only administrators read it. Reviewed and accepted for the release.
+    date: 2026-11-25
+    author: Quentintnrl
+  - fingerprint: abad02b45069b7d20d086d2e  # users_audit_log.previous_data
+    reason: >-
+      Audit trail of the accounts (users_audit_log), written by the database trigger on every change of a user row. Kept for accountability, purged by the retention policy (MAIR-286) and pseudonymised when the account is erased (MAIR-289); only administrators read it. Reviewed and accepted for the release.
+    date: 2026-11-25
+    author: Quentintnrl
