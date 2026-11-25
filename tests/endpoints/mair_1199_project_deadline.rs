@@ -4,6 +4,7 @@
 //! date.
 
 use actix_web::body::MessageBody;
+use actix_web::test::TestRequest;
 use serde_json::{json, Value};
 
 use super::{get, json, patch, post, status, TestApp, TestContext};
@@ -193,4 +194,55 @@ async fn mair_1199_a_deadline_that_is_not_a_day_is_refused_and_changes_nothing()
     let project = json(&app, get(&p, member)).await;
     assert_eq!(project["project"]["name"], "Parc");
     assert_eq!(project["project"]["deadline"], "2027-06-30");
+}
+
+/// Status and body of a request.
+async fn answer<B: MessageBody>(app: &impl TestApp<B>, request: TestRequest) -> (u16, String) {
+    let response = actix_web::test::call_service(app, request.to_request()).await;
+    let code = response.status().as_u16();
+    let body = actix_web::test::read_body(response).await;
+    (code, String::from_utf8_lossy(&body).into_owned())
+}
+
+/// The promote-staging newman gate expects the `400` of a malformed deadline to name the field,
+/// on creation and on update (it answered `Json deserialize error: …` before).
+#[actix_web::test]
+async fn mair_1203_a_malformed_deadline_names_the_field() {
+    let ctx = TestContext::new().await;
+    let app = init_app!(ctx);
+    let owner = ctx.user("Aaron", Some("Responsable")).await;
+
+    let (code, text) = answer(
+        &app,
+        post(
+            "/api/v1/projects/",
+            owner,
+            json!({ "name": "Refusé", "deadline": "30/06/2027" }),
+        ),
+    )
+    .await;
+    assert_eq!(code, 400);
+    assert!(text.starts_with("Invalid `deadline`: "), "{text}");
+
+    let created = json(
+        &app,
+        post(
+            "/api/v1/projects/",
+            owner,
+            json!({ "name": "Parc", "deadline": "2027-06-30" }),
+        ),
+    )
+    .await;
+    let project_id = created["project_id"].as_u64().unwrap();
+    let (code, text) = answer(
+        &app,
+        patch(
+            &format!("/api/v1/projects/{project_id}/"),
+            owner,
+            json!({ "deadline": "demain" }),
+        ),
+    )
+    .await;
+    assert_eq!(code, 400);
+    assert!(text.starts_with("Invalid `deadline`: "), "{text}");
 }

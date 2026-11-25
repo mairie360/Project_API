@@ -327,7 +327,41 @@ fn bad_request(error: &ValidationError) -> actix_web::Error {
     actix_web::error::ErrorBadRequest(error.to_string())
 }
 
-/// `web::Json<T>` followed by [`Validate::validate`]: answers `400` when either fails.
+/// `400` text of a body that does not deserialize, naming the JSON path of the faulty value
+/// (`body` for the whole object), e.g. ``Invalid `deadline`: input contains invalid characters``.
+pub fn body_error(error: &serde_path_to_error::Error<serde_json::Error>) -> ValidationError {
+    let path = error.path().to_string();
+    let field = if path == "." { "body" } else { path.as_str() };
+    ValidationError::invalid(field, &without_position(error.inner()))
+}
+
+/// The message of a `serde_json` error without its ` at line L column C` suffix.
+fn without_position(error: &serde_json::Error) -> String {
+    let message = error.to_string();
+    let suffix = format!(" at line {} column {}", error.line(), error.column());
+    message
+        .strip_suffix(&suffix)
+        .map_or_else(|| message.clone(), str::to_string)
+}
+
+/// Deserializes a JSON body through `serde_path_to_error`, straight from its text so a duplicated
+/// key is still refused like `web::Json` does.
+///
+/// # Errors
+///
+/// Returns the [`body_error`] of the first value that does not deserialize.
+pub fn deserialize_body<T: DeserializeOwned>(text: &str) -> Result<T, ValidationError> {
+    let mut deserializer = serde_json::Deserializer::from_str(text);
+    let value = serde_path_to_error::deserialize(&mut deserializer).map_err(|e| body_error(&e))?;
+    deserializer
+        .end()
+        .map_err(|e| ValidationError::invalid("body", &without_position(&e)))?;
+    Ok(value)
+}
+
+/// `web::Json<T>` followed by [`Validate::validate`]: answers `400` when either fails. The body is
+/// checked as JSON by `web::Json` (content type, size), then deserialized by [`deserialize_body`],
+/// so a value of the wrong type or format names its field like every other validation error.
 pub struct ValidatedJson<T>(pub T);
 
 impl<T> ValidatedJson<T> {
@@ -344,9 +378,10 @@ where
     type Future = Pin<Box<dyn Future<Output = Result<Self, Self::Error>>>>;
 
     fn from_request(req: &HttpRequest, payload: &mut Payload) -> Self::Future {
-        let json = web::Json::<T>::from_request(req, payload);
+        let json = web::Json::<Box<serde_json::value::RawValue>>::from_request(req, payload);
         Box::pin(async move {
-            let value = json.await?.into_inner();
+            let raw = json.await?.into_inner();
+            let value: T = deserialize_body(raw.get()).map_err(|e| bad_request(&e))?;
             value.validate().map_err(|e| bad_request(&e))?;
             Ok(Self(value))
         })
@@ -382,6 +417,46 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Debug, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[allow(dead_code)]
+    struct Body {
+        name: String,
+        deadline: Option<NaiveDate>,
+    }
+
+    fn body_error_of(json: serde_json::Value) -> String {
+        deserialize_body::<Body>(&json.to_string())
+            .unwrap_err()
+            .to_string()
+    }
+
+    #[test]
+    fn mair_1203_a_body_that_does_not_deserialize_names_its_field() {
+        assert!(
+            body_error_of(serde_json::json!({ "name": "a", "deadline": "30/06/2027" }))
+                .starts_with("Invalid `deadline`: ")
+        );
+        assert!(body_error_of(serde_json::json!({ "name": 12 })).starts_with("Invalid `name`: "));
+        assert_eq!(
+            body_error_of(serde_json::json!({})),
+            "Invalid `body`: missing field `name`"
+        );
+        assert!(
+            body_error_of(serde_json::json!({ "name": "a", "colour": 1 }))
+                .contains("unknown field `colour`")
+        );
+    }
+
+    #[test]
+    fn mair_1203_a_duplicated_field_is_still_refused() {
+        let error =
+            deserialize_body::<Body>(r#"{"name":"a","deadline":"2027-06-30","deadline":null}"#)
+                .unwrap_err()
+                .to_string();
+        assert!(error.contains("duplicate field `deadline`"), "{error}");
+    }
 
     #[test]
     fn label_rejects_blank_long_and_control() {
