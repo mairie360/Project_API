@@ -332,12 +332,36 @@ fn bad_request(error: &ValidationError) -> actix_web::Error {
 pub fn body_error(error: &serde_path_to_error::Error<serde_json::Error>) -> ValidationError {
     let path = error.path().to_string();
     let field = if path == "." { "body" } else { path.as_str() };
-    ValidationError::invalid(field, &error.inner().to_string())
+    ValidationError::invalid(field, &without_position(error.inner()))
+}
+
+/// The message of a `serde_json` error without its ` at line L column C` suffix.
+fn without_position(error: &serde_json::Error) -> String {
+    let message = error.to_string();
+    let suffix = format!(" at line {} column {}", error.line(), error.column());
+    message
+        .strip_suffix(&suffix)
+        .map_or_else(|| message.clone(), str::to_string)
+}
+
+/// Deserializes a JSON body through `serde_path_to_error`, straight from its text so a duplicated
+/// key is still refused like `web::Json` does.
+///
+/// # Errors
+///
+/// Returns the [`body_error`] of the first value that does not deserialize.
+pub fn deserialize_body<T: DeserializeOwned>(text: &str) -> Result<T, ValidationError> {
+    let mut deserializer = serde_json::Deserializer::from_str(text);
+    let value = serde_path_to_error::deserialize(&mut deserializer).map_err(|e| body_error(&e))?;
+    deserializer
+        .end()
+        .map_err(|e| ValidationError::invalid("body", &without_position(&e)))?;
+    Ok(value)
 }
 
 /// `web::Json<T>` followed by [`Validate::validate`]: answers `400` when either fails. The body is
-/// read as JSON first, then deserialized through `serde_path_to_error`, so a value of the wrong
-/// type or format names its field like every other validation error.
+/// checked as JSON by `web::Json` (content type, size), then deserialized by [`deserialize_body`],
+/// so a value of the wrong type or format names its field like every other validation error.
 pub struct ValidatedJson<T>(pub T);
 
 impl<T> ValidatedJson<T> {
@@ -354,10 +378,10 @@ where
     type Future = Pin<Box<dyn Future<Output = Result<Self, Self::Error>>>>;
 
     fn from_request(req: &HttpRequest, payload: &mut Payload) -> Self::Future {
-        let json = web::Json::<serde_json::Value>::from_request(req, payload);
+        let json = web::Json::<Box<serde_json::value::RawValue>>::from_request(req, payload);
         Box::pin(async move {
-            let value: T = serde_path_to_error::deserialize(json.await?.into_inner())
-                .map_err(|e| bad_request(&body_error(&e)))?;
+            let raw = json.await?.into_inner();
+            let value: T = deserialize_body(raw.get()).map_err(|e| bad_request(&e))?;
             value.validate().map_err(|e| bad_request(&e))?;
             Ok(Self(value))
         })
@@ -403,7 +427,9 @@ mod tests {
     }
 
     fn body_error_of(json: serde_json::Value) -> String {
-        body_error(&serde_path_to_error::deserialize::<_, Body>(json).unwrap_err()).to_string()
+        deserialize_body::<Body>(&json.to_string())
+            .unwrap_err()
+            .to_string()
     }
 
     #[test]
@@ -421,6 +447,15 @@ mod tests {
             body_error_of(serde_json::json!({ "name": "a", "colour": 1 }))
                 .contains("unknown field `colour`")
         );
+    }
+
+    #[test]
+    fn mair_1203_a_duplicated_field_is_still_refused() {
+        let error =
+            deserialize_body::<Body>(r#"{"name":"a","deadline":"2027-06-30","deadline":null}"#)
+                .unwrap_err()
+                .to_string();
+        assert!(error.contains("duplicate field `deadline`"), "{error}");
     }
 
     #[test]
