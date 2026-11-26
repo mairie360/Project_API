@@ -1,6 +1,6 @@
-use crate::database::search::view::{GlobalSearchQueryView, SearchItem};
+use crate::database::search::view::{GlobalSearchItem, GlobalSearchQueryView};
 use crate::endpoints::db_error::log_db_error;
-use crate::endpoints::v1::search::view::{like_escape, SearchQuery, SearchResultView};
+use crate::endpoints::v1::search::view::{like_escape, GlobalSearchResultView, SearchQuery};
 use crate::endpoints::validation::ValidatedQuery;
 use actix_web::http::StatusCode;
 use actix_web::{get, web, HttpResponse, Responder, ResponseError};
@@ -32,17 +32,18 @@ async fn trigger_global_search(
     state: web::Data<AppState>,
     caller_id: u64,
     query: SearchQuery,
-) -> Result<SearchResultView, SearchError> {
+) -> Result<GlobalSearchResultView, SearchError> {
     let view = GlobalSearchQueryView::new(caller_id, &like_escape(query.term()), query.limit());
-    let items: Vec<SearchItem> = state
-        .get_smart_db()
-        .fetch_all(&view)
-        .await
-        .map_err(|error| {
-            log_db_error("global_search", &error);
-            SearchError::DatabaseError
-        })?;
-    Ok(SearchResultView { items })
+    let items: Vec<GlobalSearchItem> =
+        state
+            .get_smart_db()
+            .fetch_all(&view)
+            .await
+            .map_err(|error| {
+                log_db_error("global_search", &error);
+                SearchError::DatabaseError
+            })?;
+    Ok(GlobalSearchResultView { items })
 }
 
 #[utoipa::path(
@@ -62,7 +63,7 @@ async fn trigger_global_search(
         (
             status = 200,
             description = "At most `limit` projects and tasks, best match first. Empty when nothing matches.",
-            body = SearchResultView,
+            body = GlobalSearchResultView,
             example = json!({
                 "items": [
                     {

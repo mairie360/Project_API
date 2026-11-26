@@ -101,8 +101,8 @@ async fn mair_1228_limit_cuts_and_wildcards_match_themselves() {
         .await,
     );
     assert_eq!(found.len(), 2, "{found:?}");
-    // `%_` would match every project if the wildcards were not escaped.
-    let wildcards = items(&json(&app, get("/api/v1/search?q=%25_", owner)).await);
+    // Unescaped, `%_<term>` would match the rows above (any character before the term).
+    let wildcards = items(&json(&app, get(&format!("/api/v1/search?q=%25_{term}"), owner)).await);
     assert!(wildcards.is_empty(), "{wildcards:?}");
 }
 
@@ -111,7 +111,15 @@ async fn mair_1228_rejects_a_short_term_a_bad_limit_and_no_session() {
     let ctx = TestContext::new().await;
     let app = init_app!(ctx);
     let owner = ctx.user("Owner", Some("Responsable")).await;
-    for query in ["?q=a", "?q=%20a%20", "", "?q=ab&limit=21", "?q=ab&limit=0"] {
+    for query in [
+        "?q=a",
+        "?q=%20a%20",
+        "",
+        "?q=ab&limit=21",
+        "?q=ab&limit=0",
+        "?q=ab&limit=abc",
+        "?q=ab&limit=-1",
+    ] {
         let refused = get(&format!("/api/v1/search{query}"), owner);
         assert_eq!(status(&app, refused).await, 400, "{query}");
     }

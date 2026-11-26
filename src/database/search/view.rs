@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 /// What a global search result is.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum SearchKind {
+pub enum GlobalSearchKind {
     /// A project; `id` is reusable in `GET /api/v1/projects/{id}`.
     Project,
     /// A task; `parent_id` is its project.
@@ -15,8 +15,8 @@ pub enum SearchKind {
 
 /// One result of the global search.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
-pub struct SearchItem {
-    pub kind: SearchKind,
+pub struct GlobalSearchItem {
+    pub kind: GlobalSearchKind,
     /// Id of the project or of the task.
     #[schema(example = 42)]
     pub id: i64,
