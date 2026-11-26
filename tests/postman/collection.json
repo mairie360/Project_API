@@ -12343,6 +12343,386 @@
       ]
     },
     {
+      "name": "Global search (MAIR-1228)",
+      "item": [
+        {
+          "name": "MAIR-1228 Pre-request: a unique term for the searched project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const letters = Date.now().toString(36).replace(/[0-9]/g, (d) => 'abcdefghij'[d]);",
+                  "pm.environment.set('mair_1228_term', `Recherche${letters}`);",
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "MAIR-1228 Create the project to find",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('mair_1228_project_id', String(pm.response.json().project_id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{mair_1228_term}} de la médiathèque\",\n  \"group_id\": 4,\n  \"description\": \"Extension des horaires du samedi\"\n}"
+            }
+          }
+        },
+        {
+          "name": "MAIR-1228 Add a task whose title holds the term",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('mair_1228_task_id', String(pm.response.json().task_id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{mair_1228_project_id}}/tasks/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{mair_1228_project_id}}",
+                "tasks",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Planning {{mair_1228_term}}\",\n  \"fields\": []\n}"
+            }
+          }
+        },
+        {
+          "name": "MAIR-1228 The global search finds the project then its task",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const items = pm.response.json().items;",
+                  "pm.test('The project (title starting with the term) comes first, then its task', () => {",
+                  "    pm.expect(items).to.be.an('array').with.lengthOf(2);",
+                  "    pm.expect(items[0]).to.include({ kind: 'project', id: Number(pm.environment.get('mair_1228_project_id')), parent_id: null, excerpt: 'Extension des horaires du samedi' });",
+                  "    pm.expect(items[1]).to.include({ kind: 'task', id: Number(pm.environment.get('mair_1228_task_id')), parent_id: Number(pm.environment.get('mair_1228_project_id')) });",
+                  "});",
+                  "pm.test('The contract shape: title and updated_at', () => {",
+                  "    items.forEach((item) => {",
+                  "        pm.expect(item.title).to.include(pm.environment.get('mair_1228_term'));",
+                  "        pm.expect(item.updated_at).to.match(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$/);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search?q={{mair_1228_term}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{mair_1228_term}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "MAIR-1228 An agent outside the project finds nothing",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No result', () => pm.expect(pm.response.json().items).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_agent}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search?q={{mair_1228_term}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{mair_1228_term}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "MAIR-1228 A one-character term is refused",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('The body names the field', () => pm.expect(pm.response.text()).to.include('`q`'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search?q=a",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "a"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "MAIR-1228 A limit above 20 is refused",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('The body names the field', () => pm.expect(pm.response.text()).to.include('`limit`'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search?q={{mair_1228_term}}&limit=21",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{mair_1228_term}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "21"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "MAIR-1228 Delete the found project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 2xx', () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{mair_1228_project_id}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{mair_1228_project_id}}",
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "name": "MAIR-1228 A deleted project and its task are no longer found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No result', () => pm.expect(pm.response.json().items).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search?q={{mair_1228_term}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{mair_1228_term}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "Cleanup",
       "item": [
         {

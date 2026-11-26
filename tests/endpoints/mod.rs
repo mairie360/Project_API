@@ -15,6 +15,7 @@ pub mod mair_1089_project_activity;
 pub mod mair_1196_project_responsible;
 pub mod mair_1199_project_deadline;
 pub mod mair_1200_closed_project_read_only;
+pub mod mair_1228_global_search;
 pub mod mair_534_negative_cases;
 pub mod mair_680_session_keys;
 pub mod mair_683_project_groups;
