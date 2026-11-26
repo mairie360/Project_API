@@ -202,6 +202,12 @@ const readHandlers = {
   // A third of the calls each as the Admin (any page of the 5 000 projects, or the projects page of the
   // BFF: high priority, active, a search), a Responsable (their team's projects) and an agent (their own).
   // Every answer carries the task aggregates and a summary over every matching project (MAIR-474).
+  // Global search of the shared header: the projects and tasks of a seeded title.
+  'GET /api/v1/search': ({ request }) =>
+    check(request({ query: { q: `perf project ${randomInt(50)}`, limit: 8 } }), {
+      'search 200': (r) => r.status === 200,
+      'search answers a list': (r) => r.status === 200 && Array.isArray(r.json('items')),
+    }),
   'GET /api/v1/projects/': ({ request }) => {
     const caller = randomInt(3);
     const filtered = caller === 0 && randomInt(2) === 0;

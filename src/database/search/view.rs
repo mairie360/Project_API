@@ -21,10 +21,10 @@ pub struct SearchItem {
     #[schema(example = 42)]
     pub id: i64,
     /// Title of the project or of the task.
-    #[schema(example = "Rénovation de l'école Jules Ferry")]
+    #[schema(example = "Jules Ferry school renovation")]
     pub title: String,
     /// First 120 characters of the description, `null` without one.
-    #[schema(example = "Remplacement des menuiseries et isolation des combles")]
+    #[schema(example = "New windows and attic insulation")]
     pub excerpt: Option<String>,
     /// Project of a task; `null` for a project.
     #[schema(example = json!(null))]
@@ -93,6 +93,7 @@ impl ApiRequestDto for GlobalSearchQueryView {
 
 impl Display for GlobalSearchQueryView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "GlobalSearchQueryView: {:?}", self.params)
+        // The search term is not logged.
+        write!(f, "GlobalSearchQueryView: limit={:?}", self.params[2])
     }
 }

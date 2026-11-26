@@ -68,15 +68,15 @@ async fn trigger_global_search(
                     {
                         "kind": "project",
                         "id": 42,
-                        "title": "Rénovation de l'école Jules Ferry",
-                        "excerpt": "Remplacement des menuiseries et isolation des combles",
+                        "title": "Jules Ferry school renovation",
+                        "excerpt": "New windows and attic insulation",
                         "parent_id": null,
                         "updated_at": "2026-11-20T09:30:00Z"
                     },
                     {
                         "kind": "task",
                         "id": 310,
-                        "title": "Rénovation : choisir le menuisier",
+                        "title": "Renovation: pick the carpenter",
                         "excerpt": null,
                         "parent_id": 42,
                         "updated_at": "2026-11-18T14:05:00Z"
