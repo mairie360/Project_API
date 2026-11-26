@@ -4,6 +4,7 @@ pub mod paged;
 pub mod pg_url;
 pub mod ping;
 pub mod project;
+pub mod search;
 pub mod service;
 pub mod statuses;
 pub mod tasks;

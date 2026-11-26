@@ -38,6 +38,10 @@ operations:
   GET /health: {access: public}
   GET /ready: {access: public}
 
+  GET /api/v1/search:
+    access: authenticated
+    roles: [Admin, Maire, Responsable, User, Guest]
+    note: "global search: only the projects the caller sees and their tasks"
   GET /api/v1/projects/:
     access: authenticated
     roles: [Admin, Maire, Responsable, User, Guest]

@@ -2,6 +2,7 @@ pub mod doc;
 pub mod project_groups;
 pub mod project_templates;
 pub mod projects;
+pub mod search;
 pub mod tasks;
 
 pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
@@ -10,6 +11,7 @@ pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
             .configure(projects::config)
             .configure(project_templates::config)
             .configure(project_groups::config)
-            .configure(tasks::config),
+            .configure(tasks::config)
+            .service(actix_web::web::scope("/search").configure(search::config)),
     );
 }
